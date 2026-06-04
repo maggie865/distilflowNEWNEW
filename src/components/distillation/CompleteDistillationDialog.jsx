@@ -18,8 +18,8 @@ export default function CompleteDistillationDialog({ run, open, onOpenChange, on
     queryFn: () => base44.entities.StorageTank.list('name', 50),
   });
 
-  // Eligible hearts tanks — anything that can hold spirits (not IBC)
-  const heartsTanks = tanks.filter(t => t.purpose !== 'ibc');
+  // Hearts go to maceration/dilution tanks only
+  const heartsTanks = tanks.filter(t => t.purpose === 'maceration_dilution');
   // IBC tank(s) for heads/tails
   const ibcTanks = tanks.filter(t => t.purpose === 'ibc');
   const ibc = ibcTanks[0]; // use first IBC
