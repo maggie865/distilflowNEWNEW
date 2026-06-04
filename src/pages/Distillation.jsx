@@ -68,6 +68,13 @@ export default function Distillation() {
     queryFn: () => base44.entities.DistillationRun.list('-date', 50),
   });
 
+  const { data: storageTanks = [] } = useQuery({
+    queryKey: ['storageTanks'],
+    queryFn: () => base44.entities.StorageTank.list('name', 50),
+  });
+
+  const macerationTanks = storageTanks.filter(t => t.purpose === 'maceration_dilution');
+
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
   const openNew = () => {
@@ -617,10 +624,10 @@ export default function Distillation() {
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Select destination…" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ibc_heads_tails">IBC — Heads &amp; Tails Tank</SelectItem>
-                  {activeBatches.map(b => (
-                    <SelectItem key={b.id} value={b.batch_code}>
-                      <span className="font-mono">{b.batch_code}</span>
-                      {b.product_name && <span className="text-muted-foreground ml-2 text-xs">— {b.product_name}</span>}
+                  {macerationTanks.map(t => (
+                    <SelectItem key={t.id} value={t.name}>
+                      Tank {t.name}
+                      {t.current_product && <span className="text-muted-foreground ml-2 text-xs">— {t.current_product}</span>}
                     </SelectItem>
                   ))}
                 </SelectContent>
