@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Calculator, FlaskConical, Droplets } from 'lucide-react';
+import { Calculator, FlaskConical, Droplets, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -51,6 +51,7 @@ export default function Dilutions() {
   const [openType, setOpenType] = useState(null); // 'ethanol' | 'heads'
   const [ethanolForm, setEthanolForm] = useState(BLANK_ETHANOL);
   const [headsForm, setHeadsForm] = useState(BLANK_HEADS);
+  const [editingDilution, setEditingDilution] = useState(null);
   const queryClient = useQueryClient();
 
   const setE = (f, v) => setEthanolForm(p => ({ ...p, [f]: v }));
@@ -286,6 +287,29 @@ export default function Dilutions() {
       setOpenType(null);
       setHeadsForm(BLANK_HEADS);
       toast.success(action === 'transfer' ? 'Heads dilution complete — product transferred' : 'Progress saved — product remains in source tank');
+    },
+  });
+
+  const editMutation = useMutation({
+    mutationFn: async (data) => {
+      await base44.entities.Dilution.update(data.id, {
+        batch_number: data.batch_number,
+        date: data.date,
+        input_ethanol_volume: parseFloat(data.input_ethanol_volume),
+        input_abv: parseFloat(data.input_abv),
+        input_lals: parseFloat(data.input_ethanol_volume) * parseFloat(data.input_abv) / 100,
+        water_added: parseFloat(data.water_added) || 0,
+        output_volume: parseFloat(data.output_volume),
+        output_abv: parseFloat(data.output_abv),
+        output_lals: parseFloat(data.output_lals),
+        status: data.status,
+        notes: data.notes,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dilutions'] });
+      setEditingDilution(null);
+      toast.success('Dilution updated');
     },
   });
 
@@ -608,6 +632,7 @@ export default function Dilutions() {
                 <TableHead>Output ABV</TableHead>
                 <TableHead>Output LALs</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -643,13 +668,147 @@ export default function Dilutions() {
                     <TableCell className="text-sm">{d.output_abv?.toFixed(2)}%</TableCell>
                     <TableCell className="text-sm font-medium">{d.output_lals?.toFixed(3)}</TableCell>
                     <TableCell><StatusBadge status={d.status} /></TableCell>
-                  </TableRow>
-                );
-              })}
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setEditingDilution({ ...d })}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                    </TableCell>
+                    </TableRow>
+                    );
+                    })}
             </TableBody>
           </Table>
         </div>
       </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingDilution} onOpenChange={v => !v && setEditingDilution(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-primary" />
+              Edit Dilution
+            </DialogTitle>
+          </DialogHeader>
+          {editingDilution && (
+            <form
+              onSubmit={e => { e.preventDefault(); editMutation.mutate(editingDilution); }}
+              className="space-y-4 mt-2"
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Batch / Lot</Label>
+                  <Input
+                    value={editingDilution.batch_number || ''}
+                    onChange={e => setEditingDilution(p => ({ ...p, batch_number: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label>Date</Label>
+                  <Input
+                    type="date"
+                    value={editingDilution.date || ''}
+                    onChange={e => setEditingDilution(p => ({ ...p, date: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Input</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Volume (L)</Label>
+                    <Input
+                      type="number" step="0.01"
+                      value={editingDilution.input_ethanol_volume || ''}
+                      onChange={e => setEditingDilution(p => ({ ...p, input_ethanol_volume: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>ABV %</Label>
+                    <Input
+                      type="number" step="0.1"
+                      value={editingDilution.input_abv || ''}
+                      onChange={e => setEditingDilution(p => ({ ...p, input_abv: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Output</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label>Water Added (L)</Label>
+                    <Input
+                      type="number" step="0.01"
+                      value={editingDilution.water_added || ''}
+                      onChange={e => setEditingDilution(p => ({ ...p, water_added: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Output Vol (L)</Label>
+                    <Input
+                      type="number" step="0.01"
+                      value={editingDilution.output_volume || ''}
+                      onChange={e => setEditingDilution(p => ({ ...p, output_volume: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Output ABV %</Label>
+                    <Input
+                      type="number" step="0.1"
+                      value={editingDilution.output_abv || ''}
+                      onChange={e => setEditingDilution(p => ({ ...p, output_abv: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>Output LALs</Label>
+                  <Input
+                    type="number" step="0.0001"
+                    value={editingDilution.output_lals || ''}
+                    onChange={e => setEditingDilution(p => ({ ...p, output_lals: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label>Status</Label>
+                <Select
+                  value={editingDilution.status}
+                  onValueChange={v => setEditingDilution(p => ({ ...p, status: v }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Notes</Label>
+                <Textarea
+                  value={editingDilution.notes || ''}
+                  onChange={e => setEditingDilution(p => ({ ...p, notes: e.target.value }))}
+                />
+              </div>
+
+              <Button type="submit" className="w-full" disabled={editMutation.isPending}>
+                {editMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
