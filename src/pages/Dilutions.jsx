@@ -16,9 +16,6 @@ import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 
-// Tanks allowed per dilution type
-const ETHANOL_TANKS = ['X', 'Y'];
-const HEADS_TANKS = ['E', 'F', 'H'];
 
 const BLANK_ETHANOL = {
   date: new Date().toISOString().split('T')[0],
@@ -30,6 +27,11 @@ const BLANK_ETHANOL = {
   status: 'completed',
   notes: '',
 };
+
+// Tank purpose mappings (driven by DB, not hardcoded names)
+// diluted_ethanol → ethanol dilution destination tanks
+// maceration_dilution → heads source tanks
+// final_product_storage → product destination tanks (A,B,C,D and any new ones)
 
 const BLANK_HEADS = {
   batch_number: '',
@@ -45,7 +47,7 @@ const BLANK_HEADS = {
   notes: '',
 };
 
-const PRODUCT_TANKS = ['A', 'B', 'C', 'D'];
+
 
 export default function Dilutions() {
   const [openType, setOpenType] = useState(null); // 'ethanol' | 'heads'
@@ -72,10 +74,10 @@ export default function Dilutions() {
     queryFn: () => base44.entities.StorageTank.list('name', 50),
   });
 
-  // Filtered tank lists
-  const ethanolDestTanks = tanks.filter(t => ETHANOL_TANKS.includes(t.name));
-  const headsSrcTanks = tanks.filter(t => HEADS_TANKS.includes(t.name));
-  const productTanks = tanks.filter(t => PRODUCT_TANKS.includes(t.name));
+  // Filtered tank lists — driven by purpose, not hardcoded names
+  const ethanolDestTanks = tanks.filter(t => t.purpose === 'diluted_ethanol');
+  const headsSrcTanks = tanks.filter(t => t.purpose === 'maceration_dilution');
+  const productTanks = tanks.filter(t => t.purpose === 'final_product_storage');
 
   // --- Ethanol Dilution calcs ---
   const eInputLALs = ethanolForm.input_ethanol_volume && ethanolForm.input_abv

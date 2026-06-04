@@ -1,15 +1,23 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Plus } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import TankCard from '@/components/tanks/TankCard';
 import TransferDialog from '@/components/tanks/TransferDialog';
 
+// All known purposes — new tanks will auto-appear in the correct group via their purpose field
 const GROUP_ORDER = ['maceration_dilution', 'diluted_ethanol', 'final_product_storage', 'ibc', 'spare'];
 const GROUP_LABELS = {
   maceration_dilution: 'Maceration & Dilution Tanks',
@@ -37,13 +45,49 @@ const ACTION_COLORS = {
   cleaning: 'bg-muted text-muted-foreground',
 };
 
+const BLANK_TANK = {
+  name: '',
+  capacity_litres: '',
+  purpose: 'final_product_storage',
+  location: 'indoor',
+  notes: '',
+};
+
+const PURPOSE_OPTIONS = [
+  { value: 'final_product_storage', label: 'Final Product Storage (A, B, C, D type)' },
+  { value: 'maceration_dilution', label: 'Maceration & Dilution (E, F, H type)' },
+  { value: 'diluted_ethanol', label: 'Diluted Ethanol Outdoor (X, Y type)' },
+  { value: 'ibc', label: 'IBC — Heads & Tails' },
+  { value: 'spare', label: 'Spare' },
+];
+
 export default function Tanks() {
   const [selectedTank, setSelectedTank] = useState(null);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [newTank, setNewTank] = useState(BLANK_TANK);
+  const queryClient = useQueryClient();
 
   const { data: tanks = [], isLoading: tanksLoading } = useQuery({
     queryKey: ['storageTanks'],
     queryFn: () => base44.entities.StorageTank.list('name', 50),
+  });
+
+  const addMutation = useMutation({
+    mutationFn: (data) => base44.entities.StorageTank.create({
+      name: data.name.toUpperCase(),
+      capacity_litres: parseFloat(data.capacity_litres),
+      purpose: data.purpose,
+      location: data.location,
+      status: 'empty',
+      notes: data.notes,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+      setAddOpen(false);
+      setNewTank(BLANK_TANK);
+      toast.success('Tank added — it will now appear in all relevant dropdowns');
+    },
   });
 
   const { data: movements = [], isLoading: movLoading } = useQuery({
@@ -69,7 +113,72 @@ export default function Tanks() {
 
   return (
     <div className="pb-20 md:pb-0">
-      <PageHeader title="Tank Farm" subtitle="Live view of all storage tanks and their contents" />
+      <PageHeader title="Tank Farm" subtitle="Live view of all storage tanks and their contents">
+        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2"><Plus className="w-4 h-4" />Add Tank</Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="font-display">Add New Tank</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={e => { e.preventDefault(); addMutation.mutate(newTank); }} className="space-y-4 mt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Tank Name / Letter</Label>
+                  <Input
+                    value={newTank.name}
+                    onChange={e => setNewTank(p => ({ ...p, name: e.target.value }))}
+                    placeholder="e.g. G"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Capacity (litres)</Label>
+                  <Input
+                    type="number" step="1"
+                    value={newTank.capacity_litres}
+                    onChange={e => setNewTank(p => ({ ...p, capacity_litres: e.target.value }))}
+                    placeholder="e.g. 500"
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Tank Type / Purpose</Label>
+                <Select value={newTank.purpose} onValueChange={v => setNewTank(p => ({ ...p, purpose: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PURPOSE_OPTIONS.map(o => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  This determines which dropdowns the tank appears in across the app.
+                </p>
+              </div>
+              <div>
+                <Label>Location</Label>
+                <Select value={newTank.location} onValueChange={v => setNewTank(p => ({ ...p, location: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="indoor">Indoor</SelectItem>
+                    <SelectItem value="outdoor">Outdoor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Input value={newTank.notes} onChange={e => setNewTank(p => ({ ...p, notes: e.target.value }))} placeholder="Optional" />
+              </div>
+              <Button type="submit" className="w-full" disabled={addMutation.isPending}>
+                {addMutation.isPending ? 'Adding...' : 'Add Tank'}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </PageHeader>
 
       {/* Summary chips */}
       <div className="flex flex-wrap gap-3 mb-6">
