@@ -29,7 +29,6 @@ const EMPTY_FORM = {
   hearts_volume: '', hearts_abv: '',
   tails_volume: '', tails_abv: '',
   dumped_volume: '', dumped_abv: '', dumped_notes: '',
-  still_remainder_volume: '', still_remainder_abv: '',
   status: 'planned', notes: ''
 };
 
@@ -100,8 +99,6 @@ export default function Distillation() {
       dumped_volume: run.dumped_volume ?? '',
       dumped_abv: run.dumped_abv ?? '',
       dumped_notes: run.dumped_notes || '',
-      still_remainder_volume: run.still_remainder_volume ?? '',
-      still_remainder_abv: run.still_remainder_abv ?? '',
       status: run.status || 'planned',
       notes: run.notes || '',
     });
@@ -156,6 +153,8 @@ export default function Distillation() {
   const dumpedLALs = form.dumped_volume && form.dumped_abv
     ? parseFloat(form.dumped_volume) * parseFloat(form.dumped_abv) / 100 : 0;
 
+  // Still remainder removed — no longer tracked separately
+
   // Auto-calculate total output from cuts
   const calcOutputVolume = (parseFloat(form.heads_volume) || 0) + (parseFloat(form.hearts_volume) || 0) + (parseFloat(form.tails_volume) || 0);
   const calcOutputLALs = headsLALs + heartsLALs + tailsLALs;
@@ -163,13 +162,9 @@ export default function Distillation() {
   const calcOutputAbv = calcOutputVolume > 0 ? (calcOutputLALs / calcOutputVolume) * 100 : 0;
   const outputLALs = calcOutputLALs;
 
-  const stillRemainderLALs = form.still_remainder_volume && form.still_remainder_abv
-    ? parseFloat(form.still_remainder_volume) * parseFloat(form.still_remainder_abv) / 100 : 0;
-
   const numericFields = ['input_volume','input_abv','atmospheric_pressure','still_temp',
     'heads_volume','heads_abv','hearts_volume','hearts_abv',
-    'tails_volume','tails_abv','dumped_volume','dumped_abv',
-    'still_remainder_volume','still_remainder_abv'];
+    'tails_volume','tails_abv','dumped_volume','dumped_abv'];
 
   const buildPayload = (data) => {
     const payload = { ...data };
@@ -179,7 +174,6 @@ export default function Distillation() {
     payload.hearts_lals = heartsLALs ? parseFloat(heartsLALs.toFixed(4)) : undefined;
     payload.tails_lals = tailsLALs ? parseFloat(tailsLALs.toFixed(4)) : undefined;
     payload.dumped_lals = dumpedLALs ? parseFloat(dumpedLALs.toFixed(4)) : undefined;
-    payload.still_remainder_lals = stillRemainderLALs ? parseFloat(stillRemainderLALs.toFixed(4)) : undefined;
     payload.output_volume = calcOutputVolume > 0 ? parseFloat(calcOutputVolume.toFixed(3)) : undefined;
     payload.output_abv = calcOutputAbv > 0 ? parseFloat(calcOutputAbv.toFixed(2)) : undefined;
     payload.output_lals = calcOutputLALs > 0 ? parseFloat(calcOutputLALs.toFixed(4)) : undefined;
@@ -541,27 +535,6 @@ export default function Distillation() {
               </div>
             </div>
 
-            {/* Still Remainder */}
-            <div className="rounded-lg border border-border p-4 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Still Remainder</p>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <Label className="text-xs">Volume (L)</Label>
-                  <Input type="number" step="0.01" value={form.still_remainder_volume} onChange={e => set('still_remainder_volume', e.target.value)} placeholder="0" />
-                </div>
-                <div>
-                  <Label className="text-xs">ABV %</Label>
-                  <Input type="number" step="0.1" value={form.still_remainder_abv} onChange={e => set('still_remainder_abv', e.target.value)} placeholder="0" />
-                </div>
-                <div>
-                  <Label className="text-xs flex items-center gap-1">LALs <Calculator className="w-3 h-3 text-primary" /></Label>
-                  <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold ${stillRemainderLALs > 0 ? 'bg-primary/5 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
-                    {stillRemainderLALs > 0 ? stillRemainderLALs.toFixed(3) : '—'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* Mass Balance Summary */}
             {inputLALs > 0 && calcOutputLALs > 0 && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-2">
@@ -572,12 +545,11 @@ export default function Distillation() {
                   <div className="flex justify-between"><span className="text-muted-foreground">Hearts LALs</span><span className="text-emerald-700 font-semibold">{heartsLALs.toFixed(3)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Tails LALs</span><span>{tailsLALs.toFixed(3)}</span></div>
                   {dumpedLALs > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Dumped LALs</span><span>{dumpedLALs.toFixed(3)}</span></div>}
-                  {stillRemainderLALs > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Still Remainder</span><span>{stillRemainderLALs.toFixed(3)}</span></div>}
                 </div>
                 <div className="border-t border-amber-200 pt-2 flex justify-between text-sm">
                   <span className="text-amber-700 font-medium">Unaccounted LALs</span>
-                  <span className={`font-semibold ${Math.abs(inputLALs - calcOutputLALs - dumpedLALs - stillRemainderLALs) < 0.01 ? 'text-emerald-600' : 'text-amber-700'}`}>
-                    {(inputLALs - calcOutputLALs - dumpedLALs - stillRemainderLALs).toFixed(3)}
+                  <span className={`font-semibold ${Math.abs(inputLALs - calcOutputLALs - dumpedLALs) < 0.01 ? 'text-emerald-600' : 'text-amber-700'}`}>
+                    {(inputLALs - calcOutputLALs - dumpedLALs).toFixed(3)}
                   </span>
                 </div>
               </div>
