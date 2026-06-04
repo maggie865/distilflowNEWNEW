@@ -44,18 +44,6 @@
       "type": "number",
       "description": "Still temperature (\u00b0C)"
     },
-    "output_volume": {
-      "type": "number",
-      "description": "Total output spirit volume collected (litres)"
-    },
-    "output_abv": {
-      "type": "number",
-      "description": "Output ABV (%)"
-    },
-    "output_lals": {
-      "type": "number",
-      "description": "Output LALs"
-    },
     "heads_volume": {
       "type": "number",
       "description": "Heads collected (litres)"
@@ -63,6 +51,10 @@
     "heads_abv": {
       "type": "number",
       "description": "Heads ABV (%)"
+    },
+    "heads_lals": {
+      "type": "number",
+      "description": "Heads LALs"
     },
     "hearts_volume": {
       "type": "number",
@@ -72,6 +64,10 @@
       "type": "number",
       "description": "Hearts ABV (%)"
     },
+    "hearts_lals": {
+      "type": "number",
+      "description": "Hearts LALs"
+    },
     "tails_volume": {
       "type": "number",
       "description": "Tails collected (litres)"
@@ -80,13 +76,49 @@
       "type": "number",
       "description": "Tails ABV (%)"
     },
+    "tails_lals": {
+      "type": "number",
+      "description": "Tails LALs"
+    },
+    "output_volume": {
+      "type": "number",
+      "description": "Total output spirit volume collected (litres) \u2014 sum of cuts"
+    },
+    "output_abv": {
+      "type": "number",
+      "description": "Output weighted average ABV (%)"
+    },
+    "output_lals": {
+      "type": "number",
+      "description": "Output LALs \u2014 sum of all cut LALs"
+    },
     "dumped_volume": {
       "type": "number",
       "description": "Volume dumped / discarded from still (litres)"
     },
+    "dumped_abv": {
+      "type": "number",
+      "description": "Dumped material ABV (%)"
+    },
+    "dumped_lals": {
+      "type": "number",
+      "description": "Dumped material LALs"
+    },
     "dumped_notes": {
       "type": "string",
       "description": "Notes on what was dumped"
+    },
+    "still_remainder_volume": {
+      "type": "number",
+      "description": "Volume remaining in still after run (litres)"
+    },
+    "still_remainder_abv": {
+      "type": "number",
+      "description": "ABV of liquid remaining in still (%)"
+    },
+    "still_remainder_lals": {
+      "type": "number",
+      "description": "LALs remaining in still"
     },
     "status": {
       "type": "string",

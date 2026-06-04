@@ -34,6 +34,9 @@ export default function Bottling() {
     ? parseFloat(form.input_volume) * parseFloat(form.input_abv) / 100 : 0;
   const estimatedBottles = form.input_volume && form.bottle_size_ml
     ? Math.floor((parseFloat(form.input_volume) * 1000) / parseFloat(form.bottle_size_ml)) : 0;
+  const bottlesForCalc = parseInt(form.bottles_produced) || estimatedBottles;
+  const lalsPerBottle = bottlesForCalc > 0 && inputLALs > 0
+    ? inputLALs / bottlesForCalc : 0;
 
   const createMutation = useMutation({
     mutationFn: async (data) => {
@@ -43,6 +46,7 @@ export default function Bottling() {
         : 0;
       const totalLals = lalPerBottle * bottlesProduced;
 
+      const lalsPerBottleCalc = bottlesProduced > 0 && inputLALs > 0 ? inputLALs / bottlesProduced : 0;
       await base44.entities.BottlingRun.create({
         ...data,
         input_volume: parseFloat(data.input_volume) || 0,
@@ -50,6 +54,7 @@ export default function Bottling() {
         input_lals: parseFloat(inputLALs.toFixed(4)),
         bottle_size_ml: parseFloat(data.bottle_size_ml),
         bottles_produced: bottlesProduced,
+        lals_per_bottle: parseFloat(lalsPerBottleCalc.toFixed(5)),
       });
 
       // Create/update finished goods
@@ -165,7 +170,7 @@ export default function Bottling() {
               {inputLALs > 0 && (
                 <Card className="bg-accent/50 p-4">
                   <p className="text-xs font-medium uppercase tracking-wider text-accent-foreground/70 mb-2">Summary</p>
-                  <div className="grid grid-cols-3 gap-3 text-sm">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <p className="text-muted-foreground text-xs">Input LALs</p>
                       <p className="font-semibold">{inputLALs.toFixed(3)}</p>
@@ -178,6 +183,12 @@ export default function Bottling() {
                       <p className="text-muted-foreground text-xs">Bottle Size</p>
                       <p className="font-semibold">{form.bottle_size_ml}ml</p>
                     </div>
+                    {lalsPerBottle > 0 && (
+                      <div>
+                        <p className="text-muted-foreground text-xs">LALs / Bottle</p>
+                        <p className="font-semibold text-primary">{lalsPerBottle.toFixed(4)}</p>
+                      </div>
+                    )}
                   </div>
                 </Card>
               )}
@@ -205,6 +216,7 @@ export default function Bottling() {
                 <TableHead>Volume (L)</TableHead>
                 <TableHead>ABV</TableHead>
                 <TableHead>LALs</TableHead>
+                <TableHead>LALs/Bottle</TableHead>
                 <TableHead>Bottle Size</TableHead>
                 <TableHead>Bottles</TableHead>
                 <TableHead>Status</TableHead>
@@ -223,6 +235,7 @@ export default function Bottling() {
                   <TableCell className="text-sm">{r.input_volume}</TableCell>
                   <TableCell className="text-sm">{r.input_abv ? `${r.input_abv}%` : '—'}</TableCell>
                   <TableCell className="text-sm font-medium">{r.input_lals?.toFixed(3)}</TableCell>
+                  <TableCell className="text-sm font-medium text-primary">{r.lals_per_bottle ? r.lals_per_bottle.toFixed(4) : '—'}</TableCell>
                   <TableCell className="text-sm">{r.bottle_size_ml}ml</TableCell>
                   <TableCell className="text-sm font-medium">{r.bottles_produced}</TableCell>
                   <TableCell><StatusBadge status={r.status} /></TableCell>

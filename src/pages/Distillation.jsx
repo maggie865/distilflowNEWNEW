@@ -25,8 +25,8 @@ const EMPTY_FORM = {
   heads_volume: '', heads_abv: '',
   hearts_volume: '', hearts_abv: '',
   tails_volume: '', tails_abv: '',
-  output_volume: '', output_abv: '',
-  dumped_volume: '', dumped_notes: '',
+  dumped_volume: '', dumped_abv: '', dumped_notes: '',
+  still_remainder_volume: '', still_remainder_abv: '',
   status: 'planned', notes: ''
 };
 
@@ -85,10 +85,11 @@ export default function Distillation() {
       hearts_abv: run.hearts_abv ?? '',
       tails_volume: run.tails_volume ?? '',
       tails_abv: run.tails_abv ?? '',
-      output_volume: run.output_volume ?? '',
-      output_abv: run.output_abv ?? '',
       dumped_volume: run.dumped_volume ?? '',
+      dumped_abv: run.dumped_abv ?? '',
       dumped_notes: run.dumped_notes || '',
+      still_remainder_volume: run.still_remainder_volume ?? '',
+      still_remainder_abv: run.still_remainder_abv ?? '',
       status: run.status || 'planned',
       notes: run.notes || '',
     });
@@ -134,20 +135,42 @@ export default function Distillation() {
 
   const inputLALs = form.input_volume && form.input_abv
     ? parseFloat(form.input_volume) * parseFloat(form.input_abv) / 100 : 0;
-  const outputLALs = form.output_volume && form.output_abv
-    ? parseFloat(form.output_volume) * parseFloat(form.output_abv) / 100 : 0;
+  const headsLALs = form.heads_volume && form.heads_abv
+    ? parseFloat(form.heads_volume) * parseFloat(form.heads_abv) / 100 : 0;
   const heartsLALs = form.hearts_volume && form.hearts_abv
     ? parseFloat(form.hearts_volume) * parseFloat(form.hearts_abv) / 100 : 0;
+  const tailsLALs = form.tails_volume && form.tails_abv
+    ? parseFloat(form.tails_volume) * parseFloat(form.tails_abv) / 100 : 0;
+  const dumpedLALs = form.dumped_volume && form.dumped_abv
+    ? parseFloat(form.dumped_volume) * parseFloat(form.dumped_abv) / 100 : 0;
+
+  // Auto-calculate total output from cuts
+  const calcOutputVolume = (parseFloat(form.heads_volume) || 0) + (parseFloat(form.hearts_volume) || 0) + (parseFloat(form.tails_volume) || 0);
+  const calcOutputLALs = headsLALs + heartsLALs + tailsLALs;
+  // Weighted average ABV from cuts
+  const calcOutputAbv = calcOutputVolume > 0 ? (calcOutputLALs / calcOutputVolume) * 100 : 0;
+  const outputLALs = calcOutputLALs;
+
+  const stillRemainderLALs = form.still_remainder_volume && form.still_remainder_abv
+    ? parseFloat(form.still_remainder_volume) * parseFloat(form.still_remainder_abv) / 100 : 0;
 
   const numericFields = ['input_volume','input_abv','atmospheric_pressure','still_temp',
     'heads_volume','heads_abv','hearts_volume','hearts_abv',
-    'tails_volume','tails_abv','output_volume','output_abv','dumped_volume'];
+    'tails_volume','tails_abv','dumped_volume','dumped_abv',
+    'still_remainder_volume','still_remainder_abv'];
 
   const buildPayload = (data) => {
     const payload = { ...data };
     numericFields.forEach(f => { payload[f] = data[f] !== '' ? parseFloat(data[f]) : undefined; });
     payload.input_lals = inputLALs ? parseFloat(inputLALs.toFixed(4)) : undefined;
-    payload.output_lals = outputLALs ? parseFloat(outputLALs.toFixed(4)) : undefined;
+    payload.heads_lals = headsLALs ? parseFloat(headsLALs.toFixed(4)) : undefined;
+    payload.hearts_lals = heartsLALs ? parseFloat(heartsLALs.toFixed(4)) : undefined;
+    payload.tails_lals = tailsLALs ? parseFloat(tailsLALs.toFixed(4)) : undefined;
+    payload.dumped_lals = dumpedLALs ? parseFloat(dumpedLALs.toFixed(4)) : undefined;
+    payload.still_remainder_lals = stillRemainderLALs ? parseFloat(stillRemainderLALs.toFixed(4)) : undefined;
+    payload.output_volume = calcOutputVolume > 0 ? parseFloat(calcOutputVolume.toFixed(3)) : undefined;
+    payload.output_abv = calcOutputAbv > 0 ? parseFloat(calcOutputAbv.toFixed(2)) : undefined;
+    payload.output_lals = calcOutputLALs > 0 ? parseFloat(calcOutputLALs.toFixed(4)) : undefined;
     return payload;
   };
 
@@ -328,93 +351,169 @@ export default function Distillation() {
             {/* Cuts */}
             <div className="rounded-lg border border-border p-4 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cuts</p>
-              <div className="grid grid-cols-3 gap-x-3 gap-y-2">
-                <p className="text-xs font-medium text-muted-foreground col-span-1">Heads</p>
-                <div className="col-start-1">
-                  <Label className="text-xs">Volume (L)</Label>
-                  <Input type="number" step="0.01" value={form.heads_volume} onChange={e => set('heads_volume', e.target.value)} />
-                </div>
-                <div>
-                  <Label className="text-xs">ABV %</Label>
-                  <Input type="number" step="0.1" value={form.heads_abv} onChange={e => set('heads_abv', e.target.value)} />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-x-3 gap-y-2 pt-1 border-t border-border/50">
-                <div className="col-span-3 flex items-center justify-between">
-                  <p className="text-xs font-medium text-emerald-600">Hearts</p>
-                  {heartsLALs > 0 && (
-                    <span className="text-xs text-emerald-600 font-semibold">{heartsLALs.toFixed(3)} LALs</span>
-                  )}
-                </div>
-                <div>
-                  <Label className="text-xs">Volume (L)</Label>
-                  <Input type="number" step="0.01" value={form.hearts_volume} onChange={e => set('hearts_volume', e.target.value)} />
-                </div>
-                <div>
-                  <Label className="text-xs">ABV %</Label>
-                  <Input type="number" step="0.1" value={form.hearts_abv} onChange={e => set('hearts_abv', e.target.value)} />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-x-3 gap-y-2 pt-1 border-t border-border/50">
-                <p className="text-xs font-medium text-muted-foreground col-span-3">Tails</p>
-                <div>
-                  <Label className="text-xs">Volume (L)</Label>
-                  <Input type="number" step="0.01" value={form.tails_volume} onChange={e => set('tails_volume', e.target.value)} />
-                </div>
-                <div>
-                  <Label className="text-xs">ABV %</Label>
-                  <Input type="number" step="0.1" value={form.tails_abv} onChange={e => set('tails_abv', e.target.value)} />
-                </div>
-              </div>
-            </div>
 
-            {/* Total output */}
-            <div className="rounded-lg border border-border p-4 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Output Collected</p>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <Label>Volume (L)</Label>
-                  <Input type="number" step="0.01" value={form.output_volume} onChange={e => set('output_volume', e.target.value)} />
-                </div>
-                <div>
-                  <Label>ABV %</Label>
-                  <Input type="number" step="0.1" value={form.output_abv} onChange={e => set('output_abv', e.target.value)} />
-                </div>
-                <div>
-                  <Label className="flex items-center gap-1">LALs <Calculator className="w-3 h-3 text-primary" /></Label>
-                  <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold ${outputLALs > 0 ? 'bg-primary/5 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
-                    {outputLALs > 0 ? outputLALs.toFixed(3) : '—'}
+              {/* Heads */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Heads</p>
+                <div className="grid grid-cols-3 gap-x-3">
+                  <div>
+                    <Label className="text-xs">Volume (L)</Label>
+                    <Input type="number" step="0.01" value={form.heads_volume} onChange={e => set('heads_volume', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">ABV %</Label>
+                    <Input type="number" step="0.1" value={form.heads_abv} onChange={e => set('heads_abv', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1">LALs <Calculator className="w-3 h-3 text-primary" /></Label>
+                    <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold ${headsLALs > 0 ? 'bg-primary/5 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
+                      {headsLALs > 0 ? headsLALs.toFixed(3) : '—'}
+                    </div>
                   </div>
                 </div>
               </div>
-              {(inputLALs > 0 || outputLALs > 0) && (
-                <div className="flex items-center gap-2 pt-1">
-                  <Calculator className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-                  <p className="text-xs text-muted-foreground">
-                    LAL yield:{' '}
-                    <span className="font-semibold text-primary">
-                      {inputLALs > 0 ? ((outputLALs / inputLALs) * 100).toFixed(1) : '0'}%
-                    </span>
-                    {' '}({outputLALs.toFixed(3)} of {inputLALs.toFixed(3)} LALs recovered)
-                  </p>
-                </div>
-              )}
-            </div>
 
-            {/* Dumped */}
-            <div className="rounded-lg border border-border p-4 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Dumped / Discarded</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Volume Dumped (L)</Label>
-                  <Input type="number" step="0.01" value={form.dumped_volume} onChange={e => set('dumped_volume', e.target.value)} placeholder="0" />
+              {/* Hearts */}
+              <div className="space-y-1.5 pt-1 border-t border-border/50">
+                <p className="text-xs font-medium text-emerald-600">Hearts</p>
+                <div className="grid grid-cols-3 gap-x-3">
+                  <div>
+                    <Label className="text-xs">Volume (L)</Label>
+                    <Input type="number" step="0.01" value={form.hearts_volume} onChange={e => set('hearts_volume', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">ABV %</Label>
+                    <Input type="number" step="0.1" value={form.hearts_abv} onChange={e => set('hearts_abv', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1">LALs <Calculator className="w-3 h-3 text-emerald-600" /></Label>
+                    <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold ${heartsLALs > 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-muted border-input text-muted-foreground'}`}>
+                      {heartsLALs > 0 ? heartsLALs.toFixed(3) : '—'}
+                    </div>
+                  </div>
                 </div>
-                <div className="col-span-2">
-                  <Label>Dump Notes</Label>
-                  <Textarea rows={2} value={form.dumped_notes} onChange={e => set('dumped_notes', e.target.value)} placeholder="What was discarded and why…" />
+              </div>
+
+              {/* Tails */}
+              <div className="space-y-1.5 pt-1 border-t border-border/50">
+                <p className="text-xs font-medium text-muted-foreground">Tails</p>
+                <div className="grid grid-cols-3 gap-x-3">
+                  <div>
+                    <Label className="text-xs">Volume (L)</Label>
+                    <Input type="number" step="0.01" value={form.tails_volume} onChange={e => set('tails_volume', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">ABV %</Label>
+                    <Input type="number" step="0.1" value={form.tails_abv} onChange={e => set('tails_abv', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-xs flex items-center gap-1">LALs <Calculator className="w-3 h-3 text-primary" /></Label>
+                    <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold ${tailsLALs > 0 ? 'bg-primary/5 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
+                      {tailsLALs > 0 ? tailsLALs.toFixed(3) : '—'}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+
+            {/* Total Output — auto-calculated from cuts */}
+            {calcOutputVolume > 0 && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                  <Calculator className="w-3.5 h-3.5" />Total Output Collected (calculated from cuts)
+                </p>
+                <div className="grid grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Volume (L)</p>
+                    <p className="font-semibold">{calcOutputVolume.toFixed(3)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Avg ABV %</p>
+                    <p className="font-semibold">{calcOutputAbv.toFixed(2)}%</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total LALs</p>
+                    <p className="font-semibold text-primary">{calcOutputLALs.toFixed(3)}</p>
+                  </div>
+                </div>
+                {inputLALs > 0 && (
+                  <p className="text-xs text-muted-foreground pt-1 border-t border-primary/10">
+                    LAL yield:{' '}
+                    <span className="font-semibold text-primary">
+                      {((calcOutputLALs / inputLALs) * 100).toFixed(1)}%
+                    </span>
+                    {' '}({calcOutputLALs.toFixed(3)} of {inputLALs.toFixed(3)} input LALs)
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Dumped / Discarded */}
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Dumped / Discarded</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Volume (L)</Label>
+                  <Input type="number" step="0.01" value={form.dumped_volume} onChange={e => set('dumped_volume', e.target.value)} placeholder="0" />
+                </div>
+                <div>
+                  <Label className="text-xs">ABV %</Label>
+                  <Input type="number" step="0.1" value={form.dumped_abv} onChange={e => set('dumped_abv', e.target.value)} placeholder="0" />
+                </div>
+                <div>
+                  <Label className="text-xs flex items-center gap-1">LALs <Calculator className="w-3 h-3 text-primary" /></Label>
+                  <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold ${dumpedLALs > 0 ? 'bg-primary/5 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
+                    {dumpedLALs > 0 ? dumpedLALs.toFixed(3) : '—'}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Dump Notes</Label>
+                <Textarea rows={2} value={form.dumped_notes} onChange={e => set('dumped_notes', e.target.value)} placeholder="What was discarded and why…" />
+              </div>
+            </div>
+
+            {/* Still Remainder */}
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Still Remainder</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Volume (L)</Label>
+                  <Input type="number" step="0.01" value={form.still_remainder_volume} onChange={e => set('still_remainder_volume', e.target.value)} placeholder="0" />
+                </div>
+                <div>
+                  <Label className="text-xs">ABV %</Label>
+                  <Input type="number" step="0.1" value={form.still_remainder_abv} onChange={e => set('still_remainder_abv', e.target.value)} placeholder="0" />
+                </div>
+                <div>
+                  <Label className="text-xs flex items-center gap-1">LALs <Calculator className="w-3 h-3 text-primary" /></Label>
+                  <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold ${stillRemainderLALs > 0 ? 'bg-primary/5 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
+                    {stillRemainderLALs > 0 ? stillRemainderLALs.toFixed(3) : '—'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Mass Balance Summary */}
+            {inputLALs > 0 && calcOutputLALs > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-amber-700">Mass Balance</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Input LALs</span><span className="font-semibold">{inputLALs.toFixed(3)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Heads LALs</span><span>{headsLALs.toFixed(3)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Hearts LALs</span><span className="text-emerald-700 font-semibold">{heartsLALs.toFixed(3)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Tails LALs</span><span>{tailsLALs.toFixed(3)}</span></div>
+                  {dumpedLALs > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Dumped LALs</span><span>{dumpedLALs.toFixed(3)}</span></div>}
+                  {stillRemainderLALs > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Still Remainder</span><span>{stillRemainderLALs.toFixed(3)}</span></div>}
+                </div>
+                <div className="border-t border-amber-200 pt-2 flex justify-between text-sm">
+                  <span className="text-amber-700 font-medium">Unaccounted LALs</span>
+                  <span className={`font-semibold ${Math.abs(inputLALs - calcOutputLALs - dumpedLALs - stillRemainderLALs) < 0.01 ? 'text-emerald-600' : 'text-amber-700'}`}>
+                    {(inputLALs - calcOutputLALs - dumpedLALs - stillRemainderLALs).toFixed(3)}
+                  </span>
+                </div>
+              </div>
+            )}
 
             <div>
               <Label>Status</Label>

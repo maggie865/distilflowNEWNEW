@@ -35,6 +35,10 @@
       "type": "number",
       "description": "Number of bottles produced"
     },
+    "lals_per_bottle": {
+      "type": "number",
+      "description": "LALs per individual bottle"
+    },
     "status": {
       "type": "string",
       "enum": [
