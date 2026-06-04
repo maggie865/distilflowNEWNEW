@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, PackagePlus, Droplets, Flame, Wine, Package, Warehouse } from 'lucide-react';
+import { LayoutDashboard, PackagePlus, Flame, Wine, GitBranch, Warehouse } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
@@ -7,7 +7,7 @@ const navItems = [
   { label: 'Receive', icon: PackagePlus, path: '/receiving' },
   { label: 'Distill', icon: Flame, path: '/distillation' },
   { label: 'Bottle', icon: Wine, path: '/bottling' },
-  { label: 'Materials', icon: Package, path: '/raw-materials' },
+  { label: 'Batches', icon: GitBranch, path: '/batch-tracker' },
   { label: 'Stock', icon: Warehouse, path: '/inventory' },
 ];
 

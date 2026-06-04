@@ -7,6 +7,7 @@ import {
   Wine, 
   Warehouse, 
   Package,
+  GitBranch,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -19,6 +20,7 @@ const navItems = [
   { label: 'Dilutions', icon: Droplets, path: '/dilutions' },
   { label: 'Distillation', icon: Flame, path: '/distillation' },
   { label: 'Bottling', icon: Wine, path: '/bottling' },
+  { label: 'Batch Tracker', icon: GitBranch, path: '/batch-tracker' },
   { label: 'Raw Materials', icon: Package, path: '/raw-materials' },
   { label: 'Inventory', icon: Warehouse, path: '/inventory' },
 ];
