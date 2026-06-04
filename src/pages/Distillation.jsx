@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Calculator, FlaskConical } from 'lucide-react';
+import { Plus, Calculator, FlaskConical, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -33,6 +33,11 @@ export default function Distillation() {
     queryFn: () => base44.entities.Recipe.list('name', 50),
   });
 
+  const { data: rawMaterials = [] } = useQuery({
+    queryKey: ['rawMaterials'],
+    queryFn: () => base44.entities.RawMaterial.list('created_date', 500),
+  });
+
   const { data: runs = [], isLoading } = useQuery({
     queryKey: ['distillationRuns'],
     queryFn: () => base44.entities.DistillationRun.list('-date', 50),
@@ -46,35 +51,33 @@ export default function Distillation() {
       ...prev,
       product_name: recipe.name,
       input_abv: recipe.base_ethanol_abv ? String(recipe.base_ethanol_abv) : prev.input_abv,
-      output_abv: recipe.target_output_abv ? String(recipe.target_output_abv) : prev.output_abv,
     }));
-    // Scale ingredients if volume is already set
     if (form.input_volume && recipe.base_ethanol_volume) {
       scaleIngredients(recipe, parseFloat(form.input_volume));
     }
   };
 
-  const scaleIngredients = (recipe, actualVolume) => {
+  const scaleIngredients = (recipe, actualVolume, materials) => {
     if (!recipe?.ingredients?.length || !actualVolume || !recipe.base_ethanol_volume) {
       setScaledIngredients([]);
       return;
     }
     const ratio = actualVolume / recipe.base_ethanol_volume;
-    setScaledIngredients(recipe.ingredients.map(ing => ({
-      ...ing,
-      scaledQuantity: (ing.quantity * ratio).toFixed(2),
-    })));
+    setScaledIngredients(recipe.ingredients.map(ing => {
+      const needed = parseFloat((ing.quantity * ratio).toFixed(2));
+      // Find all lots for this ingredient name (case-insensitive), sorted oldest first (FIFO)
+      const lots = (materials || rawMaterials)
+        .filter(m => m.name?.toLowerCase() === ing.name?.toLowerCase())
+        .sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
+      const totalStock = lots.reduce((sum, lot) => sum + (lot.quantity || 0), 0);
+      return { ...ing, scaledQuantity: needed, totalStock, lots, sufficient: totalStock >= needed };
+    }));
   };
 
   const handleVolumeChange = (value) => {
     set('input_volume', value);
     if (selectedRecipe && value) {
       scaleIngredients(selectedRecipe, parseFloat(value));
-      if (selectedRecipe.expected_yield_percent) {
-        const estimatedOutput = (parseFloat(value) * selectedRecipe.expected_yield_percent / 100).toFixed(2);
-        setForm(prev => ({ ...prev, input_volume: value, output_volume: estimatedOutput }));
-        return;
-      }
     }
   };
 
@@ -96,9 +99,24 @@ export default function Distillation() {
         heads_volume: parseFloat(data.heads_volume) || 0,
         tails_volume: parseFloat(data.tails_volume) || 0,
       });
+
+      // FIFO stock depletion for each scaled ingredient
+      for (const ing of scaledIngredients) {
+        let remaining = ing.scaledQuantity;
+        // lots are already sorted oldest-first
+        for (const lot of ing.lots) {
+          if (remaining <= 0) break;
+          const deduct = Math.min(lot.quantity || 0, remaining);
+          if (deduct > 0) {
+            await base44.entities.RawMaterial.update(lot.id, { quantity: parseFloat((lot.quantity - deduct).toFixed(4)) });
+          }
+          remaining -= deduct;
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['distillationRuns'] });
+      queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       setOpen(false);
       setForm({
         batch_number: '', date: new Date().toISOString().split('T')[0],
@@ -181,24 +199,42 @@ export default function Distillation() {
                 </div>
               </div>
 
-              {/* Scaled ingredients */}
+              {/* Scaled ingredients with FIFO stock check */}
               {scaledIngredients.length > 0 && (
                 <div className="rounded-lg border border-border p-4 space-y-2">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <FlaskConical className="w-3.5 h-3.5 text-primary" />
                     Scaled Botanicals for {form.input_volume}L
                   </p>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     {scaledIngredients.map((ing, i) => (
-                      <div key={i} className="flex items-center justify-between text-sm py-1 border-b border-border/50 last:border-0">
-                        <span>{ing.name}</span>
-                        <span className="font-semibold text-primary">{ing.scaledQuantity} {ing.unit}</span>
+                      <div key={i} className="py-1 border-b border-border/50 last:border-0">
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-1.5">
+                            {ing.lots.length > 0
+                              ? ing.sufficient
+                                ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                                : <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                              : <AlertTriangle className="w-3.5 h-3.5 text-destructive flex-shrink-0" />
+                            }
+                            <span>{ing.name}</span>
+                          </div>
+                          <span className="font-semibold text-primary">{ing.scaledQuantity} {ing.unit}</span>
+                        </div>
+                        {ing.lots.length > 0 ? (
+                          <p className={`text-xs mt-0.5 ml-5 ${ing.sufficient ? 'text-muted-foreground' : 'text-amber-600'}`}>
+                            {ing.totalStock.toFixed(2)} {ing.unit} in stock across {ing.lots.length} lot{ing.lots.length > 1 ? 's' : ''}
+                            {!ing.sufficient && ` — short by ${(ing.scaledQuantity - ing.totalStock).toFixed(2)} ${ing.unit}`}
+                          </p>
+                        ) : (
+                          <p className="text-xs mt-0.5 ml-5 text-destructive">Not found in stock</p>
+                        )}
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground pt-1">
                     Scaled from {selectedRecipe.base_ethanol_volume}L base recipe
-                    {' '}(×{(parseFloat(form.input_volume) / selectedRecipe.base_ethanol_volume).toFixed(3)})
+                    {' '}(×{(parseFloat(form.input_volume) / selectedRecipe.base_ethanol_volume).toFixed(3)}) · Stock will be depleted FIFO on save
                   </p>
                 </div>
               )}

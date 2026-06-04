@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Plus, Trash2, FlaskConical, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -15,7 +15,7 @@ const EMPTY_INGREDIENT = { name: '', quantity: '', unit: 'g', notes: '' };
 
 const EMPTY_FORM = {
   name: '', description: '', base_ethanol_volume: '', base_ethanol_abv: '',
-  target_output_abv: '', expected_yield_percent: '', ingredients: [{ ...EMPTY_INGREDIENT }], notes: ''
+  ingredients: [{ ...EMPTY_INGREDIENT }], notes: ''
 };
 
 export default function Recipes() {
@@ -42,11 +42,7 @@ export default function Recipes() {
   const addIngredient = () => setForm(prev => ({ ...prev, ingredients: [...prev.ingredients, { ...EMPTY_INGREDIENT }] }));
   const removeIngredient = (index) => setForm(prev => ({ ...prev, ingredients: prev.ingredients.filter((_, i) => i !== index) }));
 
-  const openNew = () => {
-    setEditing(null);
-    setForm(EMPTY_FORM);
-    setOpen(true);
-  };
+  const openNew = () => { setEditing(null); setForm(EMPTY_FORM); setOpen(true); };
 
   const openEdit = (recipe) => {
     setEditing(recipe);
@@ -55,8 +51,6 @@ export default function Recipes() {
       description: recipe.description || '',
       base_ethanol_volume: recipe.base_ethanol_volume || '',
       base_ethanol_abv: recipe.base_ethanol_abv || '',
-      target_output_abv: recipe.target_output_abv || '',
-      expected_yield_percent: recipe.expected_yield_percent || '',
       ingredients: recipe.ingredients?.length ? recipe.ingredients : [{ ...EMPTY_INGREDIENT }],
       notes: recipe.notes || '',
     });
@@ -69,8 +63,6 @@ export default function Recipes() {
         ...data,
         base_ethanol_volume: parseFloat(data.base_ethanol_volume) || 0,
         base_ethanol_abv: data.base_ethanol_abv ? parseFloat(data.base_ethanol_abv) : undefined,
-        target_output_abv: data.target_output_abv ? parseFloat(data.target_output_abv) : undefined,
-        expected_yield_percent: data.expected_yield_percent ? parseFloat(data.expected_yield_percent) : undefined,
         ingredients: data.ingredients
           .filter(i => i.name.trim())
           .map(i => ({ ...i, quantity: parseFloat(i.quantity) || 0 })),
@@ -95,11 +87,6 @@ export default function Recipes() {
       toast.success('Recipe deleted');
     },
   });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    saveMutation.mutate(form);
-  };
 
   return (
     <div className="pb-20 md:pb-0">
@@ -136,21 +123,15 @@ export default function Recipes() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-md bg-muted px-2 py-2">
+                <div className="flex gap-2 flex-wrap">
+                  <div className="rounded-md bg-muted px-3 py-2 text-center">
                     <p className="text-xs text-muted-foreground">Base Vol</p>
                     <p className="text-sm font-semibold">{recipe.base_ethanol_volume}L</p>
                   </div>
-                  {recipe.target_output_abv && (
-                    <div className="rounded-md bg-muted px-2 py-2">
-                      <p className="text-xs text-muted-foreground">Target ABV</p>
-                      <p className="text-sm font-semibold">{recipe.target_output_abv}%</p>
-                    </div>
-                  )}
-                  {recipe.expected_yield_percent && (
-                    <div className="rounded-md bg-muted px-2 py-2">
-                      <p className="text-xs text-muted-foreground">Yield</p>
-                      <p className="text-sm font-semibold">{recipe.expected_yield_percent}%</p>
+                  {recipe.base_ethanol_abv && (
+                    <div className="rounded-md bg-muted px-3 py-2 text-center">
+                      <p className="text-xs text-muted-foreground">Ethanol ABV</p>
+                      <p className="text-sm font-semibold">{recipe.base_ethanol_abv}%</p>
                     </div>
                   )}
                 </div>
@@ -180,7 +161,7 @@ export default function Recipes() {
           <DialogHeader>
             <DialogTitle className="font-display">{editing ? 'Edit Recipe' : 'New Recipe'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(form); }} className="space-y-4 mt-2">
             <div>
               <Label>Product Name</Label>
               <Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. London Dry Gin" required />
@@ -192,7 +173,7 @@ export default function Recipes() {
 
             <div className="rounded-lg border border-border p-4 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Base Recipe Parameters</p>
-              <p className="text-xs text-muted-foreground">All ingredient quantities are relative to this ethanol volume. They will auto-scale when you run a different batch size.</p>
+              <p className="text-xs text-muted-foreground">All ingredient quantities are relative to this ethanol volume and will auto-scale for different batch sizes.</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Base Ethanol Volume (L)</Label>
@@ -201,14 +182,6 @@ export default function Recipes() {
                 <div>
                   <Label>Ethanol ABV %</Label>
                   <Input type="number" step="0.1" value={form.base_ethanol_abv} onChange={e => set('base_ethanol_abv', e.target.value)} placeholder="e.g. 96" />
-                </div>
-                <div>
-                  <Label>Target Output ABV %</Label>
-                  <Input type="number" step="0.1" value={form.target_output_abv} onChange={e => set('target_output_abv', e.target.value)} placeholder="e.g. 70" />
-                </div>
-                <div>
-                  <Label>Expected Yield %</Label>
-                  <Input type="number" step="0.1" value={form.expected_yield_percent} onChange={e => set('expected_yield_percent', e.target.value)} placeholder="e.g. 85" />
                 </div>
               </div>
             </div>
