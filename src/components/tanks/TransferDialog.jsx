@@ -201,8 +201,8 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
                   <Input value={form.ethanol_lot} onChange={(e) => set('ethanol_lot', e.target.value)} />
                 </div>
                 <div className="col-span-2">
-                  <Label className="hidden">Botanical Lot #</Label>
-                  <Input value={form.botanical_lot} onChange={(e) => set('botanical_lot', e.target.value)} className="hidden" />
+                  
+                  
                 </div>
               </div>
               {lals &&
