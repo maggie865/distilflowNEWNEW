@@ -40,9 +40,12 @@ const BLANK_HEADS = {
   water_added: '',
   output_volume: '',
   target_abv: '',
+  transfer_tank_id: '',
   status: 'completed',
   notes: '',
 };
+
+const PRODUCT_TANKS = ['A', 'B', 'C', 'D'];
 
 export default function Dilutions() {
   const [openType, setOpenType] = useState(null); // 'ethanol' | 'heads'
@@ -71,6 +74,7 @@ export default function Dilutions() {
   // Filtered tank lists
   const ethanolDestTanks = tanks.filter(t => ETHANOL_TANKS.includes(t.name));
   const headsSrcTanks = tanks.filter(t => HEADS_TANKS.includes(t.name));
+  const productTanks = tanks.filter(t => PRODUCT_TANKS.includes(t.name));
 
   // --- Ethanol Dilution calcs ---
   const eInputLALs = ethanolForm.input_ethanol_volume && ethanolForm.input_abv
@@ -185,7 +189,11 @@ export default function Dilutions() {
   });
 
   const headsMutation = useMutation({
-    mutationFn: async (data) => {
+    mutationFn: async ({ data, action }) => {
+      const isTransfer = action === 'transfer';
+      const destTank = isTransfer ? tanks.find(t => t.id === data.transfer_tank_id) : null;
+      const finalStatus = isTransfer ? 'completed' : 'in_progress';
+
       await base44.entities.Dilution.create({
         batch_number: data.batch_number,
         date: data.date,
@@ -196,13 +204,12 @@ export default function Dilutions() {
         output_volume: parseFloat(hOutputVol.toFixed(3)),
         output_abv: parseFloat(hOutputABV.toFixed(2)),
         output_lals: parseFloat(hInputLALs.toFixed(4)),
-        status: data.status,
-        notes: `[Heads Dilution] Source tank: ${hSourceTank?.name || ''}. ${data.notes}`,
+        status: finalStatus,
+        notes: `[Heads Dilution] Source tank: ${hSourceTank?.name || ''}${isTransfer ? `. Transferred to Tank ${destTank?.name}` : ' (saved in-place)'}. ${data.notes}`,
       });
 
-      // Update the source tank (water was added in-place, volume increases, ABV drops)
-      if (hSourceTank && hOutputVol > 0) {
-        const newVol = Math.min(hOutputVol, hSourceTank.capacity_litres);
+      // Record water addition to source tank
+      if (hSourceTank && hWater > 0) {
         await base44.entities.TankMovement.create({
           date: data.date,
           action: 'fill',
@@ -214,20 +221,71 @@ export default function Dilutions() {
           batch_number: data.batch_number,
           notes: `Water addition for heads dilution — ${hWater.toFixed(3)}L water added`,
         });
+      }
+
+      if (isTransfer && destTank && hOutputVol > 0) {
+        // Transfer out of source tank
+        await base44.entities.TankMovement.create({
+          date: data.date,
+          action: 'transfer_out',
+          tank_name: hSourceTank.name,
+          counterpart_tank: destTank.name,
+          volume_litres: parseFloat(hOutputVol.toFixed(3)),
+          abv: parseFloat(hOutputABV.toFixed(2)),
+          lals: parseFloat(hInputLALs.toFixed(4)),
+          product: data.batch_number || hSourceTank.current_product || 'Diluted Gin',
+          batch_number: data.batch_number,
+          notes: `Transfer to Tank ${destTank.name} after heads dilution`,
+        });
+        // Transfer into destination tank
+        const newDestVol = Math.min((destTank.current_volume || 0) + hOutputVol, destTank.capacity_litres);
+        await base44.entities.TankMovement.create({
+          date: data.date,
+          action: 'transfer_in',
+          tank_name: destTank.name,
+          counterpart_tank: hSourceTank.name,
+          volume_litres: parseFloat(hOutputVol.toFixed(3)),
+          abv: parseFloat(hOutputABV.toFixed(2)),
+          lals: parseFloat(hInputLALs.toFixed(4)),
+          product: data.batch_number || 'Diluted Gin',
+          batch_number: data.batch_number,
+          notes: `Received from Tank ${hSourceTank.name} after heads dilution`,
+        });
+        // Empty source tank, fill destination
+        await Promise.all([
+          base44.entities.StorageTank.update(data.source_tank_id, {
+            current_volume: 0,
+            current_abv: 0,
+            current_product: '',
+            current_batch: '',
+            status: 'empty',
+          }),
+          base44.entities.StorageTank.update(data.transfer_tank_id, {
+            current_volume: newDestVol,
+            current_abv: parseFloat(hOutputABV.toFixed(2)),
+            current_product: data.batch_number || 'Diluted Gin',
+            current_batch: data.batch_number,
+            status: 'in_use',
+          }),
+        ]);
+      } else if (!isTransfer && hSourceTank && hOutputVol > 0) {
+        // Save in-place: update source tank with new volume/ABV
+        const newVol = Math.min(hOutputVol, hSourceTank.capacity_litres);
         await base44.entities.StorageTank.update(data.source_tank_id, {
           current_volume: newVol,
           current_abv: parseFloat(hOutputABV.toFixed(2)),
-          status: newVol > 0 ? 'in_use' : 'empty',
+          status: 'in_use',
         });
-        queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
-        queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
       }
+
+      queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+      queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
     },
-    onSuccess: () => {
+    onSuccess: (_, { action }) => {
       queryClient.invalidateQueries({ queryKey: ['dilutions'] });
       setOpenType(null);
       setHeadsForm(BLANK_HEADS);
-      toast.success('Heads dilution recorded');
+      toast.success(action === 'transfer' ? 'Heads dilution complete — product transferred' : 'Progress saved — product remains in source tank');
     },
   });
 
@@ -381,7 +439,7 @@ export default function Dilutions() {
                   Heads Dilution (Tank E / F / H)
                 </DialogTitle>
               </DialogHeader>
-              <form onSubmit={e => { e.preventDefault(); headsMutation.mutate(headsForm); }} className="space-y-4 mt-2">
+              <form onSubmit={e => e.preventDefault()} className="space-y-4 mt-2">
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -472,25 +530,62 @@ export default function Dilutions() {
                 </div>
 
                 <div>
-                  <Label>Status</Label>
-                  <Select value={headsForm.status} onValueChange={v => setH('status', v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="planned">Planned</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
                   <Label>Notes</Label>
                   <Textarea value={headsForm.notes} onChange={e => setH('notes', e.target.value)} />
                 </div>
 
-                <Button type="submit" className="w-full" disabled={headsMutation.isPending}>
-                  {headsMutation.isPending ? 'Saving...' : 'Record Heads Dilution'}
-                </Button>
+                <div className="rounded-lg border border-border p-4 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Transfer Destination (optional)</p>
+                  <div>
+                    <Label>Transfer to Tank (A, B, C or D)</Label>
+                    <Select value={headsForm.transfer_tank_id} onValueChange={v => setH('transfer_tank_id', v)}>
+                      <SelectTrigger><SelectValue placeholder="Select destination tank..." /></SelectTrigger>
+                      <SelectContent>
+                        {productTanks.length === 0
+                          ? <SelectItem value="none" disabled>No A/B/C/D tanks found</SelectItem>
+                          : productTanks.map(t => (
+                            <SelectItem key={t.id} value={t.id}>
+                              Tank {t.name} — {t.capacity_litres}L capacity
+                              {t.status === 'empty' ? ' (empty)' : ` — ${t.current_volume || 0}L in use`}
+                              {t.current_product ? ` — ${t.current_product}` : ''}
+                            </SelectItem>
+                          ))
+                        }
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {headsForm.transfer_tank_id && (() => {
+                    const dest = productTanks.find(t => t.id === headsForm.transfer_tank_id);
+                    return dest && hOutputVol > 0 ? (
+                      <p className="text-xs text-primary font-medium">
+                        Tank {dest.name} → {Math.min((dest.current_volume || 0) + hOutputVol, dest.capacity_litres).toFixed(1)}L
+                        / {dest.capacity_litres}L at {hOutputABV.toFixed(2)}% ABV
+                      </p>
+                    ) : null;
+                  })()}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={headsMutation.isPending}
+                    onClick={() => headsMutation.mutate({ data: headsForm, action: 'save' })}
+                  >
+                    {headsMutation.isPending ? 'Saving...' : '💾 Save Progress'}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={headsMutation.isPending || !headsForm.transfer_tank_id}
+                    onClick={() => headsMutation.mutate({ data: headsForm, action: 'transfer' })}
+                    className="bg-green-700 hover:bg-green-800 text-white"
+                  >
+                    {headsMutation.isPending ? 'Transferring...' : '✓ Complete & Transfer'}
+                  </Button>
+                </div>
+                {!headsForm.transfer_tank_id && (
+                  <p className="text-xs text-muted-foreground text-center -mt-2">Select a destination tank above to enable Complete & Transfer</p>
+                )}
               </form>
             </DialogContent>
           </Dialog>
