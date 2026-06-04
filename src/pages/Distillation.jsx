@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus } from 'lucide-react';
+import { Plus, Calculator } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -96,73 +96,87 @@ export default function Distillation() {
                   <Label>Product Name</Label>
                   <Input value={form.product_name} onChange={e => set('product_name', e.target.value)} required />
                 </div>
+              </div>
 
-                {/* Input */}
-                <div className="col-span-2 pt-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Input</p>
-                </div>
-                <div>
-                  <Label>Input Volume (L)</Label>
-                  <Input type="number" step="0.01" value={form.input_volume} onChange={e => set('input_volume', e.target.value)} />
-                </div>
-                <div>
-                  <Label>Input ABV %</Label>
-                  <Input type="number" step="0.1" value={form.input_abv} onChange={e => set('input_abv', e.target.value)} />
-                </div>
-
-                {/* Output */}
-                <div className="col-span-2 pt-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Output</p>
-                </div>
-                <div>
-                  <Label>Output Volume (L)</Label>
-                  <Input type="number" step="0.01" value={form.output_volume} onChange={e => set('output_volume', e.target.value)} />
-                </div>
-                <div>
-                  <Label>Output ABV %</Label>
-                  <Input type="number" step="0.1" value={form.output_abv} onChange={e => set('output_abv', e.target.value)} />
-                </div>
-                <div>
-                  <Label>Heads (L)</Label>
-                  <Input type="number" step="0.01" value={form.heads_volume} onChange={e => set('heads_volume', e.target.value)} />
-                </div>
-                <div>
-                  <Label>Tails (L)</Label>
-                  <Input type="number" step="0.01" value={form.tails_volume} onChange={e => set('tails_volume', e.target.value)} />
-                </div>
-                <div>
-                  <Label>Status</Label>
-                  <Select value={form.status} onValueChange={v => set('status', v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="planned">Planned</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Input section */}
+              <div className="rounded-lg border border-border p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Input</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label>Volume (L)</Label>
+                    <Input type="number" step="0.01" value={form.input_volume} onChange={e => set('input_volume', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>ABV %</Label>
+                    <Input type="number" step="0.1" value={form.input_abv} onChange={e => set('input_abv', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="flex items-center gap-1">
+                      LALs <Calculator className="w-3 h-3 text-primary" />
+                    </Label>
+                    <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold transition-colors ${inputLALs > 0 ? 'bg-primary/8 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
+                      {inputLALs > 0 ? inputLALs.toFixed(3) : '—'}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* LAL Preview */}
-              {(inputLALs > 0 || outputLALs > 0) && (
-                <Card className="bg-accent/50 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wider text-accent-foreground/70 mb-2">LAL Summary</p>
-                  <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div>
-                      <p className="text-muted-foreground text-xs">Input LALs</p>
-                      <p className="font-semibold">{inputLALs.toFixed(3)}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Output LALs</p>
-                      <p className="font-semibold">{outputLALs.toFixed(3)}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Yield</p>
-                      <p className="font-semibold">{inputLALs > 0 ? ((outputLALs / inputLALs) * 100).toFixed(1) : '0'}%</p>
+              {/* Output section */}
+              <div className="rounded-lg border border-border p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Output</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label>Volume (L)</Label>
+                    <Input type="number" step="0.01" value={form.output_volume} onChange={e => set('output_volume', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>ABV %</Label>
+                    <Input type="number" step="0.1" value={form.output_abv} onChange={e => set('output_abv', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="flex items-center gap-1">
+                      LALs <Calculator className="w-3 h-3 text-primary" />
+                    </Label>
+                    <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold transition-colors ${outputLALs > 0 ? 'bg-primary/8 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
+                      {outputLALs > 0 ? outputLALs.toFixed(3) : '—'}
                     </div>
                   </div>
-                </Card>
-              )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Heads (L)</Label>
+                    <Input type="number" step="0.01" value={form.heads_volume} onChange={e => set('heads_volume', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Tails (L)</Label>
+                    <Input type="number" step="0.01" value={form.tails_volume} onChange={e => set('tails_volume', e.target.value)} />
+                  </div>
+                </div>
+                {(inputLALs > 0 || outputLALs > 0) && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <Calculator className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                    <p className="text-xs text-muted-foreground">
+                      LAL yield:{' '}
+                      <span className="font-semibold text-primary">
+                        {inputLALs > 0 ? ((outputLALs / inputLALs) * 100).toFixed(1) : '0'}%
+                      </span>
+                      {' '}({outputLALs.toFixed(3)} of {inputLALs.toFixed(3)} LALs recovered)
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Label>Status</Label>
+                <Select value={form.status} onValueChange={v => set('status', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
               <div>
                 <Label>Notes</Label>

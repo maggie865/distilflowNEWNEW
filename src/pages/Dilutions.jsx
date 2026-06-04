@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus } from 'lucide-react';
+import { Plus, Calculator } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -88,52 +88,72 @@ export default function Dilutions() {
                   <Label>Date</Label>
                   <Input type="date" value={form.date} onChange={e => set('date', e.target.value)} required />
                 </div>
-                <div>
-                  <Label>Ethanol Volume (L)</Label>
-                  <Input type="number" step="0.01" value={form.input_ethanol_volume} onChange={e => set('input_ethanol_volume', e.target.value)} required />
-                </div>
-                <div>
-                  <Label>Input ABV %</Label>
-                  <Input type="number" step="0.1" value={form.input_abv} onChange={e => set('input_abv', e.target.value)} required />
-                </div>
-                <div>
-                  <Label>Water Added (L)</Label>
-                  <Input type="number" step="0.01" value={form.water_added} onChange={e => set('water_added', e.target.value)} />
-                </div>
-                <div>
-                  <Label>Status</Label>
-                  <Select value={form.status} onValueChange={v => set('status', v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="planned">Planned</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
+              </div>
+
+              {/* Input section */}
+              <div className="rounded-lg border border-border p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Input Ethanol</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label>Volume (L)</Label>
+                    <Input type="number" step="0.01" value={form.input_ethanol_volume} onChange={e => set('input_ethanol_volume', e.target.value)} required />
+                  </div>
+                  <div>
+                    <Label>ABV %</Label>
+                    <Input type="number" step="0.1" value={form.input_abv} onChange={e => set('input_abv', e.target.value)} required />
+                  </div>
+                  <div>
+                    <Label className="flex items-center gap-1">
+                      LALs <Calculator className="w-3 h-3 text-primary" />
+                    </Label>
+                    <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold transition-colors ${inputLALs > 0 ? 'bg-primary/8 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
+                      {inputLALs > 0 ? inputLALs.toFixed(3) : '—'}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* LAL Calculator Preview */}
-              {form.input_ethanol_volume && form.input_abv && (
-                <Card className="bg-accent/50 p-4 space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-wider text-accent-foreground/70">Calculation Preview</p>
-                  <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div>
-                      <p className="text-muted-foreground text-xs">Input LALs</p>
-                      <p className="font-semibold">{inputLALs.toFixed(3)}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Output Vol</p>
-                      <p className="font-semibold">{outputVolume.toFixed(2)}L</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Output ABV</p>
-                      <p className="font-semibold">{outputABV.toFixed(2)}%</p>
+              {/* Water + output */}
+              <div className="rounded-lg border border-border p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Dilution & Output</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label>Water Added (L)</Label>
+                    <Input type="number" step="0.01" value={form.water_added} onChange={e => set('water_added', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Output Vol (L)</Label>
+                    <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold transition-colors ${outputVolume > 0 ? 'bg-primary/8 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
+                      {outputVolume > 0 ? outputVolume.toFixed(2) : '—'}
                     </div>
                   </div>
-                  <p className="text-xs text-muted-foreground italic">LALs conserved: {outputLALs.toFixed(3)}</p>
-                </Card>
-              )}
+                  <div>
+                    <Label>Output ABV %</Label>
+                    <div className={`h-9 flex items-center px-3 rounded-md border text-sm font-semibold transition-colors ${outputABV > 0 ? 'bg-primary/8 border-primary/30 text-primary' : 'bg-muted border-input text-muted-foreground'}`}>
+                      {outputABV > 0 ? outputABV.toFixed(2) : '—'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <Calculator className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                  <p className="text-xs text-muted-foreground">
+                    LALs are <span className="font-medium text-foreground">conserved</span> through dilution —
+                    Output LALs = <span className="font-semibold text-primary">{inputLALs > 0 ? inputLALs.toFixed(3) : '—'}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <Label>Status</Label>
+                <Select value={form.status} onValueChange={v => set('status', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
               <div>
                 <Label>Notes</Label>
