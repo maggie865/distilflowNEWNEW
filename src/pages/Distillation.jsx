@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Calculator } from 'lucide-react';
+import { Plus, Calculator, FlaskConical } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -17,6 +17,8 @@ import StatusBadge from '@/components/shared/StatusBadge';
 
 export default function Distillation() {
   const [open, setOpen] = useState(false);
+  const [selectedRecipe, setSelectedRecipe] = useState(null);
+  const [scaledIngredients, setScaledIngredients] = useState([]);
   const [form, setForm] = useState({
     batch_number: '', date: new Date().toISOString().split('T')[0],
     product_name: '', input_volume: '', input_abv: '',
@@ -26,10 +28,55 @@ export default function Distillation() {
   });
   const queryClient = useQueryClient();
 
+  const { data: recipes = [] } = useQuery({
+    queryKey: ['recipes'],
+    queryFn: () => base44.entities.Recipe.list('name', 50),
+  });
+
   const { data: runs = [], isLoading } = useQuery({
     queryKey: ['distillationRuns'],
     queryFn: () => base44.entities.DistillationRun.list('-date', 50),
   });
+
+  const handleRecipeSelect = (recipeId) => {
+    const recipe = recipes.find(r => r.id === recipeId);
+    if (!recipe) { setSelectedRecipe(null); setScaledIngredients([]); return; }
+    setSelectedRecipe(recipe);
+    setForm(prev => ({
+      ...prev,
+      product_name: recipe.name,
+      input_abv: recipe.base_ethanol_abv ? String(recipe.base_ethanol_abv) : prev.input_abv,
+      output_abv: recipe.target_output_abv ? String(recipe.target_output_abv) : prev.output_abv,
+    }));
+    // Scale ingredients if volume is already set
+    if (form.input_volume && recipe.base_ethanol_volume) {
+      scaleIngredients(recipe, parseFloat(form.input_volume));
+    }
+  };
+
+  const scaleIngredients = (recipe, actualVolume) => {
+    if (!recipe?.ingredients?.length || !actualVolume || !recipe.base_ethanol_volume) {
+      setScaledIngredients([]);
+      return;
+    }
+    const ratio = actualVolume / recipe.base_ethanol_volume;
+    setScaledIngredients(recipe.ingredients.map(ing => ({
+      ...ing,
+      scaledQuantity: (ing.quantity * ratio).toFixed(2),
+    })));
+  };
+
+  const handleVolumeChange = (value) => {
+    set('input_volume', value);
+    if (selectedRecipe && value) {
+      scaleIngredients(selectedRecipe, parseFloat(value));
+      if (selectedRecipe.expected_yield_percent) {
+        const estimatedOutput = (parseFloat(value) * selectedRecipe.expected_yield_percent / 100).toFixed(2);
+        setForm(prev => ({ ...prev, input_volume: value, output_volume: estimatedOutput }));
+        return;
+      }
+    }
+  };
 
   const inputLALs = form.input_volume && form.input_abv
     ? parseFloat(form.input_volume) * parseFloat(form.input_abv) / 100 : 0;
@@ -83,6 +130,19 @@ export default function Distillation() {
               <DialogTitle className="font-display">Record Distillation Run</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+              {recipes.length > 0 && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
+                  <Label className="flex items-center gap-1.5 text-primary">
+                    <FlaskConical className="w-3.5 h-3.5" />Load from Recipe
+                  </Label>
+                  <Select value={selectedRecipe?.id || ''} onValueChange={handleRecipeSelect}>
+                    <SelectTrigger><SelectValue placeholder="Select a recipe to pre-fill…" /></SelectTrigger>
+                    <SelectContent>
+                      {recipes.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Batch Number</Label>
@@ -104,7 +164,7 @@ export default function Distillation() {
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <Label>Volume (L)</Label>
-                    <Input type="number" step="0.01" value={form.input_volume} onChange={e => set('input_volume', e.target.value)} />
+                    <Input type="number" step="0.01" value={form.input_volume} onChange={e => handleVolumeChange(e.target.value)} />
                   </div>
                   <div>
                     <Label>ABV %</Label>
@@ -120,6 +180,28 @@ export default function Distillation() {
                   </div>
                 </div>
               </div>
+
+              {/* Scaled ingredients */}
+              {scaledIngredients.length > 0 && (
+                <div className="rounded-lg border border-border p-4 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <FlaskConical className="w-3.5 h-3.5 text-primary" />
+                    Scaled Botanicals for {form.input_volume}L
+                  </p>
+                  <div className="space-y-1">
+                    {scaledIngredients.map((ing, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm py-1 border-b border-border/50 last:border-0">
+                        <span>{ing.name}</span>
+                        <span className="font-semibold text-primary">{ing.scaledQuantity} {ing.unit}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Scaled from {selectedRecipe.base_ethanol_volume}L base recipe
+                    {' '}(×{(parseFloat(form.input_volume) / selectedRecipe.base_ethanol_volume).toFixed(3)})
+                  </p>
+                </div>
+              )}
 
               {/* Output section */}
               <div className="rounded-lg border border-border p-4 space-y-3">

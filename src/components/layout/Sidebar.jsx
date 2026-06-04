@@ -9,6 +9,7 @@ import {
   Package,
   GitBranch,
   Cylinder,
+  FlaskConical,
   ChevronLeft,
   ChevronRight } from
 'lucide-react';
@@ -20,6 +21,7 @@ const navItems = [
 { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
 { label: 'Dilutions', icon: Droplets, path: '/dilutions' },
 { label: 'Distillation', icon: Flame, path: '/distillation' },
+{ label: 'Recipes', icon: FlaskConical, path: '/recipes' },
 { label: 'Bottling', icon: Wine, path: '/bottling' },
 { label: "Tanks", icon: Cylinder, path: '/tanks' },
 { label: 'Batch Tracker', icon: GitBranch, path: '/batch-tracker' },
