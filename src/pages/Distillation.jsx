@@ -37,8 +37,6 @@ export default function Distillation() {
   const [editing, setEditing] = useState(null);
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [runToComplete, setRunToComplete] = useState(null);
-  const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
-  const [headsDestination, setHeadsDestination] = useState('');
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [scaledIngredients, setScaledIngredients] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -68,12 +66,7 @@ export default function Distillation() {
     queryFn: () => base44.entities.DistillationRun.list('-date', 50),
   });
 
-  const { data: storageTanks = [] } = useQuery({
-    queryKey: ['storageTanks'],
-    queryFn: () => base44.entities.StorageTank.list('name', 50),
-  });
 
-  const macerationTanks = storageTanks.filter(t => t.purpose === 'maceration_dilution');
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -597,8 +590,8 @@ export default function Distillation() {
                     e.preventDefault();
                     updateMutation.mutate(form, {
                       onSuccess: () => {
-                        setHeadsDestination('');
-                        setConfirmCompleteOpen(true);
+                        setRunToComplete({ ...editing, ...buildPayload(form) });
+                        setCompleteDialogOpen(true);
                       }
                     });
                   }}
@@ -611,83 +604,7 @@ export default function Distillation() {
         </DialogContent>
       </Dialog>
 
-      {/* Confirm Complete Still Run dialog */}
-      <Dialog open={confirmCompleteOpen} onOpenChange={setConfirmCompleteOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-display">Complete Still Run</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div>
-              <Label>Transfer Heads to Maceration/Dilution Tank</Label>
-              <Select value={headsDestination} onValueChange={setHeadsDestination}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Select destination…" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ibc_heads_tails">IBC — Heads &amp; Tails Tank</SelectItem>
-                  {macerationTanks.map(t => (
-                    <SelectItem key={t.id} value={t.name}>
-                      Tank {t.name}
-                      {t.current_product && <span className="text-muted-foreground ml-2 text-xs">— {t.current_product}</span>}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
-            <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Heads</span>
-                <span className="font-medium">{form.heads_volume || 0}L @ {form.heads_abv || 0}% ABV</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Tails</span>
-                <span className="font-medium">{form.tails_volume || 0}L @ {form.tails_abv || 0}% ABV → auto-sent to IBC</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Dumped</span>
-                <span className="font-medium">{form.dumped_volume || 0}L → recorded to Wastage Report</span>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setConfirmCompleteOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                disabled={!headsDestination || isPending}
-                onClick={async () => {
-                  await base44.entities.DistillationRun.update(editing.id, {
-                    ...buildPayload(form),
-                    status: 'completed',
-                    heads_destination: headsDestination,
-                  });
-                  if (dumpedVolume > 0 || autoDumpedLALs > 0) {
-                    await base44.entities.WastageRecord.create({
-                      date: form.date,
-                      batch_number: form.batch_number,
-                      product_name: form.product_name,
-                      volume: dumpedVolume,
-                      abv: dumped_abv,
-                      lals: autoDumpedLALs,
-                      reason: form.dumped_notes || 'Distillation waste — heads/tails/dumped',
-                      source: 'distillation',
-                      run_id: editing.id,
-                    });
-                  }
-                  queryClient.invalidateQueries({ queryKey: ['distillationRuns'] });
-                  queryClient.invalidateQueries({ queryKey: ['wastageRecords'] });
-                  toast.success('Still run completed — wastage recorded');
-                  setConfirmCompleteOpen(false);
-                  setOpen(false);
-                }}
-              >
-                Confirm &amp; Complete
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
