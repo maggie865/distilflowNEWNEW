@@ -1,13 +1,13 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, PackagePlus, Droplets, Flame, Wine, Warehouse } from 'lucide-react';
+import { LayoutDashboard, PackagePlus, Droplets, Flame, Wine, Package, Warehouse } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { label: 'Home', icon: LayoutDashboard, path: '/' },
   { label: 'Receive', icon: PackagePlus, path: '/receiving' },
-  { label: 'Dilute', icon: Droplets, path: '/dilutions' },
   { label: 'Distill', icon: Flame, path: '/distillation' },
   { label: 'Bottle', icon: Wine, path: '/bottling' },
+  { label: 'Materials', icon: Package, path: '/raw-materials' },
   { label: 'Stock', icon: Warehouse, path: '/inventory' },
 ];
 

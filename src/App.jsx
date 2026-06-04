@@ -17,6 +17,7 @@ import Dilutions from '@/pages/Dilutions';
 import Distillation from '@/pages/Distillation';
 import Bottling from '@/pages/Bottling';
 import Inventory from '@/pages/Inventory';
+import RawMaterials from '@/pages/RawMaterials';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -52,6 +53,7 @@ const AuthenticatedApp = () => {
           <Route path="/distillation" element={<Distillation />} />
           <Route path="/bottling" element={<Bottling />} />
           <Route path="/inventory" element={<Inventory />} />
+          <Route path="/raw-materials" element={<RawMaterials />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />
