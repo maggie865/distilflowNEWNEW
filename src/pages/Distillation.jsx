@@ -12,10 +12,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Plus, Calculator, FlaskConical, AlertTriangle, CheckCircle2, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import CompleteDistillationDialog from '@/components/distillation/CompleteDistillationDialog';
 import CreateBatchDialog from '@/components/distillation/CreateBatchDialog';
+import BatchManagement from '@/components/distillation/BatchManagement';
 
 const EMPTY_FORM = {
   batch_number: '', date: new Date().toISOString().split('T')[0],
@@ -232,9 +234,22 @@ export default function Distillation() {
 
   return (
     <div className="pb-20 md:pb-0">
-      <PageHeader title="Distillation" subtitle="Manage distillation runs">
-        <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" />New Run</Button>
-      </PageHeader>
+      <PageHeader title="Distillation" subtitle="Manage distillation runs and batches" />
+
+      <Tabs defaultValue="runs" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="runs">Distillation Runs</TabsTrigger>
+          <TabsTrigger value="batches">Batch Management</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="batches">
+          <BatchManagement />
+        </TabsContent>
+
+        <TabsContent value="runs" className="space-y-4">
+          <div className="flex justify-end">
+            <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" />New Run</Button>
+          </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
@@ -675,6 +690,9 @@ export default function Distillation() {
           if (batch.product_name && !form.product_name) set('product_name', batch.product_name);
         }}
       />
+
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

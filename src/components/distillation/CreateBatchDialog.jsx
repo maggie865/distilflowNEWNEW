@@ -29,7 +29,7 @@ export default function CreateBatchDialog({ open, onOpenChange, onCreated }) {
       batch_code: data.batch_code.toUpperCase(),
       product_name: data.product_name,
       date_started: data.date_started,
-      status: 'in_progress',
+      status: 'in_progress', // default on create
       target_volume: data.target_volume ? parseFloat(data.target_volume) : undefined,
       target_abv: data.target_abv ? parseFloat(data.target_abv) : undefined,
       notes: data.notes,

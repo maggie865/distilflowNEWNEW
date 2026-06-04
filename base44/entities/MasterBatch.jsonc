@@ -26,7 +26,10 @@
         "in_progress",
         "diluting",
         "holding",
+        "bottle_ready",
         "bottling",
+        "bottled",
+        "sold",
         "completed"
       ],
       "default": "in_progress",
