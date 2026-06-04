@@ -133,10 +133,12 @@ export default function Dilutions() {
   // --- Mutations ---
   const ethanolMutation = useMutation({
     mutationFn: async (data) => {
-      const sourceName = receivings.find(r => r.id === data.source_id)?.batch_number || '';
+      const sourceRec = receivings.find(r => r.id === data.source_id);
+      const lotCode = sourceRec?.batch_number || '';
+      const materialName = sourceRec?.material_name || 'Ethanol';
 
       await base44.entities.Dilution.create({
-        batch_number: sourceName || 'Ethanol Dilution',
+        batch_number: lotCode || 'Ethanol Dilution',
         date: data.date,
         input_ethanol_volume: parseFloat(data.input_ethanol_volume),
         input_abv: parseFloat(data.input_abv),
@@ -146,7 +148,7 @@ export default function Dilutions() {
         output_abv: parseFloat(eOutputABV.toFixed(2)),
         output_lals: parseFloat(eInputLALs.toFixed(4)),
         status: data.status,
-        notes: `[Ethanol Dilution] Source lot: ${sourceName}. ${data.notes}`,
+        notes: `[Ethanol Dilution] Lot code: ${lotCode}. Material: ${materialName}. ${data.notes}`,
       });
 
       if (data.tank_id && eSelectedTank) {
@@ -158,15 +160,16 @@ export default function Dilutions() {
           volume_litres: eOutputVol,
           abv: parseFloat(eOutputABV.toFixed(2)),
           lals: parseFloat(eInputLALs.toFixed(4)),
-          product: sourceName || 'Ethanol Dilution',
-          batch_number: sourceName,
-          notes: `Ethanol dilution — source: Receiving lot ${sourceName}`,
+          product: materialName,
+          batch_number: lotCode,
+          ethanol_lot: lotCode,
+          notes: `Ethanol dilution to proofing strength — lot code: ${lotCode}`,
         });
         await base44.entities.StorageTank.update(data.tank_id, {
           current_volume: newVol,
           current_abv: parseFloat(eOutputABV.toFixed(2)),
-          current_product: sourceName || eSelectedTank.current_product,
-          current_batch: sourceName,
+          current_product: materialName,
+          current_batch: lotCode,
           status: 'in_use',
         });
         queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
@@ -265,18 +268,28 @@ export default function Dilutions() {
                 <div className="rounded-lg border border-border p-4 space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ethanol Source (Received)</p>
                   <div>
-                    <Label>Select Receiving Lot</Label>
+                    <Label>Select Ethanol Lot Code</Label>
                     <Select value={ethanolForm.source_id} onValueChange={handleEthanolSourceChange}>
-                      <SelectTrigger><SelectValue placeholder="Choose a received ethanol lot..." /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Choose an ethanol lot code..." /></SelectTrigger>
                       <SelectContent>
                         {receivings.map(r => (
                           <SelectItem key={r.id} value={r.id}>
-                            {r.material_name} — Lot: {r.batch_number || 'N/A'} ({r.quantity}{r.unit}, {r.abv_percent}% ABV) — {r.date_received}
+                            <span className="font-semibold">{r.batch_number || 'No lot code'}</span>
+                            {' — '}{r.material_name} ({r.quantity}{r.unit} @ {r.abv_percent}% ABV) — {r.date_received}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
+                  {ethanolForm.source_id && (() => {
+                    const rec = receivings.find(r => r.id === ethanolForm.source_id);
+                    return rec?.batch_number ? (
+                      <p className="text-xs font-semibold text-primary flex items-center gap-1">
+                        Lot Code: <span className="font-mono bg-primary/10 px-2 py-0.5 rounded">{rec.batch_number}</span>
+                        {rec.supplier ? <span className="text-muted-foreground font-normal ml-1">— {rec.supplier}</span> : null}
+                      </p>
+                    ) : null;
+                  })()}
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <Label>Volume (L)</Label>
@@ -490,7 +503,7 @@ export default function Dilutions() {
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Batch #</TableHead>
+                <TableHead>Lot / Batch</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Input Vol (L)</TableHead>
                 <TableHead>Input ABV</TableHead>
@@ -512,7 +525,15 @@ export default function Dilutions() {
                 return (
                   <TableRow key={d.id}>
                     <TableCell className="text-sm">{d.date ? format(new Date(d.date), 'MMM d, yyyy') : '—'}</TableCell>
-                    <TableCell className="font-medium text-sm">{d.batch_number}</TableCell>
+                    <TableCell className="text-sm">
+                      {isHeads ? (
+                        <span className="font-medium">{d.batch_number}</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 font-mono text-xs bg-amber-50 border border-amber-200 text-amber-800 px-2 py-0.5 rounded">
+                          {d.batch_number || '—'}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${isHeads ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
                         {isHeads ? <Droplets className="w-3 h-3" /> : <FlaskConical className="w-3 h-3" />}
