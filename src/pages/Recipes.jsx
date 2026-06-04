@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, FlaskConical, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -28,6 +29,18 @@ export default function Recipes() {
     queryKey: ['recipes'],
     queryFn: () => base44.entities.Recipe.list('name', 50),
   });
+
+  const { data: rawMaterials = [] } = useQuery({
+    queryKey: ['rawMaterials'],
+    queryFn: () => base44.entities.RawMaterial.list('name', 500),
+  });
+
+  // Unique material names from stock (excluding ethanol/water)
+  const stockIngredients = [...new Map(
+    rawMaterials
+      .filter(m => m.type !== 'ethanol' && m.type !== 'water')
+      .map(m => [m.name, m])
+  ).values()].sort((a, b) => a.name.localeCompare(b.name));
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -197,7 +210,31 @@ export default function Recipes() {
                 <div key={i} className="grid grid-cols-[1fr_80px_60px_auto] gap-2 items-end">
                   <div>
                     {i === 0 && <Label className="text-xs">Ingredient</Label>}
-                    <Input value={ing.name} onChange={e => setIngredient(i, 'name', e.target.value)} placeholder="e.g. Juniper" />
+                    <Select
+                      value={ing.name}
+                      onValueChange={val => {
+                        const match = stockIngredients.find(m => m.name === val);
+                        setIngredient(i, 'name', val);
+                        if (match?.unit) setIngredient(i, 'unit', match.unit);
+                      }}
+                    >
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Select from stock…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {stockIngredients.map(m => (
+                          <SelectItem key={m.id} value={m.name}>
+                            <span>{m.name}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              ({m.quantity} {m.unit} in stock)
+                            </span>
+                          </SelectItem>
+                        ))}
+                        {stockIngredients.length === 0 && (
+                          <div className="px-2 py-3 text-xs text-muted-foreground text-center">No stock items found</div>
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     {i === 0 && <Label className="text-xs">Qty</Label>}
