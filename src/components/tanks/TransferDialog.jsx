@@ -10,12 +10,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 
 const ACTIONS = [
-  { value: 'fill', label: 'Fill (incoming product)' },
-  { value: 'transfer_out', label: 'Transfer out to another tank' },
-  { value: 'bottling_draw', label: 'Bottling draw (removing for bottling)' },
-  { value: 'empty', label: 'Empty (drain / discard)' },
-  { value: 'cleaning', label: 'Mark as Cleaning' },
-];
+{ value: 'fill', label: 'Fill (incoming product)' },
+{ value: 'transfer_out', label: 'Transfer out to another tank' },
+{ value: 'bottling_draw', label: 'Bottling draw (removing for bottling)' },
+{ value: 'empty', label: 'Empty (drain / discard)' },
+{ value: 'cleaning', label: 'Mark as Cleaning' }];
+
 
 export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
   const queryClient = useQueryClient();
@@ -32,14 +32,14 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
     botanical_lot: '',
     counterpart_tank: '',
     operator: '',
-    notes: '',
+    notes: ''
   });
 
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
-  const lals = form.volume_litres && form.abv
-    ? (parseFloat(form.volume_litres) * parseFloat(form.abv) / 100).toFixed(3)
-    : null;
+  const lals = form.volume_litres && form.abv ?
+  (parseFloat(form.volume_litres) * parseFloat(form.abv) / 100).toFixed(3) :
+  null;
 
   const mutation = useMutation({
     mutationFn: async (f) => {
@@ -65,7 +65,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
         ethanol_lot: f.ethanol_lot,
         botanical_lot: f.botanical_lot,
         operator: f.operator,
-        notes: f.notes,
+        notes: f.notes
       });
 
       // Update source tank
@@ -85,14 +85,14 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
       await base44.entities.StorageTank.update(tank.id, {
         current_volume: newVol,
         status: newStatus,
-        current_product: (isFill && f.product) ? f.product : tank.current_product,
-        current_batch: (isFill && f.batch_number) ? f.batch_number : tank.current_batch,
-        current_abv: (isFill && abv) ? abv : tank.current_abv,
+        current_product: isFill && f.product ? f.product : tank.current_product,
+        current_batch: isFill && f.batch_number ? f.batch_number : tank.current_batch,
+        current_abv: isFill && abv ? abv : tank.current_abv
       });
 
       // If transferring out, also fill the destination tank
       if (isTransferOut && f.counterpart_tank) {
-        const dest = allTanks.find(t => t.name === f.counterpart_tank);
+        const dest = allTanks.find((t) => t.name === f.counterpart_tank);
         if (dest) {
           await base44.entities.TankMovement.create({
             date: f.date,
@@ -107,7 +107,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
             ethanol_lot: f.ethanol_lot,
             botanical_lot: f.botanical_lot,
             operator: f.operator,
-            notes: f.notes,
+            notes: f.notes
           });
 
           const destNewVol = Math.min((dest.current_volume || 0) + vol, dest.capacity_litres);
@@ -116,7 +116,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
             status: 'in_use',
             current_product: f.product || tank.current_product,
             current_batch: f.batch_number || tank.current_batch,
-            current_abv: abv || tank.current_abv,
+            current_abv: abv || tank.current_abv
           });
         }
       }
@@ -127,7 +127,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
       toast.success('Tank updated successfully');
       onOpenChange(false);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(e.message)
   });
 
   const handleSubmit = (e) => {
@@ -135,7 +135,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
     mutation.mutate(form);
   };
 
-  const otherTanks = allTanks.filter(t => t.id !== tank?.id);
+  const otherTanks = allTanks.filter((t) => t.id !== tank?.id);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -147,77 +147,77 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Label>Action</Label>
-              <Select value={form.action} onValueChange={v => set('action', v)}>
+              <Select value={form.action} onValueChange={(v) => set('action', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {ACTIONS.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+                  {ACTIONS.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div>
               <Label>Date</Label>
-              <Input type="date" value={form.date} onChange={e => set('date', e.target.value)} required />
+              <Input type="date" value={form.date} onChange={(e) => set('date', e.target.value)} required />
             </div>
-            {form.action !== 'cleaning' && (
-              <div>
+            {form.action !== 'cleaning' &&
+            <div>
                 <Label>Volume (L)</Label>
-                <Input type="number" step="0.1" value={form.volume_litres} onChange={e => set('volume_litres', e.target.value)} required />
+                <Input type="number" step="0.1" value={form.volume_litres} onChange={(e) => set('volume_litres', e.target.value)} required />
               </div>
-            )}
+            }
           </div>
 
-          {form.action === 'transfer_out' && (
-            <div>
+          {form.action === 'transfer_out' &&
+          <div>
               <Label>Destination Tank</Label>
-              <Select value={form.counterpart_tank} onValueChange={v => set('counterpart_tank', v)}>
+              <Select value={form.counterpart_tank} onValueChange={(v) => set('counterpart_tank', v)}>
                 <SelectTrigger><SelectValue placeholder="Select destination..." /></SelectTrigger>
                 <SelectContent>
-                  {otherTanks.map(t => (
-                    <SelectItem key={t.id} value={t.name}>Tank {t.name} ({t.capacity_litres}L)</SelectItem>
-                  ))}
+                  {otherTanks.map((t) =>
+                <SelectItem key={t.id} value={t.name}>Tank {t.name} ({t.capacity_litres}L)</SelectItem>
+                )}
                 </SelectContent>
               </Select>
             </div>
-          )}
+          }
 
-          {form.action !== 'cleaning' && (
-            <div className="rounded-lg border border-border p-3 space-y-3">
+          {form.action !== 'cleaning' &&
+          <div className="rounded-lg border border-border p-3 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Product Details</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Product Name</Label>
-                  <Input value={form.product} onChange={e => set('product', e.target.value)} placeholder={tank?.current_product} />
+                  <Input value={form.product} onChange={(e) => set('product', e.target.value)} placeholder={tank?.current_product} />
                 </div>
                 <div>
                   <Label>ABV %</Label>
-                  <Input type="number" step="0.1" value={form.abv} onChange={e => set('abv', e.target.value)} />
+                  <Input type="number" step="0.1" value={form.abv} onChange={(e) => set('abv', e.target.value)} />
                 </div>
                 <div>
                   <Label>Batch Number</Label>
-                  <Input value={form.batch_number} onChange={e => set('batch_number', e.target.value)} />
+                  <Input value={form.batch_number} onChange={(e) => set('batch_number', e.target.value)} />
                 </div>
                 <div>
                   <Label>Ethanol Lot #</Label>
-                  <Input value={form.ethanol_lot} onChange={e => set('ethanol_lot', e.target.value)} />
+                  <Input value={form.ethanol_lot} onChange={(e) => set('ethanol_lot', e.target.value)} />
                 </div>
                 <div className="col-span-2">
-                  <Label>Botanical Lot #</Label>
-                  <Input value={form.botanical_lot} onChange={e => set('botanical_lot', e.target.value)} />
+                  <Label className="hidden">Botanical Lot #</Label>
+                  <Input value={form.botanical_lot} onChange={(e) => set('botanical_lot', e.target.value)} className="hidden" />
                 </div>
               </div>
-              {lals && (
-                <p className="text-xs text-primary font-medium">LALs moved: {lals}</p>
-              )}
+              {lals &&
+            <p className="text-xs text-primary font-medium">LALs moved: {lals}</p>
+            }
             </div>
-          )}
+          }
 
           <div>
             <Label>Operator</Label>
-            <Input value={form.operator} onChange={e => set('operator', e.target.value)} placeholder="Your name" />
+            <Input value={form.operator} onChange={(e) => set('operator', e.target.value)} placeholder="Your name" />
           </div>
           <div>
             <Label>Notes</Label>
-            <Textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} />
+            <Textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} />
           </div>
 
           <Button type="submit" className="w-full" disabled={mutation.isPending}>
@@ -225,6 +225,6 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
           </Button>
         </form>
       </DialogContent>
-    </Dialog>
-  );
+    </Dialog>);
+
 }
