@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ChevronDown, ChevronRight, FlaskConical, Package, Pencil, Calendar } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, FlaskConical, Package, Pencil, Calendar, Layers } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import CreateBatchDialog from './CreateBatchDialog';
@@ -122,23 +122,19 @@ function EditBatchDialog({ batch, open, onOpenChange }) {
   );
 }
 
-function BatchCard({ batch, runs }) {
+function BatchCard({ batch, runs, subBatchRecords }) {
   const [expanded, setExpanded] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
-  // All distillation runs for this master batch
+  // Sub-batch records created via the create dialog
+  const plannedSubBatches = subBatchRecords.filter(sb => sb.master_batch_id === batch.id);
+
+  // Distillation runs linked by batch_code
   const batchRuns = runs.filter(r => r.batch_number === batch.batch_code);
 
-  // Aggregate stats across runs
+  // Aggregate stats across distillation runs
   const totalHeartsVol = batchRuns.reduce((s, r) => s + (r.hearts_volume || 0), 0);
   const totalOutputLALs = batchRuns.reduce((s, r) => s + (r.output_lals || 0), 0);
-
-  // Collect unique botanicals and ethanol lots from maceration notes (stored as free text)
-  // We surface the batch_number of each run as the "sub-batch" identifier
-  const subBatches = batchRuns.map((r, i) => ({
-    ...r,
-    sub_label: batchRuns.length > 1 ? `${batch.batch_code}-R${i + 1}` : batch.batch_code,
-  }));
 
   return (
     <Card className="overflow-hidden">
@@ -177,26 +173,70 @@ function BatchCard({ batch, runs }) {
         </Button>
       </div>
 
-      {/* Expanded sub-batch detail */}
+      {/* Expanded detail */}
       {expanded && (
-        <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
-          {subBatches.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic">No distillation runs recorded yet for this batch.</p>
-          ) : (
-            <div className="space-y-3">
-              {subBatches.map((run) => (
-                <div key={run.id} className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+        <div className="border-t border-border px-4 pb-4 pt-3 space-y-4">
+
+          {/* Planned Sub-Batches (from SubBatch entity) */}
+          {plannedSubBatches.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5" />Planned Sub-Batches
+              </p>
+              {plannedSubBatches.map((sb) => (
+                <div key={sb.id} className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <FlaskConical className="w-4 h-4 text-primary" />
-                      <span className="font-mono text-sm font-semibold">{run.sub_label}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {run.date ? format(new Date(run.date), 'MMM d, yyyy') : '—'}
-                      </span>
+                      <span className="font-mono text-sm font-semibold">{sb.sub_batch_code}</span>
+                      {sb.date && <span className="text-xs text-muted-foreground">{format(new Date(sb.date), 'MMM d, yyyy')}</span>}
+                    </div>
+                    <StageBadge status={sb.status} />
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                    <div>
+                      <p className="text-muted-foreground">Input</p>
+                      <p className="font-medium">{sb.input_volume ? `${sb.input_volume}L @ ${sb.input_abv}%` : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Maceration Date</p>
+                      <p className="font-medium">{sb.maceration_date ? format(new Date(sb.maceration_date), 'MMM d, yyyy') : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Ethanol Lot</p>
+                      <p className="font-medium font-mono">{sb.ethanol_lot || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Botanical Lot(s)</p>
+                      <p className="font-medium font-mono">{sb.botanical_lots || '—'}</p>
+                    </div>
+                  </div>
+                  {sb.maceration_notes && (
+                    <div className="text-xs border-t border-primary/10 pt-2">
+                      <p className="text-muted-foreground font-medium mb-0.5">Maceration Notes</p>
+                      <p className="whitespace-pre-wrap">{sb.maceration_notes}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Completed Distillation Runs */}
+          {batchRuns.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <FlaskConical className="w-3.5 h-3.5" />Distillation Runs
+              </p>
+              {batchRuns.map((run, i) => (
+                <div key={run.id} className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-semibold">{batch.batch_code}-R{i + 1}</span>
+                      {run.date && <span className="text-xs text-muted-foreground">{format(new Date(run.date), 'MMM d, yyyy')}</span>}
                     </div>
                     <StageBadge status={run.status} />
                   </div>
-
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                     <div>
                       <p className="text-muted-foreground">Input</p>
@@ -215,12 +255,10 @@ function BatchCard({ batch, runs }) {
                       <p className="font-medium">{run.maceration_date ? format(new Date(run.maceration_date), 'MMM d, yyyy') : '—'}</p>
                     </div>
                   </div>
-
-                  {/* Botanicals & Ethanol lots from maceration notes */}
                   {run.maceration_notes && (
                     <div className="text-xs border-t border-border/50 pt-2">
                       <p className="text-muted-foreground font-medium mb-0.5">Maceration Notes</p>
-                      <p className="text-foreground whitespace-pre-wrap">{run.maceration_notes}</p>
+                      <p className="whitespace-pre-wrap">{run.maceration_notes}</p>
                     </div>
                   )}
                 </div>
@@ -228,25 +266,19 @@ function BatchCard({ batch, runs }) {
             </div>
           )}
 
+          {plannedSubBatches.length === 0 && batchRuns.length === 0 && (
+            <p className="text-sm text-muted-foreground italic">No sub-batches or distillation runs yet.</p>
+          )}
+
           {/* Batch totals */}
           {batchRuns.length > 1 && (
             <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 grid grid-cols-3 gap-3 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">Total Runs</p>
-                <p className="font-semibold">{batchRuns.length}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Total Hearts (L)</p>
-                <p className="font-semibold text-emerald-700">{totalHeartsVol.toFixed(2)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Total Output LALs</p>
-                <p className="font-semibold text-primary">{totalOutputLALs.toFixed(3)}</p>
-              </div>
+              <div><p className="text-xs text-muted-foreground">Total Runs</p><p className="font-semibold">{batchRuns.length}</p></div>
+              <div><p className="text-xs text-muted-foreground">Total Hearts (L)</p><p className="font-semibold text-emerald-700">{totalHeartsVol.toFixed(2)}</p></div>
+              <div><p className="text-xs text-muted-foreground">Total Output LALs</p><p className="font-semibold text-primary">{totalOutputLALs.toFixed(3)}</p></div>
             </div>
           )}
 
-          {/* Batch-level notes */}
           {batch.notes && (
             <div className="text-xs text-muted-foreground border-t border-border/50 pt-2">
               <span className="font-medium">Batch Notes: </span>{batch.notes}
@@ -272,6 +304,11 @@ export default function BatchManagement() {
   const { data: runs = [] } = useQuery({
     queryKey: ['distillationRuns'],
     queryFn: () => base44.entities.DistillationRun.list('-date', 200),
+  });
+
+  const { data: subBatchRecords = [] } = useQuery({
+    queryKey: ['subBatches'],
+    queryFn: () => base44.entities.SubBatch.list('-created_date', 500),
   });
 
   const filtered = statusFilter === 'all'
@@ -312,7 +349,7 @@ export default function BatchManagement() {
       ) : (
         <div className="space-y-3">
           {filtered.map(batch => (
-            <BatchCard key={batch.id} batch={batch} runs={runs} />
+            <BatchCard key={batch.id} batch={batch} runs={runs} subBatchRecords={subBatchRecords} />
           ))}
         </div>
       )}
