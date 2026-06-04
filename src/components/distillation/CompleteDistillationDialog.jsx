@@ -24,20 +24,20 @@ export default function CompleteDistillationDialog({ run, open, onOpenChange, on
   const ibcTanks = tanks.filter(t => t.purpose === 'ibc');
   const ibc = ibcTanks[0]; // use first IBC
 
-  const heartsVolume = run?.hearts_volume || 0;
-  const heartsAbv = run?.hearts_abv || 0;
+  const heartsVolume = parseFloat(run?.hearts_volume) || 0;
+  const heartsAbv = parseFloat(run?.hearts_abv) || 0;
   const heartsLALs = heartsVolume && heartsAbv ? parseFloat((heartsVolume * heartsAbv / 100).toFixed(4)) : 0;
 
-  const headsVolume = run?.heads_volume || 0;
-  const headsAbv = run?.heads_abv || 0;
-  const tailsVolume = run?.tails_volume || 0;
-  const tailsAbv = run?.tails_abv || 0;
-  const ibcVolume = parseFloat(((headsVolume || 0) + (tailsVolume || 0)).toFixed(2));
+  const headsVolume = parseFloat(run?.heads_volume) || 0;
+  const headsAbv = parseFloat(run?.heads_abv) || 0;
+  const tailsVolume = parseFloat(run?.tails_volume) || 0;
+  const tailsAbv = parseFloat(run?.tails_abv) || 0;
+  const ibcVolume = parseFloat((headsVolume + tailsVolume).toFixed(2));
   const ibcAvgAbv = ibcVolume > 0
     ? parseFloat(((headsVolume * headsAbv + tailsVolume * tailsAbv) / ibcVolume).toFixed(2))
     : 0;
 
-  const dumpedVolume = run?.dumped_volume || 0;
+  const dumpedVolume = parseFloat(run?.dumped_volume) || 0;
 
   const completeMutation = useMutation({
     mutationFn: async () => {
