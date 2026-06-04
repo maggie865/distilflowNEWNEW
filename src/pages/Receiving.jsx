@@ -69,10 +69,10 @@ export default function Receiving() {
 
       // Upload to Google Drive in parallel
       setUploadingToDrive(true);
-      const driveFormData = new FormData();
-      driveFormData.append('file', file);
-      driveFormData.append('fileName', `packing_slip_${Date.now()}_${file.name}`);
-      const driveRes = base44.functions.invoke('uploadPackingSlip', driveFormData);
+      const driveRes = base44.functions.invoke('uploadPackingSlip', {
+        file,
+        fileName: `packing_slip_${Date.now()}_${file.name}`,
+      });
 
       // Extract data from packing slip
       const result = await base44.integrations.Core.ExtractDataFromUploadedFile({
