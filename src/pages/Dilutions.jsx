@@ -21,7 +21,6 @@ const ETHANOL_TANKS = ['X', 'Y'];
 const HEADS_TANKS = ['E', 'F', 'H'];
 
 const BLANK_ETHANOL = {
-  batch_number: '',
   date: new Date().toISOString().split('T')[0],
   source_id: '',
   input_ethanol_volume: '',
@@ -111,7 +110,7 @@ export default function Dilutions() {
       const sourceName = receivings.find(r => r.id === data.source_id)?.batch_number || '';
 
       await base44.entities.Dilution.create({
-        batch_number: data.batch_number,
+        batch_number: sourceName || 'Ethanol Dilution',
         date: data.date,
         input_ethanol_volume: parseFloat(data.input_ethanol_volume),
         input_abv: parseFloat(data.input_abv),
@@ -133,15 +132,15 @@ export default function Dilutions() {
           volume_litres: eOutputVol,
           abv: parseFloat(eOutputABV.toFixed(2)),
           lals: parseFloat(eInputLALs.toFixed(4)),
-          product: data.batch_number,
-          batch_number: data.batch_number,
+          product: sourceName || 'Ethanol Dilution',
+          batch_number: sourceName,
           notes: `Ethanol dilution — source: Receiving lot ${sourceName}`,
         });
         await base44.entities.StorageTank.update(data.tank_id, {
           current_volume: newVol,
           current_abv: parseFloat(eOutputABV.toFixed(2)),
-          current_product: data.batch_number || eSelectedTank.current_product,
-          current_batch: data.batch_number,
+          current_product: sourceName || eSelectedTank.current_product,
+          current_batch: sourceName,
           status: 'in_use',
         });
         queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
@@ -232,15 +231,9 @@ export default function Dilutions() {
               </DialogHeader>
               <form onSubmit={e => { e.preventDefault(); ethanolMutation.mutate(ethanolForm); }} className="space-y-4 mt-2">
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Batch Number</Label>
-                    <Input value={ethanolForm.batch_number} onChange={e => setE('batch_number', e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label>Date</Label>
-                    <Input type="date" value={ethanolForm.date} onChange={e => setE('date', e.target.value)} required />
-                  </div>
+                <div>
+                  <Label>Date</Label>
+                  <Input type="date" value={ethanolForm.date} onChange={e => setE('date', e.target.value)} required />
                 </div>
 
                 <div className="rounded-lg border border-border p-4 space-y-3">
