@@ -10,11 +10,12 @@ import PageHeader from '@/components/shared/PageHeader';
 import TankCard from '@/components/tanks/TankCard';
 import TransferDialog from '@/components/tanks/TransferDialog';
 
-const GROUP_ORDER = ['maceration_dilution', 'diluted_ethanol', 'final_product_storage', 'spare'];
+const GROUP_ORDER = ['maceration_dilution', 'diluted_ethanol', 'final_product_storage', 'ibc', 'spare'];
 const GROUP_LABELS = {
   maceration_dilution: 'Maceration & Dilution Tanks',
   final_product_storage: 'Final Product Holding Tanks',
   diluted_ethanol: 'Diluted Ethanol Tanks (Outdoor)',
+  ibc: 'IBC — Heads & Tails',
   spare: 'Spare',
 };
 

@@ -14,6 +14,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
+import CompleteDistillationDialog from '@/components/distillation/CompleteDistillationDialog';
 
 const EMPTY_FORM = {
   batch_number: '', date: new Date().toISOString().split('T')[0],
@@ -32,6 +33,8 @@ const EMPTY_FORM = {
 export default function Distillation() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
+  const [runToComplete, setRunToComplete] = useState(null);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [scaledIngredients, setScaledIngredients] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -431,9 +434,31 @@ export default function Distillation() {
               <Textarea value={form.notes} onChange={e => set('notes', e.target.value)} />
             </div>
 
-            <Button type="submit" className="w-full" disabled={isPending}>
-              {isPending ? 'Saving…' : editing ? 'Update Run' : 'Record Run'}
-            </Button>
+            <div className="flex gap-3 pt-1">
+              <Button type="submit" variant="outline" className="flex-1" disabled={isPending}>
+                {isPending ? 'Saving…' : editing ? 'Save Progress' : 'Record Run'}
+              </Button>
+              {editing && editing.status !== 'completed' && (
+                <Button
+                  type="button"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  disabled={isPending}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    // Save current form changes first, then open complete dialog
+                    updateMutation.mutate(form, {
+                      onSuccess: () => {
+                        // Refresh editing run with latest form data so dialog sees correct values
+                        setRunToComplete({ ...editing, ...form });
+                        setCompleteDialogOpen(true);
+                      }
+                    });
+                  }}
+                >
+                  Complete Distillation
+                </Button>
+              )}
+            </div>
           </form>
         </DialogContent>
       </Dialog>
@@ -482,6 +507,13 @@ export default function Distillation() {
           </Table>
         </div>
       </Card>
+
+      <CompleteDistillationDialog
+        run={runToComplete}
+        open={completeDialogOpen}
+        onOpenChange={setCompleteDialogOpen}
+        onCompleted={() => setOpen(false)}
+      />
     </div>
   );
 }

@@ -4,7 +4,7 @@
   "properties": {
     "name": {
       "type": "string",
-      "description": "Tank name (A, B, C, D, E, F, H, X, Y)"
+      "description": "Tank name (A, B, C, D, E, F, H, X, Y, IBC)"
     },
     "capacity_litres": {
       "type": "number",
@@ -16,6 +16,7 @@
         "maceration_dilution",
         "final_product_storage",
         "diluted_ethanol",
+        "ibc",
         "spare"
       ],
       "description": "Purpose of this tank"
