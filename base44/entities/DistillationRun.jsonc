@@ -15,6 +15,15 @@
       "type": "string",
       "description": "Product being distilled"
     },
+    "maceration_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date maceration began"
+    },
+    "maceration_notes": {
+      "type": "string",
+      "description": "Notes on the maceration process"
+    },
     "input_volume": {
       "type": "number",
       "description": "Input wash/liquid volume (litres)"
@@ -27,9 +36,17 @@
       "type": "number",
       "description": "Input LALs"
     },
+    "atmospheric_pressure": {
+      "type": "number",
+      "description": "Atmospheric pressure during distillation (hPa / mbar)"
+    },
+    "still_temp": {
+      "type": "number",
+      "description": "Still temperature (\u00b0C)"
+    },
     "output_volume": {
       "type": "number",
-      "description": "Output spirit volume (litres)"
+      "description": "Total output spirit volume collected (litres)"
     },
     "output_abv": {
       "type": "number",
@@ -43,14 +60,39 @@
       "type": "number",
       "description": "Heads collected (litres)"
     },
+    "heads_abv": {
+      "type": "number",
+      "description": "Heads ABV (%)"
+    },
+    "hearts_volume": {
+      "type": "number",
+      "description": "Hearts collected (litres)"
+    },
+    "hearts_abv": {
+      "type": "number",
+      "description": "Hearts ABV (%)"
+    },
     "tails_volume": {
       "type": "number",
       "description": "Tails collected (litres)"
+    },
+    "tails_abv": {
+      "type": "number",
+      "description": "Tails ABV (%)"
+    },
+    "dumped_volume": {
+      "type": "number",
+      "description": "Volume dumped / discarded from still (litres)"
+    },
+    "dumped_notes": {
+      "type": "string",
+      "description": "Notes on what was dumped"
     },
     "status": {
       "type": "string",
       "enum": [
         "planned",
+        "macerating",
         "in_progress",
         "completed"
       ],
