@@ -201,10 +201,23 @@ export default function Receiving() {
   };
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.Receiving.delete(id),
+    mutationFn: async (record) => {
+      // Deduct stock from raw material inventory
+      const existing = await base44.entities.RawMaterial.filter({ name: record.material_name });
+      if (existing.length > 0) {
+        const mat = existing[0];
+        const newQty = Math.max(0, (mat.quantity || 0) - (record.quantity || 0));
+        const newLals = record.material_type === 'ethanol'
+          ? Math.max(0, (mat.lals || 0) - (record.lals || 0))
+          : mat.lals;
+        await base44.entities.RawMaterial.update(mat.id, { quantity: newQty, lals: newLals });
+      }
+      await base44.entities.Receiving.delete(record.id);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
-      toast.success('Record deleted');
+      queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
+      toast.success('Record deleted and inventory updated');
     },
   });
 
@@ -379,7 +392,7 @@ export default function Receiving() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => { if (confirm('Delete this receiving record?')) deleteMutation.mutate(r.id); }}
+                        onClick={() => { if (confirm('Delete this receiving record?')) deleteMutation.mutate(r); }}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
