@@ -15,6 +15,14 @@
       "type": "string",
       "description": "Product being distilled"
     },
+    "sub_batch_code": {
+      "type": "string",
+      "description": "Sub-batch/run identifier (e.g. GIN-001-R1)"
+    },
+    "ethanol_lot_code": {
+      "type": "string",
+      "description": "Ethanol lot code used in this run \u2014 used to deplete RawMaterial inventory"
+    },
     "maceration_date": {
       "type": "string",
       "format": "date",
