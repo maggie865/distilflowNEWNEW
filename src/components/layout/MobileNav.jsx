@@ -6,7 +6,7 @@ const navItems = [
   { label: 'Home', icon: LayoutDashboard, path: '/' },
   { label: 'Receive', icon: PackagePlus, path: '/receiving' },
   { label: 'Distill', icon: Flame, path: '/distillation' },
-  { label: 'Bottle', icon: Wine, path: '/bottling' },
+  { label: 'Bottle', icon: Wine, path: '/bottling-floor' },
   { label: 'Tanks', icon: Cylinder, path: '/tanks' },
   { label: 'Recipes', icon: FlaskConical, path: '/recipes' },
 ];

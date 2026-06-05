@@ -22,7 +22,7 @@ const navItems = [
 { label: 'Dilutions', icon: Droplets, path: '/dilutions' },
 { label: 'Distillation', icon: Flame, path: '/distillation' },
 { label: 'Recipes', icon: FlaskConical, path: '/recipes' },
-{ label: 'Bottling', icon: Wine, path: '/bottling' },
+{ label: 'Bottling Floor', icon: Wine, path: '/bottling-floor' },
 { label: "Tanks", icon: Cylinder, path: '/tanks' },
 { label: 'Batch Tracker', icon: GitBranch, path: '/batch-tracker' },
 { label: 'Raw Materials', icon: Package, path: '/raw-materials' },
