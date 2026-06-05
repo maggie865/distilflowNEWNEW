@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Zap, Calendar, User, BarChart3 } from 'lucide-react';
+import { Plus, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -21,22 +21,16 @@ const BOTTLE_SIZES = [200, 350, 500, 700, 750, 1000];
 export default function BottlingFloor() {
   const [activeRun, setActiveRun] = useState(null);
   const [showNewRun, setShowNewRun] = useState(false);
-  const [newRunForm, setNewRunForm] = useState({
-    product_id: '',
-    tank_id: '',
-    bottle_size_ml: '700',
-    bottles_per_case: '6',
-  });
-  const [historyFilter, setHistoryFilter] = useState({
-    product: 'all',
-    startDate: '',
-    endDate: '',
-    operator: '',
-  });
+  const [selectedBatchId, setSelectedBatchId] = useState('');
+  const [selectedTankId, setSelectedTankId] = useState('');
+  const [bottleSizeMl, setBottleSizeMl] = useState('700');
+  const [selectedRecipeId, setSelectedRecipeId] = useState('');
+  const [staffNames, setStaffNames] = useState([]);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [historyFilter, setHistoryFilter] = useState({ startDate: '', endDate: '' });
 
   const queryClient = useQueryClient();
 
-  // Fetch master batches and finished goods tanks
   const { data: masterBatches = [] } = useQuery({
     queryKey: ['masterBatches'],
     queryFn: () => base44.entities.MasterBatch.list('-date_started', 100),
@@ -47,107 +41,181 @@ export default function BottlingFloor() {
     queryFn: () => base44.entities.StorageTank.list(),
   });
 
+  const { data: recipes = [] } = useQuery({
+    queryKey: ['recipes'],
+    queryFn: () => base44.entities.Recipe.list('name', 100),
+  });
+
   const { data: bottlingRuns = [] } = useQuery({
     queryKey: ['bottlingFloorRuns'],
     queryFn: () => base44.entities.BottlingRun.list('-date', 100),
   });
 
-  // Filter tanks that are "bottle_ready"
-  const availableTanks = tanks.filter(t => t.purpose === 'final_product_storage' && t.status === 'in_use');
+  // Only tanks that are final_product_storage and in_use (ready to bottle from)
+  const finishingTanks = tanks.filter(t => t.purpose === 'final_product_storage' && t.status === 'in_use');
 
-  // Filter history
-  const filteredHistory = bottlingRuns.filter(run => {
-    if (newRunForm.product_id && run.batch_number !== newRunForm.product_id) return false;
-    if (historyFilter.startDate && new Date(run.date) < new Date(historyFilter.startDate)) return false;
-    if (historyFilter.endDate && new Date(run.date) > new Date(historyFilter.endDate)) return false;
-    return true;
+  // Batches that have a product in a finishing tank
+  const bottleReadyBatches = masterBatches.filter(b => {
+    const matchingTank = finishingTanks.find(t =>
+      t.current_batch === b.batch_code || t.current_product === b.product_name
+    );
+    return matchingTank != null;
   });
 
-  // Create bottling run
-  const createRunMutation = useMutation({
-    mutationFn: async (runData) => {
-      const tank = tanks.find(t => t.id === runData.tank_id);
-      return base44.entities.BottlingRun.create({
-        batch_number: runData.product_id,
-        product_name: masterBatches.find(b => b.batch_code === runData.product_id)?.product_name || '',
-        date: new Date().toISOString().split('T')[0],
-        input_volume: tank?.current_volume || 0,
-        input_abv: tank?.current_abv || 0,
-        bottle_size_ml: parseInt(runData.bottle_size_ml),
-        bottles_produced: 0, // Updated on completion
-        status: 'in_progress',
-      });
-    },
-    onSuccess: (data) => {
-      setActiveRun({
-        id: data.id,
-        product_name: newRunForm.product_id,
-        tank_name: tanks.find(t => t.id === newRunForm.tank_id)?.name || '',
-        bottle_size_ml: parseInt(newRunForm.bottle_size_ml),
-        bottles_per_case: parseInt(newRunForm.bottles_per_case),
-        available_volume: tanks.find(t => t.id === newRunForm.tank_id)?.current_volume || 0,
-        tank_id: newRunForm.tank_id,
-      });
-      setShowNewRun(false);
-      toast.success('Bottling run started');
-    },
+  const selectedBatch = masterBatches.find(b => b.id === selectedBatchId);
+
+  // Find tank(s) holding this batch
+  const batchTanks = selectedBatch
+    ? finishingTanks.filter(t =>
+        t.current_batch === selectedBatch.batch_code ||
+        t.current_product === selectedBatch.product_name
+      )
+    : [];
+
+  const selectedTank = tanks.find(t => t.id === selectedTankId);
+
+  // Packaging recipes that match the selected bottle size
+  const packagingRecipes = recipes.filter(r => r.recipe_type === 'packaging');
+  const matchingRecipes = packagingRecipes.filter(r => {
+    // Match by bottle size in recipe packaging items
+    if (!bottleSizeMl) return true;
+    const hasMatchingBottle = r.packaging?.some(p =>
+      p.type === 'bottle' && p.name?.toLowerCase().includes(bottleSizeMl)
+    );
+    return hasMatchingBottle || packagingRecipes.length <= 3; // show all if few options
   });
 
-  // Complete bottling run and update inventory
+  const selectedRecipe = recipes.find(r => r.id === selectedRecipeId);
+  const bottlesPerCase = selectedRecipe?.bottles_per_case || 6;
+
+  const resetForm = () => {
+    setSelectedBatchId('');
+    setSelectedTankId('');
+    setBottleSizeMl('700');
+    setSelectedRecipeId('');
+    setStaffNames([]);
+    setNewStaffName('');
+  };
+
+  const addStaff = () => {
+    const name = newStaffName.trim();
+    if (name && !staffNames.includes(name)) {
+      setStaffNames([...staffNames, name]);
+      setNewStaffName('');
+    }
+  };
+
+  const removeStaff = (idx) => setStaffNames(staffNames.filter((_, i) => i !== idx));
+
+  const canStart = selectedBatchId && selectedTankId && staffNames.length > 0;
+
+  const startRun = () => {
+    setActiveRun({
+      batch_code: selectedBatch.batch_code,
+      product_name: selectedBatch.product_name,
+      tank_id: selectedTankId,
+      tank_name: selectedTank?.name || '',
+      bottle_size_ml: parseInt(bottleSizeMl),
+      bottles_per_case: bottlesPerCase,
+      abv: selectedTank?.current_abv || 0,
+      available_volume: selectedTank?.current_volume || 0,
+      recipe: selectedRecipe || null,
+      staff: staffNames,
+    });
+    setShowNewRun(false);
+    toast.success('Bottling run started!');
+  };
+
+  // Complete run — handles cases, extra bottles, tasting bottles, finished goods, tank deduction
   const completeRunMutation = useMutation({
-    mutationFn: async (completionData) => {
-      const tank = tanks.find(t => t.id === activeRun.tank_id);
-      const spiritUsed = (completionData.bottles_produced * (activeRun.bottle_size_ml || 0)) / 1000;
+    mutationFn: async ({ cases, extraBottles, tastingBottles }) => {
+      const totalBottles = cases * activeRun.bottles_per_case + extraBottles;
+      const spiritUsedLitres = (totalBottles * activeRun.bottle_size_ml) / 1000;
+      const abv = activeRun.abv || 0;
+      const lals = (spiritUsedLitres * abv) / 100;
+      const lalPerBottle = totalBottles > 0 ? lals / totalBottles : 0;
 
-      // Update bottling run
-      await base44.entities.BottlingRun.update(activeRun.id, {
-        bottles_produced: completionData.bottles_produced,
+      // 1. Create BottlingRun record
+      await base44.entities.BottlingRun.create({
+        batch_number: activeRun.batch_code,
+        product_name: activeRun.product_name,
+        date: new Date().toISOString().split('T')[0],
+        input_volume: spiritUsedLitres,
+        input_abv: abv,
+        input_lals: parseFloat(lals.toFixed(4)),
+        bottle_size_ml: activeRun.bottle_size_ml,
+        bottles_produced: totalBottles,
+        lals_per_bottle: parseFloat(lalPerBottle.toFixed(5)),
         status: 'completed',
-        notes: `Staff: ${completionData.staff.join(', ')} | Scanned: ${completionData.scanned_cases.length} cases`,
+        notes: `Staff: ${activeRun.staff.join(', ')} | Cases: ${cases} | Extra bottles: ${extraBottles} | Tasting: ${tastingBottles}`,
       });
 
-      // Deduct from source tank
+      // 2. Deduct from source tank
+      const tank = tanks.find(t => t.id === activeRun.tank_id);
       if (tank) {
-        await base44.entities.StorageTank.update(tank.id, {
-          current_volume: Math.max(0, (tank.current_volume || 0) - spiritUsed),
-        });
+        const newVolume = Math.max(0, (tank.current_volume || 0) - spiritUsedLitres);
+        await base44.entities.StorageTank.update(tank.id, { current_volume: newVolume });
 
-        // Create tank movement record
         await base44.entities.TankMovement.create({
           date: new Date().toISOString().split('T')[0],
           action: 'bottling_draw',
           tank_name: tank.name,
-          volume_litres: spiritUsed,
-          abv: tank.current_abv || 0,
-          lals: (spiritUsed * (tank.current_abv || 0)) / 100,
+          volume_litres: spiritUsedLitres,
+          abv,
+          lals: parseFloat(lals.toFixed(4)),
           product: activeRun.product_name,
-          batch_number: newRunForm.product_id,
-          operator: completionData.staff[0] || 'Unknown',
-          notes: `Bottling run completed - ${completionData.cases_produced} cases`,
+          batch_number: activeRun.batch_code,
+          operator: activeRun.staff[0] || 'Unknown',
+          notes: `Bottling complete — ${cases} cases + ${extraBottles} extra bottles`,
         });
       }
 
-      // Create/update finished goods
-      const existingFG = await base44.entities.FinishedGood.filter({
-        product_name: activeRun.product_name,
-        batch_number: newRunForm.product_id,
-      });
-
-      if (existingFG.length > 0) {
-        const fg = existingFG[0];
-        await base44.entities.FinishedGood.update(fg.id, {
-          quantity_bottles: (fg.quantity_bottles || 0) + completionData.bottles_produced,
-          total_lals: (fg.total_lals || 0) + ((spiritUsed * (tank?.current_abv || 0)) / 100),
-        });
-      } else {
-        await base44.entities.FinishedGood.create({
+      // 3. Update main finished goods stock (cases + extra bottles)
+      if (totalBottles > 0) {
+        const existing = await base44.entities.FinishedGood.filter({
           product_name: activeRun.product_name,
-          batch_number: newRunForm.product_id,
-          bottle_size_ml: activeRun.bottle_size_ml,
-          abv_percent: tank?.current_abv || 0,
-          quantity_bottles: completionData.bottles_produced,
-          total_lals: (spiritUsed * (tank?.current_abv || 0)) / 100,
+          batch_number: activeRun.batch_code,
         });
+        if (existing.length > 0) {
+          const fg = existing[0];
+          await base44.entities.FinishedGood.update(fg.id, {
+            quantity_bottles: (fg.quantity_bottles || 0) + totalBottles,
+            total_lals: (fg.total_lals || 0) + parseFloat(lals.toFixed(4)),
+          });
+        } else {
+          await base44.entities.FinishedGood.create({
+            product_name: activeRun.product_name,
+            batch_number: activeRun.batch_code,
+            bottle_size_ml: activeRun.bottle_size_ml,
+            abv_percent: abv,
+            quantity_bottles: totalBottles,
+            total_lals: parseFloat(lals.toFixed(4)),
+          });
+        }
+      }
+
+      // 4. Add tasting bottles to a tasting stock item
+      if (tastingBottles > 0) {
+        const tastingName = `${activeRun.product_name} — Tasting`;
+        const tastingLals = (tastingBottles * activeRun.bottle_size_ml / 1000) * abv / 100;
+        const existingTasting = await base44.entities.FinishedGood.filter({ product_name: tastingName });
+        if (existingTasting.length > 0) {
+          const tg = existingTasting[0];
+          await base44.entities.FinishedGood.update(tg.id, {
+            quantity_bottles: (tg.quantity_bottles || 0) + tastingBottles,
+            total_lals: (tg.total_lals || 0) + parseFloat(tastingLals.toFixed(4)),
+          });
+        } else {
+          await base44.entities.FinishedGood.create({
+            product_name: tastingName,
+            batch_number: activeRun.batch_code,
+            bottle_size_ml: activeRun.bottle_size_ml,
+            abv_percent: abv,
+            quantity_bottles: tastingBottles,
+            total_lals: parseFloat(tastingLals.toFixed(4)),
+            notes: 'Tasting bottles — rejected from main run',
+          });
+        }
       }
     },
     onSuccess: () => {
@@ -155,8 +223,15 @@ export default function BottlingFloor() {
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
       setActiveRun(null);
-      toast.success('Bottling run completed and inventory updated');
+      resetForm();
+      toast.success('Run complete — stock updated!');
     },
+  });
+
+  const filteredHistory = bottlingRuns.filter(run => {
+    if (historyFilter.startDate && new Date(run.date) < new Date(historyFilter.startDate)) return false;
+    if (historyFilter.endDate && new Date(run.date) > new Date(historyFilter.endDate)) return false;
+    return true;
   });
 
   if (activeRun) {
@@ -165,6 +240,7 @@ export default function BottlingFloor() {
         run={activeRun}
         onComplete={(data) => completeRunMutation.mutate(data)}
         onCancel={() => setActiveRun(null)}
+        isCompleting={completeRunMutation.isPending}
       />
     );
   }
@@ -179,41 +255,76 @@ export default function BottlingFloor() {
       </PageHeader>
 
       {/* Start New Run Dialog */}
-      <Dialog open={showNewRun} onOpenChange={setShowNewRun}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={showNewRun} onOpenChange={v => { setShowNewRun(v); if (!v) resetForm(); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">Start Bottling Run</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 mt-4">
-            <div>
-              <Label>Product / Batch</Label>
-              <Select value={newRunForm.product_id} onValueChange={v => setNewRunForm({ ...newRunForm, product_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Select batch" /></SelectTrigger>
-                <SelectContent>
-                  {masterBatches.filter(b => b.status !== 'sold' && b.status !== 'completed').map(b => (
-                    <SelectItem key={b.id} value={b.batch_code}>{b.batch_code} - {b.product_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-5 mt-4">
 
+            {/* Batch selection — only from finishing tanks */}
             <div>
-              <Label>Source Tank (Finished / Ready)</Label>
-              <Select value={newRunForm.tank_id} onValueChange={v => setNewRunForm({ ...newRunForm, tank_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Select tank" /></SelectTrigger>
+              <Label>Batch (Finishing Tanks Only)</Label>
+              <Select
+                value={selectedBatchId}
+                onValueChange={v => {
+                  setSelectedBatchId(v);
+                  setSelectedTankId(''); // reset tank when batch changes
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Select a batch ready to bottle" /></SelectTrigger>
                 <SelectContent>
-                  {availableTanks.map(t => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name} - {t.current_volume?.toFixed(1) || 0}L @ {t.current_abv || 0}%
+                  {bottleReadyBatches.length === 0 && (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                      No batches in finishing tanks
+                    </div>
+                  )}
+                  {bottleReadyBatches.map(b => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.batch_code} — {b.product_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
+            {/* Auto-filled info */}
+            {selectedBatch && (
+              <div className="rounded-lg bg-muted px-4 py-3 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Product</p>
+                  <p className="font-semibold">{selectedBatch.product_name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">ABV</p>
+                  <p className="font-semibold">
+                    {batchTanks[0]?.current_abv != null ? `${batchTanks[0].current_abv}%` : '—'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Source tank (from batch's finishing tanks) */}
+            {batchTanks.length > 0 && (
+              <div>
+                <Label>Source Tank</Label>
+                <Select value={selectedTankId} onValueChange={setSelectedTankId}>
+                  <SelectTrigger><SelectValue placeholder="Select tank" /></SelectTrigger>
+                  <SelectContent>
+                    {batchTanks.map(t => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name} — {t.current_volume?.toFixed(1) || 0}L @ {t.current_abv || 0}%
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Bottle size */}
             <div>
               <Label>Bottle Size (ml)</Label>
-              <Select value={newRunForm.bottle_size_ml} onValueChange={v => setNewRunForm({ ...newRunForm, bottle_size_ml: v })}>
+              <Select value={bottleSizeMl} onValueChange={v => { setBottleSizeMl(v); setSelectedRecipeId(''); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {BOTTLE_SIZES.map(size => (
@@ -223,23 +334,62 @@ export default function BottlingFloor() {
               </Select>
             </div>
 
+            {/* Packaging recipe */}
             <div>
-              <Label>Bottles per Case</Label>
-              <Input
-                type="number"
-                value={newRunForm.bottles_per_case}
-                onChange={e => setNewRunForm({ ...newRunForm, bottles_per_case: e.target.value })}
-                min="1"
-                className="text-base h-10"
-              />
+              <Label>Packaging Recipe</Label>
+              <Select value={selectedRecipeId} onValueChange={setSelectedRecipeId}>
+                <SelectTrigger><SelectValue placeholder="Select packaging recipe" /></SelectTrigger>
+                <SelectContent>
+                  {packagingRecipes.length === 0 && (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No packaging recipes found</div>
+                  )}
+                  {packagingRecipes.map(r => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.name}{r.bottles_per_case ? ` — ${r.bottles_per_case} btls/case` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedRecipe && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedRecipe.bottles_per_case} bottles per case
+                </p>
+              )}
+            </div>
+
+            {/* Team */}
+            <div>
+              <Label>Production Team</Label>
+              <div className="flex gap-2 mt-1 mb-2">
+                <Input
+                  placeholder="Enter name and press Enter"
+                  value={newStaffName}
+                  onChange={e => setNewStaffName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addStaff()}
+                  className="text-base"
+                />
+                <Button type="button" variant="outline" size="icon" onClick={addStaff}>
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+              {staffNames.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {staffNames.map((name, i) => (
+                    <Badge key={i} variant="secondary" className="flex items-center gap-1.5 px-3 py-1">
+                      {name}
+                      <button onClick={() => removeStaff(i)} className="text-muted-foreground hover:text-destructive ml-1">×</button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
 
             <Button
-              onClick={() => createRunMutation.mutate(newRunForm)}
-              disabled={!newRunForm.product_id || !newRunForm.tank_id || createRunMutation.isPending}
-              className="w-full"
+              onClick={startRun}
+              disabled={!canStart}
+              className="w-full h-12 text-base font-semibold"
             >
-              {createRunMutation.isPending ? 'Starting…' : 'Start Production'}
+              Start Bottling
             </Button>
           </div>
         </DialogContent>
@@ -252,39 +402,23 @@ export default function BottlingFloor() {
             <BarChart3 className="w-5 h-5" />
             Bottling History
           </h2>
-
-          {/* Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+          <div className="flex flex-wrap gap-3 mb-4">
             <Input
               type="date"
               value={historyFilter.startDate}
               onChange={e => setHistoryFilter({ ...historyFilter, startDate: e.target.value })}
-              placeholder="Start date"
-              className="text-sm"
+              className="text-sm w-auto"
             />
             <Input
               type="date"
               value={historyFilter.endDate}
               onChange={e => setHistoryFilter({ ...historyFilter, endDate: e.target.value })}
-              placeholder="End date"
-              className="text-sm"
+              className="text-sm w-auto"
             />
-            <Input
-              value={historyFilter.operator}
-              onChange={e => setHistoryFilter({ ...historyFilter, operator: e.target.value })}
-              placeholder="Filter by operator"
-              className="text-sm"
-            />
-            <Button
-              variant="outline"
-              onClick={() => setHistoryFilter({ product: 'all', startDate: '', endDate: '', operator: '' })}
-              className="text-sm"
-            >
-              Clear Filters
+            <Button variant="outline" onClick={() => setHistoryFilter({ startDate: '', endDate: '' })} className="text-sm">
+              Clear
             </Button>
           </div>
-
-          {/* History Table */}
           <div className="overflow-x-auto">
             <Table className="text-sm">
               <TableHeader>
@@ -304,18 +438,16 @@ export default function BottlingFloor() {
                       No bottling runs yet
                     </TableCell>
                   </TableRow>
-                ) : (
-                  filteredHistory.map(run => (
-                    <TableRow key={run.id}>
-                      <TableCell>{run.date ? format(new Date(run.date), 'MMM d, yyyy') : '—'}</TableCell>
-                      <TableCell className="font-mono font-semibold">{run.batch_number}</TableCell>
-                      <TableCell>{run.product_name}</TableCell>
-                      <TableCell className="font-semibold">{run.bottles_produced || 0}</TableCell>
-                      <TableCell>{run.bottle_size_ml}ml</TableCell>
-                      <TableCell><StatusBadge status={run.status} /></TableCell>
-                    </TableRow>
-                  ))
-                )}
+                ) : filteredHistory.map(run => (
+                  <TableRow key={run.id}>
+                    <TableCell>{run.date ? format(new Date(run.date), 'MMM d, yyyy') : '—'}</TableCell>
+                    <TableCell className="font-mono font-semibold">{run.batch_number}</TableCell>
+                    <TableCell>{run.product_name}</TableCell>
+                    <TableCell className="font-semibold">{run.bottles_produced || 0}</TableCell>
+                    <TableCell>{run.bottle_size_ml}ml</TableCell>
+                    <TableCell><StatusBadge status={run.status} /></TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </div>
