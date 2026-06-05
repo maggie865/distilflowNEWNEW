@@ -55,7 +55,11 @@ export default function Distillation() {
 
   const { data: recipes = [] } = useQuery({
     queryKey: ['recipes'],
-    queryFn: () => base44.entities.Recipe.filter({ recipe_type: 'spirit' }, 'name', 50),
+    queryFn: async () => {
+      const all = await base44.entities.Recipe.list('name', 50);
+      // Include spirit recipes and any older records without recipe_type set (pre-dates the field)
+      return all.filter(r => !r.recipe_type || r.recipe_type === 'spirit');
+    },
   });
 
   const { data: rawMaterials = [] } = useQuery({
