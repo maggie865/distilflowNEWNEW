@@ -55,7 +55,7 @@ export default function Distillation() {
 
   const { data: recipes = [] } = useQuery({
     queryKey: ['recipes'],
-    queryFn: () => base44.entities.Recipe.list('name', 50),
+    queryFn: () => base44.entities.Recipe.filter({ recipe_type: 'spirit' }, 'name', 50),
   });
 
   const { data: rawMaterials = [] } = useQuery({
