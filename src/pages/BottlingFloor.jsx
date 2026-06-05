@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, BarChart3 } from 'lucide-react';
+import { Plus, BarChart3, Pencil, Trash2 } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -28,6 +29,9 @@ export default function BottlingFloor() {
   const [staffNames, setStaffNames] = useState([]);
   const [newStaffName, setNewStaffName] = useState('');
   const [historyFilter, setHistoryFilter] = useState({ startDate: '', endDate: '' });
+  const [editingRun, setEditingRun] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [deletingRun, setDeletingRun] = useState(null);
 
   const queryClient = useQueryClient();
 
@@ -225,6 +229,107 @@ export default function BottlingFloor() {
       setActiveRun(null);
       resetForm();
       toast.success('Run complete — stock updated!');
+    },
+  });
+
+  // Edit run — updates only safe metadata fields (date, notes, status)
+  const editRunMutation = useMutation({
+    mutationFn: async (data) => {
+      await base44.entities.BottlingRun.update(editingRun.id, {
+        date: data.date,
+        notes: data.notes,
+        status: data.status,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bottlingFloorRuns'] });
+      setEditingRun(null);
+      toast.success('Run updated');
+    },
+  });
+
+  // Delete run — reverses all inventory impacts
+  const deleteRunMutation = useMutation({
+    mutationFn: async (run) => {
+      const bottlesProduced = run.bottles_produced || 0;
+      const spiritVolume = run.input_volume || 0;
+      const abv = run.input_abv || 0;
+      const lals = run.input_lals || 0;
+
+      // 1. Return spirit to source tank — find by batch/product
+      const matchingTank = tanks.find(t =>
+        t.current_batch === run.batch_number || t.current_product === run.product_name
+      );
+      if (matchingTank) {
+        await base44.entities.StorageTank.update(matchingTank.id, {
+          current_volume: (matchingTank.current_volume || 0) + spiritVolume,
+        });
+        // Log the reversal as a tank movement
+        await base44.entities.TankMovement.create({
+          date: new Date().toISOString().split('T')[0],
+          action: 'transfer_in',
+          tank_name: matchingTank.name,
+          volume_litres: spiritVolume,
+          abv,
+          lals,
+          product: run.product_name,
+          batch_number: run.batch_number,
+          notes: `Reversal: bottling run deleted (${run.date})`,
+        });
+      }
+
+      // 2. Deduct from finished goods
+      if (bottlesProduced > 0) {
+        const existingFG = await base44.entities.FinishedGood.filter({
+          product_name: run.product_name,
+          batch_number: run.batch_number,
+        });
+        if (existingFG.length > 0) {
+          const fg = existingFG[0];
+          const newQty = Math.max(0, (fg.quantity_bottles || 0) - bottlesProduced);
+          const newLals = Math.max(0, (fg.total_lals || 0) - lals);
+          if (newQty === 0) {
+            await base44.entities.FinishedGood.delete(fg.id);
+          } else {
+            await base44.entities.FinishedGood.update(fg.id, {
+              quantity_bottles: newQty,
+              total_lals: parseFloat(newLals.toFixed(4)),
+            });
+          }
+        }
+      }
+
+      // 3. Parse tasting bottles from notes and reverse tasting stock
+      const tastingMatch = run.notes?.match(/Tasting:\s*(\d+)/);
+      const tastingCount = tastingMatch ? parseInt(tastingMatch[1]) : 0;
+      if (tastingCount > 0) {
+        const tastingName = `${run.product_name} — Tasting`;
+        const existingTasting = await base44.entities.FinishedGood.filter({ product_name: tastingName });
+        if (existingTasting.length > 0) {
+          const tg = existingTasting[0];
+          const tastingLals = (tastingCount * (run.bottle_size_ml || 700) / 1000) * abv / 100;
+          const newQty = Math.max(0, (tg.quantity_bottles || 0) - tastingCount);
+          const newLals = Math.max(0, (tg.total_lals || 0) - tastingLals);
+          if (newQty === 0) {
+            await base44.entities.FinishedGood.delete(tg.id);
+          } else {
+            await base44.entities.FinishedGood.update(tg.id, {
+              quantity_bottles: newQty,
+              total_lals: parseFloat(newLals.toFixed(4)),
+            });
+          }
+        }
+      }
+
+      // 4. Delete the run record
+      await base44.entities.BottlingRun.delete(run.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bottlingFloorRuns'] });
+      queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+      queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
+      setDeletingRun(null);
+      toast.success('Run deleted and inventory reversed');
     },
   });
 
@@ -429,6 +534,7 @@ export default function BottlingFloor() {
                   <TableHead>Bottles</TableHead>
                   <TableHead>Size</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -446,6 +552,22 @@ export default function BottlingFloor() {
                     <TableCell className="font-semibold">{run.bottles_produced || 0}</TableCell>
                     <TableCell>{run.bottle_size_ml}ml</TableCell>
                     <TableCell><StatusBadge status={run.status} /></TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          onClick={() => { setEditingRun(run); setEditForm({ date: run.date, notes: run.notes || '', status: run.status }); }}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
+                          onClick={() => setDeletingRun(run)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -453,6 +575,76 @@ export default function BottlingFloor() {
           </div>
         </Card>
       </div>
+
+      {/* Edit Run Dialog */}
+      <Dialog open={!!editingRun} onOpenChange={v => !v && setEditingRun(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display">Edit Bottling Run</DialogTitle>
+          </DialogHeader>
+          {editingRun && (
+            <div className="space-y-4 mt-2">
+              <div className="rounded-lg bg-muted px-4 py-3 text-sm">
+                <p className="font-semibold">{editingRun.product_name}</p>
+                <p className="text-muted-foreground text-xs">{editingRun.batch_number} · {editingRun.bottles_produced} bottles · {editingRun.bottle_size_ml}ml</p>
+              </div>
+              <div>
+                <Label>Date</Label>
+                <Input type="date" value={editForm.date} onChange={e => setEditForm({ ...editForm, date: e.target.value })} className="mt-1" />
+              </div>
+              <div>
+                <Label>Status</Label>
+                <Select value={editForm.status} onValueChange={v => setEditForm({ ...editForm, status: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Input value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} className="mt-1" />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setEditingRun(null)}>Cancel</Button>
+                <Button className="flex-1" disabled={editRunMutation.isPending} onClick={() => editRunMutation.mutate(editForm)}>
+                  {editRunMutation.isPending ? 'Saving…' : 'Save Changes'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirm Dialog */}
+      <AlertDialog open={!!deletingRun} onOpenChange={v => !v && setDeletingRun(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Bottling Run?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will delete the run for <strong>{deletingRun?.product_name}</strong> ({deletingRun?.batch_number}) and reverse all inventory changes:
+              <ul className="mt-2 space-y-1 list-disc list-inside text-sm">
+                <li>Return <strong>{deletingRun?.input_volume?.toFixed(1)}L</strong> of spirit back to the source tank</li>
+                <li>Remove <strong>{deletingRun?.bottles_produced}</strong> bottles from finished goods stock</li>
+                <li>Reverse any tasting bottle stock additions</li>
+              </ul>
+              <p className="mt-2 font-medium text-destructive">This cannot be undone.</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => deleteRunMutation.mutate(deletingRun)}
+              disabled={deleteRunMutation.isPending}
+            >
+              {deleteRunMutation.isPending ? 'Deleting…' : 'Delete & Reverse'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
