@@ -22,6 +22,7 @@ import BatchManagement from '@/components/distillation/BatchManagement';
 const EMPTY_FORM = {
   batch_number: '', date: new Date().toISOString().split('T')[0],
   product_name: '',
+  sub_batch_code: '',
   maceration_date: '', maceration_notes: '',
   input_volume: '', input_abv: '',
   atmospheric_pressure: '', still_temp: '',
@@ -86,6 +87,7 @@ export default function Distillation() {
       batch_number: run.batch_number || '',
       date: run.date || new Date().toISOString().split('T')[0],
       product_name: run.product_name || '',
+      sub_batch_code: run.sub_batch_code || '',
       maceration_date: run.maceration_date || '',
       maceration_notes: run.maceration_notes || '',
       input_volume: run.input_volume ?? '',
@@ -185,7 +187,28 @@ export default function Distillation() {
 
   const createMutation = useMutation({
     mutationFn: async (data) => {
-      await base44.entities.DistillationRun.create(buildPayload(data));
+      const payload = buildPayload(data);
+      await base44.entities.DistillationRun.create(payload);
+
+      // Create SubBatch record if a master batch and sub-batch code are set
+      if (data.batch_number && data.sub_batch_code) {
+        const master = masterBatches.find(b => b.batch_code === data.batch_number);
+        if (master) {
+          await base44.entities.SubBatch.create({
+            master_batch_id: master.id,
+            master_batch_code: master.batch_code,
+            sub_batch_code: data.sub_batch_code,
+            date: data.date || undefined,
+            input_volume: payload.input_volume || undefined,
+            input_abv: payload.input_abv || undefined,
+            maceration_date: data.maceration_date || undefined,
+            maceration_notes: data.maceration_notes || undefined,
+            status: data.status === 'completed' ? 'completed' : data.status === 'in_progress' ? 'distilling' : data.status === 'macerating' ? 'macerating' : 'planned',
+            notes: data.notes || undefined,
+          });
+        }
+      }
+
       // FIFO stock depletion only on create (when ingredients are scaled)
       for (const ing of scaledIngredients) {
         let remaining = ing.scaledQuantity;
@@ -287,6 +310,11 @@ export default function Distillation() {
                         const batch = masterBatches.find(b => b.batch_code === v);
                         set('batch_number', v);
                         if (batch?.product_name && !form.product_name) set('product_name', batch.product_name);
+                        // Auto-suggest sub-batch code if not already set
+                        if (!form.sub_batch_code) {
+                          const existingRuns = runs.filter(r => r.batch_number === v);
+                          set('sub_batch_code', `${v}-R${existingRuns.length + 1}`);
+                        }
                       }}
                     >
                       <SelectTrigger className="flex-1">
@@ -326,6 +354,22 @@ export default function Distillation() {
               <div className="col-span-2">
                 <Label>Product Name</Label>
                 <Input value={form.product_name} onChange={e => set('product_name', e.target.value)} required />
+              </div>
+            </div>
+
+            {/* Sub-Batch / Run Part */}
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sub-Batch / Run Part</p>
+              <div>
+                <Label>Sub-Batch Code</Label>
+                <Input
+                  value={form.sub_batch_code}
+                  onChange={e => set('sub_batch_code', e.target.value)}
+                  placeholder={form.batch_number ? `${form.batch_number}-R1` : 'e.g. GIN-001-R1'}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Identifies which run/part of the master batch this distillation is (e.g. R1, R2). This will create a sub-batch record automatically.
+                </p>
               </div>
             </div>
 
