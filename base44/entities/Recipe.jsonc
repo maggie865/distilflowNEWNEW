@@ -47,6 +47,38 @@
         }
       }
     },
+    "packaging": {
+      "type": "array",
+      "description": "Packaging components consumed per bottle produced",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "bottle",
+              "closure",
+              "label",
+              "carton",
+              "other"
+            ]
+          }
+        }
+      }
+    },
+    "bottles_per_case": {
+      "type": "number",
+      "description": "Number of bottles per case/carton"
+    },
     "notes": {
       "type": "string",
       "description": "General recipe notes or instructions"

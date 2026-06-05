@@ -15,6 +15,7 @@
         "sugar",
         "water",
         "flavoring",
+        "packaging",
         "other"
       ],
       "description": "Type of raw material"

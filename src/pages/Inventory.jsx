@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Warehouse, Wine } from 'lucide-react';
+import { Warehouse, Wine, Package } from 'lucide-react';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 
@@ -15,6 +15,7 @@ const typeColors = {
   sugar: 'bg-pink-100 text-pink-800',
   water: 'bg-blue-100 text-blue-800',
   flavoring: 'bg-purple-100 text-purple-800',
+  packaging: 'bg-sky-100 text-sky-800',
   other: 'bg-muted text-muted-foreground',
 };
 
@@ -29,7 +30,9 @@ export default function Inventory() {
     queryFn: () => base44.entities.FinishedGood.list('product_name', 100),
   });
 
-  const totalRawItems = rawMaterials.length;
+  const packagingItems = rawMaterials.filter(m => m.type === 'packaging');
+  const nonPackagingRaw = rawMaterials.filter(m => m.type !== 'packaging');
+  const totalRawItems = nonPackagingRaw.length;
   const totalEthanolLALs = rawMaterials
     .filter(m => m.type === 'ethanol')
     .reduce((sum, m) => sum + (m.lals || 0), 0);
@@ -40,8 +43,9 @@ export default function Inventory() {
     <div className="pb-20 md:pb-0">
       <PageHeader title="Inventory" subtitle="Track all raw materials and finished goods" />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatCard title="Raw Materials" value={totalRawItems} subtitle="items" icon={Warehouse} />
+        <StatCard title="Packaging Items" value={packagingItems.length} subtitle="item types" icon={Package} />
         <StatCard title="Ethanol LALs" value={totalEthanolLALs.toFixed(2)} subtitle="in stock" icon={Warehouse} />
         <StatCard title="Finished Bottles" value={totalBottles} subtitle="in stock" icon={Wine} />
         <StatCard title="Finished LALs" value={totalFinishedLALs.toFixed(2)} subtitle="bottled" icon={Wine} />
@@ -50,6 +54,7 @@ export default function Inventory() {
       <Tabs defaultValue="raw" className="space-y-4">
         <TabsList>
           <TabsTrigger value="raw">Raw Materials</TabsTrigger>
+          <TabsTrigger value="packaging">Packaging</TabsTrigger>
           <TabsTrigger value="finished">Finished Goods</TabsTrigger>
         </TabsList>
 
@@ -71,9 +76,9 @@ export default function Inventory() {
                 <TableBody>
                   {loadingRaw ? (
                     <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-                  ) : rawMaterials.length === 0 ? (
+                  ) : nonPackagingRaw.length === 0 ? (
                     <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No raw materials in stock</TableCell></TableRow>
-                  ) : rawMaterials.map(m => (
+                  ) : nonPackagingRaw.map(m => (
                     <TableRow key={m.id}>
                       <TableCell className="font-medium text-sm">{m.name}</TableCell>
                       <TableCell>
@@ -86,6 +91,41 @@ export default function Inventory() {
                       <TableCell className="text-sm font-medium">{m.lals ? m.lals.toFixed(3) : '—'}</TableCell>
                       <TableCell className="text-sm">{m.supplier || '—'}</TableCell>
                       <TableCell className="text-sm">{m.batch_number || '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="packaging">
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead>Batch #</TableHead>
+                    <TableHead>Notes</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loadingRaw ? (
+                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+                  ) : packagingItems.length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No packaging items in stock. Add them via Receiving with type "Packaging".</TableCell></TableRow>
+                  ) : packagingItems.map(m => (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-medium text-sm">{m.name}</TableCell>
+                      <TableCell className="text-sm font-semibold">{m.quantity}</TableCell>
+                      <TableCell className="text-sm">{m.unit}</TableCell>
+                      <TableCell className="text-sm">{m.supplier || '—'}</TableCell>
+                      <TableCell className="text-sm">{m.batch_number || '—'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{m.notes || '—'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

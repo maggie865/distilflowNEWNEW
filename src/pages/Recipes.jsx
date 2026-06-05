@@ -13,10 +13,14 @@ import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 
 const EMPTY_INGREDIENT = { name: '', quantity: '', unit: 'g', notes: '' };
+const EMPTY_PACKAGING = { name: '', quantity: 1, unit: 'units', type: 'bottle' };
 
 const EMPTY_FORM = {
   name: '', description: '', base_ethanol_volume: '', base_ethanol_abv: '',
-  ingredients: [{ ...EMPTY_INGREDIENT }], notes: ''
+  bottles_per_case: '',
+  ingredients: [{ ...EMPTY_INGREDIENT }],
+  packaging: [],
+  notes: ''
 };
 
 export default function Recipes() {
@@ -55,6 +59,16 @@ export default function Recipes() {
   const addIngredient = () => setForm(prev => ({ ...prev, ingredients: [...prev.ingredients, { ...EMPTY_INGREDIENT }] }));
   const removeIngredient = (index) => setForm(prev => ({ ...prev, ingredients: prev.ingredients.filter((_, i) => i !== index) }));
 
+  const setPackaging = (index, field, value) => {
+    setForm(prev => {
+      const packaging = [...prev.packaging];
+      packaging[index] = { ...packaging[index], [field]: value };
+      return { ...prev, packaging };
+    });
+  };
+  const addPackaging = () => setForm(prev => ({ ...prev, packaging: [...(prev.packaging || []), { ...EMPTY_PACKAGING }] }));
+  const removePackaging = (index) => setForm(prev => ({ ...prev, packaging: prev.packaging.filter((_, i) => i !== index) }));
+
   const openNew = () => { setEditing(null); setForm(EMPTY_FORM); setOpen(true); };
 
   const openEdit = (recipe) => {
@@ -64,7 +78,9 @@ export default function Recipes() {
       description: recipe.description || '',
       base_ethanol_volume: recipe.base_ethanol_volume || '',
       base_ethanol_abv: recipe.base_ethanol_abv || '',
+      bottles_per_case: recipe.bottles_per_case || '',
       ingredients: recipe.ingredients?.length ? recipe.ingredients : [{ ...EMPTY_INGREDIENT }],
+      packaging: recipe.packaging || [],
       notes: recipe.notes || '',
     });
     setOpen(true);
@@ -76,9 +92,13 @@ export default function Recipes() {
         ...data,
         base_ethanol_volume: parseFloat(data.base_ethanol_volume) || 0,
         base_ethanol_abv: data.base_ethanol_abv ? parseFloat(data.base_ethanol_abv) : undefined,
+        bottles_per_case: data.bottles_per_case ? parseInt(data.bottles_per_case) : undefined,
         ingredients: data.ingredients
           .filter(i => i.name.trim())
           .map(i => ({ ...i, quantity: parseFloat(i.quantity) || 0 })),
+        packaging: (data.packaging || [])
+          .filter(p => p.name.trim())
+          .map(p => ({ ...p, quantity: parseFloat(p.quantity) || 0 })),
       };
       if (editing) {
         await base44.entities.Recipe.update(editing.id, payload);
@@ -147,6 +167,12 @@ export default function Recipes() {
                       <p className="text-sm font-semibold">{recipe.base_ethanol_abv}%</p>
                     </div>
                   )}
+                  {recipe.bottles_per_case && (
+                    <div className="rounded-md bg-muted px-3 py-2 text-center">
+                      <p className="text-xs text-muted-foreground">Btls/Case</p>
+                      <p className="text-sm font-semibold">{recipe.bottles_per_case}</p>
+                    </div>
+                  )}
                 </div>
                 {recipe.ingredients?.length > 0 && (
                   <div>
@@ -158,6 +184,21 @@ export default function Recipes() {
                         <div key={i} className="flex items-center justify-between text-sm py-1 border-b border-border/50 last:border-0">
                           <span className="text-foreground">{ing.name}</span>
                           <span className="text-muted-foreground font-medium">{ing.quantity} {ing.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {recipe.packaging?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Packaging (per bottle)
+                    </p>
+                    <div className="space-y-1">
+                      {recipe.packaging.map((p, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm py-1 border-b border-border/50 last:border-0">
+                          <span className="text-foreground">{p.name}</span>
+                          <span className="text-muted-foreground font-medium">{p.quantity} {p.unit}</span>
                         </div>
                       ))}
                     </div>
@@ -195,6 +236,10 @@ export default function Recipes() {
                 <div>
                   <Label>Ethanol ABV %</Label>
                   <Input type="number" step="0.1" value={form.base_ethanol_abv} onChange={e => set('base_ethanol_abv', e.target.value)} placeholder="e.g. 96" />
+                </div>
+                <div>
+                  <Label>Bottles per Case</Label>
+                  <Input type="number" value={form.bottles_per_case} onChange={e => set('bottles_per_case', e.target.value)} placeholder="e.g. 12" />
                 </div>
               </div>
             </div>
@@ -246,6 +291,51 @@ export default function Recipes() {
                   </div>
                   <div className={i === 0 ? 'mt-5' : ''}>
                     <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:text-destructive" onClick={() => removeIngredient(i)}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Packaging</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Items consumed per bottle produced</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={addPackaging}>
+                  <Plus className="w-3 h-3 mr-1" />Add
+                </Button>
+              </div>
+              {(form.packaging || []).length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-2">No packaging items added yet</p>
+              )}
+              {(form.packaging || []).map((p, i) => (
+                <div key={i} className="grid grid-cols-[1fr_70px_80px_auto] gap-2 items-end">
+                  <div>
+                    {i === 0 && <Label className="text-xs">Item Name</Label>}
+                    <Input value={p.name} onChange={e => setPackaging(i, 'name', e.target.value)} placeholder="e.g. 700ml Bottle" />
+                  </div>
+                  <div>
+                    {i === 0 && <Label className="text-xs">Qty</Label>}
+                    <Input type="number" step="0.01" value={p.quantity} onChange={e => setPackaging(i, 'quantity', e.target.value)} placeholder="1" />
+                  </div>
+                  <div>
+                    {i === 0 && <Label className="text-xs">Type</Label>}
+                    <Select value={p.type} onValueChange={val => setPackaging(i, 'type', val)}>
+                      <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="bottle">Bottle</SelectItem>
+                        <SelectItem value="closure">Closure</SelectItem>
+                        <SelectItem value="label">Label</SelectItem>
+                        <SelectItem value="carton">Carton</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className={i === 0 ? 'mt-5' : ''}>
+                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:text-destructive" onClick={() => removePackaging(i)}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>
