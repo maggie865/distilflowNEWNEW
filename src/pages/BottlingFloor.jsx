@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, BarChart3, Pencil, Trash2 } from 'lucide-react';
+import { Plus, BarChart3, Pencil, Trash2, FlaskConical, CheckCircle2, Clock, PackageCheck } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -499,6 +499,64 @@ export default function BottlingFloor() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Batch Status Summary */}
+      {(() => {
+        const inProgress = bottlingRuns.filter(r => r.status === 'in_progress');
+        const completed = bottlingRuns.filter(r => r.status === 'completed');
+        const planned = bottlingRuns.filter(r => r.status === 'planned');
+        const totalBottles = completed.reduce((sum, r) => sum + (r.bottles_produced || 0), 0);
+
+        const stats = [
+          {
+            label: 'Waiting to Bottle',
+            value: bottleReadyBatches.length,
+            sub: `batch${bottleReadyBatches.length !== 1 ? 'es' : ''} ready`,
+            icon: Clock,
+            color: 'text-amber-600',
+            bg: 'bg-amber-50 border-amber-200',
+          },
+          {
+            label: 'In Progress',
+            value: inProgress.length + (activeRun ? 1 : 0),
+            sub: `run${(inProgress.length + (activeRun ? 1 : 0)) !== 1 ? 's' : ''} active`,
+            icon: FlaskConical,
+            color: 'text-blue-600',
+            bg: 'bg-blue-50 border-blue-200',
+          },
+          {
+            label: 'Completed',
+            value: completed.length,
+            sub: `run${completed.length !== 1 ? 's' : ''} finished`,
+            icon: CheckCircle2,
+            color: 'text-green-600',
+            bg: 'bg-green-50 border-green-200',
+          },
+          {
+            label: 'Total Bottles Produced',
+            value: totalBottles.toLocaleString(),
+            sub: 'across all completed runs',
+            icon: PackageCheck,
+            color: 'text-primary',
+            bg: 'bg-accent border-accent-foreground/10',
+          },
+        ];
+
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            {stats.map(({ label, value, sub, icon: Icon, color, bg }) => (
+              <div key={label} className={`rounded-xl border p-4 flex flex-col gap-1 ${bg}`}>
+                <div className="flex items-center gap-2">
+                  <Icon className={`w-4 h-4 ${color}`} />
+                  <span className="text-xs font-medium text-muted-foreground">{label}</span>
+                </div>
+                <p className={`text-2xl font-bold font-display ${color}`}>{value}</p>
+                <p className="text-xs text-muted-foreground">{sub}</p>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Bottling History */}
       <div className="space-y-4">
