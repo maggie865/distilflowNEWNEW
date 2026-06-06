@@ -4,7 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, ChevronDown, ChevronUp, Flame, Wine, Droplets, Package2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Flame, Wine, Droplets, Package2, FlaskConical, Leaf } from 'lucide-react';
 import { format } from 'date-fns';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -46,7 +46,18 @@ function Stat({ label, value }) {
   );
 }
 
-function BatchCard({ batchNumber, distillations, bottlings }) {
+function LotTag({ icon: Icon, color, label, value }) {
+  if (!value) return null;
+  return (
+    <div className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border ${color}`}>
+      <Icon className="w-3 h-3 flex-shrink-0" />
+      <span className="font-medium">{label}:</span>
+      <span className="font-mono">{value}</span>
+    </div>
+  );
+}
+
+function BatchCard({ batchNumber, distillations, bottlings, subBatches }) {
   const [expanded, setExpanded] = useState(false);
 
   // Summary stats
@@ -103,27 +114,59 @@ function BatchCard({ batchNumber, distillations, bottlings }) {
 
       {expanded && (
         <div className="border-t border-border px-4 pt-5 pb-2">
-          {distillations.map((d, i) => (
-            <StepRow
-              key={d.id}
-              icon={Flame}
-              color="bg-orange-500"
-              label={`Distillation Run${distillations.length > 1 ? ` #${i + 1}` : ''}`}
-              data={d}
-            >
-              <Stat label="Product" value={d.product_name} />
-              <Stat label="Input" value={d.input_volume ? `${d.input_volume}L @ ${d.input_abv}%` : null} />
-              <Stat label="Input LALs" value={d.input_lals?.toFixed(3)} />
-              <Stat label="Output" value={d.output_volume ? `${d.output_volume}L @ ${d.output_abv}%` : null} />
-              <Stat label="Output LALs" value={d.output_lals?.toFixed(3)} />
-              <Stat label="Heads" value={d.heads_volume ? `${d.heads_volume}L` : null} />
-              <Stat label="Tails" value={d.tails_volume ? `${d.tails_volume}L` : null} />
-              <Stat
-                label="LAL Yield"
-                value={d.input_lals > 0 ? `${((d.output_lals / d.input_lals) * 100).toFixed(1)}%` : null}
-              />
-            </StepRow>
-          ))}
+          {distillations.map((d, i) => {
+            // Match sub-batch by sub_batch_code or by batch_number + run index
+            const sub = subBatches.find(s =>
+              (d.sub_batch_code && s.sub_batch_code === d.sub_batch_code) ||
+              (!d.sub_batch_code && s.master_batch_code === batchNumber)
+            );
+            const ethanolLot = d.ethanol_lot_code || sub?.ethanol_lot;
+            const botanicalLots = sub?.botanical_lots || d.maceration_notes;
+
+            return (
+              <StepRow
+                key={d.id}
+                icon={Flame}
+                color="bg-orange-500"
+                label={d.sub_batch_code || `Distillation Run${distillations.length > 1 ? ` #${i + 1}` : ''}`}
+                data={d}
+              >
+                <Stat label="Product" value={d.product_name} />
+                <Stat label="Input" value={d.input_volume ? `${d.input_volume}L @ ${d.input_abv}%` : null} />
+                <Stat label="Input LALs" value={d.input_lals?.toFixed(3)} />
+                <Stat label="Output" value={d.output_volume ? `${d.output_volume}L @ ${d.output_abv}%` : null} />
+                <Stat label="Output LALs" value={d.output_lals?.toFixed(3)} />
+                <Stat label="Heads" value={d.heads_volume ? `${d.heads_volume}L` : null} />
+                <Stat label="Tails" value={d.tails_volume ? `${d.tails_volume}L` : null} />
+                <Stat
+                  label="LAL Yield"
+                  value={d.input_lals > 0 ? `${((d.output_lals / d.input_lals) * 100).toFixed(1)}%` : null}
+                />
+                {(ethanolLot || botanicalLots) && (
+                  <div className="col-span-2 sm:col-span-4 pt-1 border-t border-border mt-1">
+                    <p className="text-xs text-muted-foreground mb-1.5 font-medium">Lot Traceability</p>
+                    <div className="flex flex-wrap gap-2">
+                      <LotTag
+                        icon={FlaskConical}
+                        color="bg-blue-50 border-blue-200 text-blue-700"
+                        label="Ethanol"
+                        value={ethanolLot}
+                      />
+                      {botanicalLots && botanicalLots.split(',').map(lot => lot.trim()).filter(Boolean).map((lot, idx) => (
+                        <LotTag
+                          key={idx}
+                          icon={Leaf}
+                          color="bg-green-50 border-green-200 text-green-700"
+                          label="Botanical"
+                          value={lot}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </StepRow>
+            );
+          })}
 
           {bottlings.map((b, i) => (
             <StepRow
@@ -166,6 +209,11 @@ export default function BatchTracker() {
     queryFn: () => base44.entities.BottlingRun.list('-date', 200),
   });
 
+  const { data: subBatches = [] } = useQuery({
+    queryKey: ['subBatches'],
+    queryFn: () => base44.entities.SubBatch.list('-date', 500),
+  });
+
   const isLoading = loadingD || loadingB;
 
   // Group everything by batch_number
@@ -187,8 +235,12 @@ export default function BatchTracker() {
     ? batches.filter(([key, { distillations: ds, bottlings: bs }]) => {
         const q = search.toLowerCase();
         return key.toLowerCase().includes(q) ||
-          ds.some(d => d.product_name?.toLowerCase().includes(q)) ||
-          bs.some(b => b.product_name?.toLowerCase().includes(q));
+          ds.some(d => d.product_name?.toLowerCase().includes(q) || d.ethanol_lot_code?.toLowerCase().includes(q)) ||
+          bs.some(b => b.product_name?.toLowerCase().includes(q)) ||
+          subBatches.some(s => s.master_batch_code === key && (
+            s.ethanol_lot?.toLowerCase().includes(q) ||
+            s.botanical_lots?.toLowerCase().includes(q)
+          ));
       })
     : batches;
 
@@ -225,6 +277,7 @@ export default function BatchTracker() {
               batchNumber={batchNumber}
               distillations={ds}
               bottlings={bs}
+              subBatches={subBatches.filter(s => s.master_batch_code === batchNumber)}
             />
           ))}
         </div>
