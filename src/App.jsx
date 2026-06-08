@@ -25,6 +25,7 @@ import BottlingFloor from '@/pages/BottlingFloor';
 import Sales from '@/pages/Sales';
 import Customers from '@/pages/Customers';
 import Warehouse from '@/pages/Warehouse';
+import Reports from '@/pages/Reports';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -68,6 +69,7 @@ const AuthenticatedApp = () => {
           <Route path="/sales" element={<Sales />} />
           <Route path="/customers" element={<Customers />} />
           <Route path="/warehouse" element={<Warehouse />} />
+          <Route path="/reports" element={<Reports />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />
