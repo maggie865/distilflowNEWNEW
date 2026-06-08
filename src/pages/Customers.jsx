@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash2, Users, MapPin } from 'lucide-react';
+import { Plus, Trash2, Users, MapPin, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 
@@ -18,7 +18,16 @@ export default function Customers() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deletingCustomer, setDeletingCustomer] = useState(null);
+  const [syncing, setSyncing] = useState(false);
   const queryClient = useQueryClient();
+
+  const handleSync = async () => {
+    setSyncing(true);
+    const res = await base44.functions.invoke('syncCustomersFromSheet', {});
+    queryClient.invalidateQueries({ queryKey: ['customers'] });
+    toast.success(`Synced! ${res.data.created} added, ${res.data.updated} updated.`);
+    setSyncing(false);
+  };
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
@@ -47,6 +56,10 @@ export default function Customers() {
   return (
     <div className="pb-20 md:pb-0">
       <PageHeader title="Customers" subtitle="Manage your customer directory for dispatch">
+        <Button variant="outline" onClick={handleSync} disabled={syncing} className="gap-2">
+          <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+          {syncing ? 'Syncing…' : 'Sync from Sheet'}
+        </Button>
         <Button onClick={() => setShowForm(true)} className="gap-2">
           <Plus className="w-4 h-4" />
           Add Customer
