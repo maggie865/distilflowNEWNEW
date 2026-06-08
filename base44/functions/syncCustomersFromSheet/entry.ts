@@ -39,26 +39,30 @@ Deno.serve(async (req) => {
       existingMap[c.business_name.toLowerCase()] = c;
     }
 
-    let created = 0;
-    let updated = 0;
+    const toCreate = [];
+    const toUpdate = []; // { id, delivery_address }
 
     for (const sc of sheetCustomers) {
       const key = sc.business_name.toLowerCase();
       if (existingMap[key]) {
-        // Update if address changed
         if (existingMap[key].delivery_address !== sc.delivery_address) {
-          await base44.asServiceRole.entities.Customer.update(existingMap[key].id, {
-            delivery_address: sc.delivery_address,
-          });
-          updated++;
+          toUpdate.push({ id: existingMap[key].id, delivery_address: sc.delivery_address });
         }
       } else {
-        await base44.asServiceRole.entities.Customer.create(sc);
-        created++;
+        toCreate.push(sc);
       }
     }
 
-    return Response.json({ synced: created + updated, created, updated });
+    if (toCreate.length > 0) {
+      await base44.asServiceRole.entities.Customer.bulkCreate(toCreate);
+    }
+
+    // Run updates sequentially but only for changed records (usually few)
+    for (const u of toUpdate) {
+      await base44.asServiceRole.entities.Customer.update(u.id, { delivery_address: u.delivery_address });
+    }
+
+    return Response.json({ synced: toCreate.length + toUpdate.length, created: toCreate.length, updated: toUpdate.length });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }
