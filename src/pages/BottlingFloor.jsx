@@ -78,18 +78,24 @@ export default function BottlingFloor() {
 
   const selectedTank = tanks.find(t => t.id === selectedTankId);
 
-  // Packaging recipes that match the selected bottle size
+  // Packaging recipes — auto-match by bottle size
   const packagingRecipes = recipes.filter(r => r.recipe_type === 'packaging');
-  const matchingRecipes = packagingRecipes.filter(r => {
-    // Match by bottle size in recipe packaging items
-    if (!bottleSizeMl) return true;
-    const hasMatchingBottle = r.packaging?.some(p =>
-      p.type === 'bottle' && p.name?.toLowerCase().includes(bottleSizeMl)
-    );
-    return hasMatchingBottle || packagingRecipes.length <= 3; // show all if few options
-  });
 
-  const selectedRecipe = recipes.find(r => r.id === selectedRecipeId);
+  // Find the packaging recipe whose packaging items include a bottle matching this size
+  const autoMatchedRecipe = bottleSizeMl
+    ? packagingRecipes.find(r =>
+        r.packaging?.some(p =>
+          p.type === 'bottle' && (
+            p.name?.includes(bottleSizeMl) ||
+            p.name?.toLowerCase().includes(`${bottleSizeMl}ml`) ||
+            p.name?.toLowerCase().includes(`${bottleSizeMl} ml`)
+          )
+        )
+      )
+    : null;
+
+  // Use the auto-matched recipe, or fall back to manually selected one
+  const selectedRecipe = autoMatchedRecipe || recipes.find(r => r.id === selectedRecipeId);
   const bottlesPerCase = selectedRecipe?.bottles_per_case || 6;
 
   const resetForm = () => {
@@ -439,26 +445,50 @@ export default function BottlingFloor() {
               </Select>
             </div>
 
-            {/* Packaging recipe */}
+            {/* Packaging recipe — auto-matched from bottle size, manual fallback */}
             <div>
               <Label>Packaging Recipe</Label>
-              <Select value={selectedRecipeId} onValueChange={setSelectedRecipeId}>
-                <SelectTrigger><SelectValue placeholder="Select packaging recipe" /></SelectTrigger>
-                <SelectContent>
-                  {packagingRecipes.length === 0 && (
-                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No packaging recipes found</div>
+              {autoMatchedRecipe ? (
+                <div className="mt-1 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-green-800">{autoMatchedRecipe.name}</p>
+                      <p className="text-xs text-green-700 mt-0.5">
+                        Auto-matched · {autoMatchedRecipe.bottles_per_case || 6} bottles per case
+                      </p>
+                    </div>
+                    <Badge className="bg-green-100 text-green-700 border-green-300 text-xs">Auto</Badge>
+                  </div>
+                  {autoMatchedRecipe.packaging?.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-green-200 space-y-0.5">
+                      {autoMatchedRecipe.packaging.map((p, i) => (
+                        <div key={i} className="flex justify-between text-xs text-green-700">
+                          <span>{p.name}</span>
+                          <span>{p.quantity} {p.unit}</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  {packagingRecipes.map(r => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name}{r.bottles_per_case ? ` — ${r.bottles_per_case} btls/case` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedRecipe && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {selectedRecipe.bottles_per_case} bottles per case
-                </p>
+                </div>
+              ) : (
+                <>
+                  <Select value={selectedRecipeId} onValueChange={setSelectedRecipeId}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="No recipe matched — select manually" /></SelectTrigger>
+                    <SelectContent>
+                      {packagingRecipes.length === 0 && (
+                        <div className="px-3 py-4 text-sm text-muted-foreground text-center">No packaging recipes found</div>
+                      )}
+                      {packagingRecipes.map(r => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}{r.bottles_per_case ? ` — ${r.bottles_per_case} btls/case` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedRecipe && (
+                    <p className="text-xs text-muted-foreground mt-1">{selectedRecipe.bottles_per_case} bottles per case</p>
+                  )}
+                </>
               )}
             </div>
 
