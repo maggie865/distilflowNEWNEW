@@ -1,0 +1,44 @@
+{
+  "name": "WarehouseStock",
+  "type": "object",
+  "properties": {
+    "product_name": {
+      "type": "string",
+      "description": "Name of the product"
+    },
+    "batch_number": {
+      "type": "string",
+      "description": "Batch number"
+    },
+    "bottle_size_ml": {
+      "type": "number",
+      "description": "Bottle size in ml"
+    },
+    "abv_percent": {
+      "type": "number",
+      "description": "ABV percentage"
+    },
+    "quantity_bottles": {
+      "type": "number",
+      "description": "Number of bottles currently held at the warehouse"
+    },
+    "total_lals": {
+      "type": "number",
+      "description": "Total LALs held at the warehouse"
+    },
+    "date_transferred_in": {
+      "type": "string",
+      "format": "date",
+      "description": "Date stock was transferred to warehouse"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Additional notes"
+    }
+  },
+  "required": [
+    "product_name",
+    "batch_number",
+    "quantity_bottles"
+  ]
+}

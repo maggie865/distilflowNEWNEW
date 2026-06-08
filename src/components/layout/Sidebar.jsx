@@ -12,6 +12,7 @@ import {
   FlaskConical,
   TrendingUp,
   Users,
+  Building2,
   ChevronLeft,
   ChevronRight } from
 'lucide-react';
@@ -30,6 +31,7 @@ const navItems = [
 { label: 'Raw Materials', icon: Package, path: '/raw-materials' },
 { label: 'Inventory', icon: Warehouse, path: '/inventory' },
 { label: 'Sales & Dispatch', icon: TrendingUp, path: '/sales' },
+{ label: '3PL Warehouse', icon: Building2, path: '/warehouse' },
 { label: 'Customers', icon: Users, path: '/customers' }];
 
 
