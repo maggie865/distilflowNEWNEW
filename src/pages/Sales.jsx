@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Truck, PackageCheck, MapPin, Trash2, Search } from 'lucide-react';
+import { Plus, Truck, PackageCheck, MapPin, Trash2, Search, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -42,6 +43,11 @@ export default function Sales() {
   const { data: finishedGoods = [] } = useQuery({
     queryKey: ['finishedGoods'],
     queryFn: () => base44.entities.FinishedGood.list('-created_date', 200),
+  });
+
+  const { data: customers = [] } = useQuery({
+    queryKey: ['customers'],
+    queryFn: () => base44.entities.Customer.list('business_name', 200),
   });
 
   const { data: dispatches = [] } = useQuery({
@@ -319,25 +325,43 @@ export default function Sales() {
 
             {/* Customer */}
             <div>
-              <Label>Customer Name</Label>
-              <Input
+              <div className="flex items-center justify-between mb-1">
+                <Label>Customer</Label>
+                <Link to="/customers" className="text-xs text-primary hover:underline flex items-center gap-1">
+                  <Users className="w-3 h-3" /> Manage customers
+                </Link>
+              </div>
+              <Select
                 value={form.customer_name}
-                onChange={e => setForm(f => ({ ...f, customer_name: e.target.value }))}
-                placeholder="e.g. Coastal Liquor"
-                className="mt-1"
-              />
+                onValueChange={v => {
+                  const c = customers.find(c => c.business_name === v);
+                  setForm(f => ({
+                    ...f,
+                    customer_name: v,
+                    customer_address: c?.delivery_address || '',
+                  }));
+                }}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select customer…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {customers.length === 0 && (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No customers yet</div>
+                  )}
+                  {customers.map(c => (
+                    <SelectItem key={c.id} value={c.business_name}>{c.business_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.customer_address && (
+                <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
+                  <MapPin className="w-3 h-3" /> {form.customer_address}
+                </p>
+              )}
             </div>
 
-            <div>
-              <Label>Customer Address</Label>
-              <Input
-                value={form.customer_address}
-                onChange={e => setForm(f => ({ ...f, customer_address: e.target.value }))}
-                placeholder="Delivery address"
-                className="mt-1"
-              />
-            </div>
-
+            {/* hidden address field no longer needed — auto-filled from customer */}
             {/* Date */}
             <div>
               <Label>Dispatch Date</Label>
