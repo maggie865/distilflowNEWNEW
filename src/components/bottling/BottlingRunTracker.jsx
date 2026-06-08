@@ -33,7 +33,6 @@ export default function BottlingRunTracker({ run, onComplete, onCancel, isComple
       extraBottles: extraCount,
       tastingBottles: tastingCount,
     });
-    setShowFinish(false);
   };
 
   // Pre-start screen
