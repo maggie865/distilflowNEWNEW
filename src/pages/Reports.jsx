@@ -47,6 +47,7 @@ export default function Reports() {
   const { data: rawMaterials = [] } = useQuery({ queryKey: ['rawMaterials'], queryFn: () => base44.entities.RawMaterial.list('name', 200) });
   const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => base44.entities.FinishedGood.list('product_name', 200) });
   const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => base44.entities.WarehouseStock.list('-date_transferred_in', 200) });
+  const { data: distillationRuns = [] } = useQuery({ queryKey: ['distillationRuns'], queryFn: () => base44.entities.DistillationRun.list('-date', 500) });
 
   // Date range for selected month
   const [year, month] = selectedMonth.split('-').map(Number);
@@ -72,15 +73,33 @@ export default function Reports() {
   const totalWarehouseLals = warehouseStock.reduce((s, w) => s + (w.total_lals || 0), 0);
   const totalEthanolLals = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
 
+  // Distillation dumped data converted to wastage records
+  const completedDistillationRuns = distillationRuns.filter(r => r.status === 'completed' && r.dumped_volume && inRange(r.date));
+  const distillationDumpedWastage = completedDistillationRuns.map(r => ({
+    id: `distill-${r.id}`,
+    date: r.date,
+    product_name: r.product_name,
+    batch_number: r.batch_number,
+    volume: r.dumped_volume,
+    abv: r.dumped_abv,
+    lals: r.dumped_lals,
+    reason: r.dumped_notes || 'Distillation dump',
+    source: 'distillation',
+    run_id: r.id,
+  }));
+
+  // Combined wastage: manual records + distillation dumps
+  const combinedWastage = [...monthWastage, ...distillationDumpedWastage];
+
   // Wastage stats
-  const totalWastedLals = monthWastage.reduce((s, w) => s + (w.lals || 0), 0);
-  const totalWastedVol = monthWastage.reduce((s, w) => s + (w.volume || 0), 0);
+  const totalWastedLals = combinedWastage.reduce((s, w) => s + (w.lals || 0), 0);
+  const totalWastedVol = combinedWastage.reduce((s, w) => s + (w.volume || 0), 0);
 
   // Cost per litre: look up cost from raw materials by matching ethanol cost_per_unit as a proxy
   const ethanolCostPerLitre = rawMaterials.filter(m => m.type === 'ethanol' && m.cost_per_unit)
     .reduce((avg, m, _, arr) => avg + m.cost_per_unit / arr.length, 0) || 3.5;
 
-  const wastageWithCost = monthWastage.map(w => {
+  const wastageWithCost = combinedWastage.map(w => {
     const costPerL = w.source === 'distillation' || w.source === 'tank' ? ethanolCostPerLitre : ethanolCostPerLitre * 0.5;
     const totalLoss = parseFloat(((w.volume || 0) * costPerL).toFixed(2));
     return { ...w, cost_per_litre: costPerL, total_loss: totalLoss };
@@ -92,8 +111,8 @@ export default function Reports() {
   // Wastage by source for bar chart
   const wastageBySource = ['distillation', 'bottling', 'tank', 'other'].map(src => ({
     source: src.charAt(0).toUpperCase() + src.slice(1),
-    lals: parseFloat(monthWastage.filter(w => w.source === src).reduce((s, w) => s + (w.lals || 0), 0).toFixed(3)),
-    volume: parseFloat(monthWastage.filter(w => w.source === src).reduce((s, w) => s + (w.volume || 0), 0).toFixed(2)),
+    lals: parseFloat(combinedWastage.filter(w => w.source === src).reduce((s, w) => s + (w.lals || 0), 0).toFixed(3)),
+    volume: parseFloat(combinedWastage.filter(w => w.source === src).reduce((s, w) => s + (w.volume || 0), 0).toFixed(2)),
   })).filter(d => d.lals > 0 || d.volume > 0);
 
   // Monthly trend (last 6 months)
@@ -103,11 +122,13 @@ export default function Reports() {
     const s = startOfMonth(new Date(y, mo - 1));
     const e = endOfMonth(new Date(y, mo - 1));
     const inM = (ds) => { try { return ds && isWithinInterval(parseISO(ds), { start: s, end: e }); } catch { return false; } };
+    const monthWastageData = wastage.filter(w => inM(w.date));
+    const monthDistillDumped = distillationRuns.filter(r => r.status === 'completed' && r.dumped_lals && inM(r.date)).reduce((acc, r) => acc + (r.dumped_lals || 0), 0);
     return {
       month: format(s, 'MMM yy'),
       received: receiving.filter(r => inM(r.date_received)).reduce((acc, r) => acc + (r.lals || r.quantity || 0), 0),
       dispatched: dispatches.filter(d => inM(d.dispatch_date)).reduce((acc, d) => acc + (d.quantity_bottles || 0), 0),
-      wasted: parseFloat(wastage.filter(w => inM(w.date)).reduce((acc, w) => acc + (w.lals || 0), 0).toFixed(3)),
+      wasted: parseFloat((monthWastageData.reduce((acc, w) => acc + (w.lals || 0), 0) + monthDistillDumped).toFixed(3)),
     };
   });
 
