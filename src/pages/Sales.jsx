@@ -90,15 +90,20 @@ export default function Sales() {
   const calculateDistance = async (customerAddress) => {
     if (!customerAddress) return;
     setCalcingDistance(true);
-    const res = await base44.functions.invoke('getDistanceMatrix', {
-      origin: DISTILLERY_ORIGIN,
-      destination: customerAddress,
-    });
-    if (res.data?.distance_km) {
-      setForm(f => ({ ...f, transport_distance_km: String(res.data.distance_km) }));
-      toast.success(`Distance: ${res.data.distance_km} km (${res.data.duration_text})`);
+    try {
+      const res = await base44.functions.invoke('getDistanceMatrix', {
+        origin: DISTILLERY_ORIGIN,
+        destination: customerAddress,
+      });
+      if (res.data?.distance_km) {
+        setForm(f => ({ ...f, transport_distance_km: String(res.data.distance_km) }));
+        toast.success(`Distance: ${res.data.distance_km} km (${res.data.duration_text})`);
+      }
+    } catch (err) {
+      toast.error('Could not calculate distance — enter manually');
+    } finally {
+      setCalcingDistance(false);
     }
-    setCalcingDistance(false);
   };
 
   const dispatchMutation = useMutation({
