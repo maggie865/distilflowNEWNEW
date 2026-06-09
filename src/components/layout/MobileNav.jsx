@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, FileText, Settings, ChevronDown } from 'lucide-react';
+import { Menu, Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, FileText, Settings, ChevronDown, PackagePlus, Truck } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
@@ -23,12 +23,13 @@ const navGroups = [
       { label: 'Batch Tracker', icon: FlaskConical, path: '/batch-tracker' },
       { label: 'Raw Materials', icon: Droplets, path: '/raw-materials' },
       { label: 'Inventory', icon: Warehouse, path: '/inventory' },
-      { label: 'Receiving', icon: Droplets, path: '/receiving' },
     ]
   },
   {
-    name: 'Sales',
+    name: 'Inwards/Outwards',
     items: [
+      { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
+      { label: 'Suppliers', icon: Truck, path: '/suppliers' },
       { label: 'Sales & Dispatch', icon: TrendingUp, path: '/sales' },
       { label: '3PL Warehouse', icon: Warehouse, path: '/warehouse' },
       { label: 'Customers', icon: Users, path: '/customers' },
