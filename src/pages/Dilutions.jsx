@@ -9,7 +9,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calculator, FlaskConical, Droplets, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -28,12 +27,7 @@ const BLANK_ETHANOL = {
   notes: '',
 };
 
-// Tank purpose mappings (driven by DB, not hardcoded names)
-// diluted_ethanol → ethanol dilution destination tanks
-// maceration_dilution → heads source tanks
-// final_product_storage → product destination tanks (A,B,C,D and any new ones)
-
-const BLANK_HEADS = {
+const BLANK_HEARTS = {
   batch_number: '',
   date: new Date().toISOString().split('T')[0],
   source_tank_id: '',
@@ -52,12 +46,12 @@ const BLANK_HEADS = {
 export default function Dilutions() {
   const [openType, setOpenType] = useState(null); // 'ethanol' | 'heads'
   const [ethanolForm, setEthanolForm] = useState(BLANK_ETHANOL);
-  const [headsForm, setHeadsForm] = useState(BLANK_HEADS);
+  const [heartsForm, setHeartsForm] = useState(BLANK_HEARTS);
   const [editingDilution, setEditingDilution] = useState(null);
   const queryClient = useQueryClient();
 
   const setE = (f, v) => setEthanolForm(p => ({ ...p, [f]: v }));
-  const setH = (f, v) => setHeadsForm(p => ({ ...p, [f]: v }));
+  const setH = (f, v) => setHeartsForm(p => ({ ...p, [f]: v }));
 
   const { data: dilutions = [], isLoading } = useQuery({
     queryKey: ['dilutions'],
@@ -74,9 +68,8 @@ export default function Dilutions() {
     queryFn: () => base44.entities.StorageTank.list('name', 50),
   });
 
-  // Filtered tank lists — driven by purpose, not hardcoded names
   const ethanolDestTanks = tanks.filter(t => t.purpose === 'diluted_ethanol');
-  const headsSrcTanks = tanks.filter(t => t.purpose === 'maceration_dilution');
+  const heartsSrcTanks = tanks.filter(t => t.purpose === 'maceration_dilution');
   const productTanks = tanks.filter(t => t.purpose === 'final_product_storage');
 
   // --- Ethanol Dilution calcs ---
@@ -86,39 +79,34 @@ export default function Dilutions() {
   const eOutputABV = eOutputVol > 0 ? (eInputLALs / eOutputVol) * 100 : 0;
   const eSelectedTank = tanks.find(t => t.id === ethanolForm.tank_id);
 
-  // --- Heads Dilution calcs (tri-directional) ---
-  const hInputVol = parseFloat(headsForm.input_ethanol_volume) || 0;
-  const hInputAbv = parseFloat(headsForm.input_abv) || 0;
+  // --- Hearts Dilution calcs (tri-directional) ---
+  const hInputVol = parseFloat(heartsForm.input_ethanol_volume) || 0;
+  const hInputAbv = parseFloat(heartsForm.input_abv) || 0;
   const hInputLALs = hInputVol && hInputAbv ? hInputVol * hInputAbv / 100 : 0;
 
-  // Derive the third value from whichever two are filled
-  const hWaterRaw = parseFloat(headsForm.water_added);
-  const hOutputVolRaw = parseFloat(headsForm.output_volume);
-  const hTargetAbvRaw = parseFloat(headsForm.target_abv);
+  const hWaterRaw = parseFloat(heartsForm.water_added);
+  const hOutputVolRaw = parseFloat(heartsForm.output_volume);
+  const hTargetAbvRaw = parseFloat(heartsForm.target_abv);
 
   let hWater = 0, hOutputVol = 0, hOutputABV = 0;
 
-  if (!isNaN(hWaterRaw) && headsForm.water_added !== '') {
-    // water entered → derive output vol & ABV
+  if (!isNaN(hWaterRaw) && heartsForm.water_added !== '') {
     hWater = hWaterRaw;
     hOutputVol = hInputVol + hWater;
     hOutputABV = hOutputVol > 0 ? (hInputLALs / hOutputVol) * 100 : 0;
-  } else if (!isNaN(hOutputVolRaw) && headsForm.output_volume !== '') {
-    // output vol entered → derive water & ABV
+  } else if (!isNaN(hOutputVolRaw) && heartsForm.output_volume !== '') {
     hOutputVol = hOutputVolRaw;
     hWater = Math.max(0, hOutputVol - hInputVol);
     hOutputABV = hOutputVol > 0 ? (hInputLALs / hOutputVol) * 100 : 0;
-  } else if (!isNaN(hTargetAbvRaw) && headsForm.target_abv !== '' && hTargetAbvRaw > 0) {
-    // target ABV entered → derive output vol & water
+  } else if (!isNaN(hTargetAbvRaw) && heartsForm.target_abv !== '' && hTargetAbvRaw > 0) {
     hOutputABV = hTargetAbvRaw;
     hOutputVol = hInputLALs > 0 ? (hInputLALs / hTargetAbvRaw) * 100 : 0;
     hWater = Math.max(0, hOutputVol - hInputVol);
   }
 
-  const hSourceTank = tanks.find(t => t.id === headsForm.source_tank_id);
+  const hSourceTank = tanks.find(t => t.id === heartsForm.source_tank_id);
 
-  // Auto-fill from source tank when selected
-  const handleHeadsSourceChange = (id) => {
+  const handleHeartsSourceChange = (id) => {
     setH('source_tank_id', id);
     const tank = tanks.find(t => t.id === id);
     if (tank) {
@@ -127,7 +115,6 @@ export default function Dilutions() {
     }
   };
 
-  // Auto-fill from receiving record
   const handleEthanolSourceChange = (id) => {
     setE('source_id', id);
     const rec = receivings.find(r => r.id === id);
@@ -191,7 +178,7 @@ export default function Dilutions() {
     },
   });
 
-  const headsMutation = useMutation({
+  const heartsMutation = useMutation({
     mutationFn: async ({ data, action }) => {
       const isTransfer = action === 'transfer';
       const destTank = isTransfer ? tanks.find(t => t.id === data.transfer_tank_id) : null;
@@ -211,7 +198,6 @@ export default function Dilutions() {
         notes: `[Heads Dilution] Source tank: ${hSourceTank?.name || ''}${isTransfer ? `. Transferred to Tank ${destTank?.name}` : ' (saved in-place)'}. ${data.notes}`,
       });
 
-      // Record water addition to source tank
       if (hSourceTank && hWater > 0) {
         await base44.entities.TankMovement.create({
           date: data.date,
@@ -220,14 +206,13 @@ export default function Dilutions() {
           volume_litres: parseFloat(hWater.toFixed(3)),
           abv: 0,
           lals: 0,
-          product: hSourceTank.current_product || 'Heads',
+          product: hSourceTank.current_product || 'Hearts',
           batch_number: data.batch_number,
-          notes: `Water addition for heads dilution — ${hWater.toFixed(3)}L water added`,
+          notes: `Water addition for hearts dilution — ${hWater.toFixed(3)}L water added`,
         });
       }
 
       if (isTransfer && destTank && hOutputVol > 0) {
-        // Transfer out of source tank
         await base44.entities.TankMovement.create({
           date: data.date,
           action: 'transfer_out',
@@ -238,9 +223,8 @@ export default function Dilutions() {
           lals: parseFloat(hInputLALs.toFixed(4)),
           product: data.batch_number || hSourceTank.current_product || 'Diluted Gin',
           batch_number: data.batch_number,
-          notes: `Transfer to Tank ${destTank.name} after heads dilution`,
+          notes: `Transfer to Tank ${destTank.name} after hearts dilution`,
         });
-        // Transfer into destination tank
         const newDestVol = Math.min((destTank.current_volume || 0) + hOutputVol, destTank.capacity_litres);
         await base44.entities.TankMovement.create({
           date: data.date,
@@ -252,9 +236,8 @@ export default function Dilutions() {
           lals: parseFloat(hInputLALs.toFixed(4)),
           product: data.batch_number || 'Diluted Gin',
           batch_number: data.batch_number,
-          notes: `Received from Tank ${hSourceTank.name} after heads dilution`,
+          notes: `Received from Tank ${hSourceTank.name} after hearts dilution`,
         });
-        // Empty source tank, fill destination
         await Promise.all([
           base44.entities.StorageTank.update(data.source_tank_id, {
             current_volume: 0,
@@ -272,7 +255,6 @@ export default function Dilutions() {
           }),
         ]);
       } else if (!isTransfer && hSourceTank && hOutputVol > 0) {
-        // Save in-place: update source tank with new volume/ABV
         const newVol = Math.min(hOutputVol, hSourceTank.capacity_litres);
         await base44.entities.StorageTank.update(data.source_tank_id, {
           current_volume: newVol,
@@ -287,8 +269,8 @@ export default function Dilutions() {
     onSuccess: (_, { action }) => {
       queryClient.invalidateQueries({ queryKey: ['dilutions'] });
       setOpenType(null);
-      setHeadsForm(BLANK_HEADS);
-      toast.success(action === 'transfer' ? 'Heads dilution complete — product transferred' : 'Progress saved — product remains in source tank');
+      setHeartsForm(BLANK_HEARTS);
+      toast.success(action === 'transfer' ? 'Hearts dilution complete — product transferred' : 'Progress saved — product remains in source tank');
     },
   });
 
@@ -326,7 +308,7 @@ export default function Dilutions() {
 
   return (
     <div className="pb-20 md:pb-0">
-      <PageHeader title="Dilutions" subtitle="Track ethanol and heads dilutions">
+      <PageHeader title="Dilutions" subtitle="Track ethanol and hearts dilutions">
         <div className="flex gap-2">
           {/* Ethanol Dilution Dialog */}
           <Dialog open={openType === 'ethanol'} onOpenChange={v => setOpenType(v ? 'ethanol' : null)}>
@@ -388,7 +370,7 @@ export default function Dilutions() {
                 </div>
 
                 <div className="rounded-lg border border-border p-4 space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Water Addition & Output</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Water Addition and Output</p>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <Label>Water Added (L)</Label>
@@ -451,18 +433,18 @@ export default function Dilutions() {
             </DialogContent>
           </Dialog>
 
-          {/* Heads Dilution Dialog */}
+          {/* Hearts Dilution Dialog */}
           <Dialog open={openType === 'heads'} onOpenChange={v => setOpenType(v ? 'heads' : null)}>
             <DialogTrigger asChild>
               <Button className="gap-2">
-                <Droplets className="w-4 h-4" />Heads Dilution
+                <Droplets className="w-4 h-4" />Hearts Dilution
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="font-display flex items-center gap-2">
                   <Droplets className="w-4 h-4 text-blue-500" />
-                  Heads Dilution (Tank E / F / H)
+                  Hearts Dilution (Tank E / F / H)
                 </DialogTitle>
               </DialogHeader>
               <form onSubmit={e => e.preventDefault()} className="space-y-4 mt-2">
@@ -470,24 +452,24 @@ export default function Dilutions() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Batch Number</Label>
-                    <Input value={headsForm.batch_number} onChange={e => setH('batch_number', e.target.value)} required />
+                    <Input value={heartsForm.batch_number} onChange={e => setH('batch_number', e.target.value)} required />
                   </div>
                   <div>
                     <Label>Date</Label>
-                    <Input type="date" value={headsForm.date} onChange={e => setH('date', e.target.value)} required />
+                    <Input type="date" value={heartsForm.date} onChange={e => setH('date', e.target.value)} required />
                   </div>
                 </div>
 
                 <div className="rounded-lg border border-border p-4 space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Source Tank (E, F or H — Heads)</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Source Tank (E, F or H — Hearts)</p>
                   <div>
                     <Label>Select Source Tank</Label>
-                    <Select value={headsForm.source_tank_id} onValueChange={handleHeadsSourceChange}>
-                      <SelectTrigger><SelectValue placeholder="Choose a heads tank..." /></SelectTrigger>
+                    <Select value={heartsForm.source_tank_id} onValueChange={handleHeartsSourceChange}>
+                      <SelectTrigger><SelectValue placeholder="Choose a hearts tank..." /></SelectTrigger>
                       <SelectContent>
-                        {headsSrcTanks.length === 0
+                        {heartsSrcTanks.length === 0
                           ? <SelectItem value="none" disabled>No E/F/H tanks found</SelectItem>
-                          : headsSrcTanks.map(t => (
+                          : heartsSrcTanks.map(t => (
                             <SelectItem key={t.id} value={t.id}>
                               Tank {t.name}
                               {t.current_volume > 0
@@ -503,11 +485,11 @@ export default function Dilutions() {
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <Label>Volume (L)</Label>
-                      <Input type="number" step="0.01" value={headsForm.input_ethanol_volume} onChange={e => setH('input_ethanol_volume', e.target.value)} required />
+                      <Input type="number" step="0.01" value={heartsForm.input_ethanol_volume} onChange={e => setH('input_ethanol_volume', e.target.value)} required />
                     </div>
                     <div>
                       <Label>ABV %</Label>
-                      <Input type="number" step="0.1" value={headsForm.input_abv} onChange={e => setH('input_abv', e.target.value)} required />
+                      <Input type="number" step="0.1" value={heartsForm.input_abv} onChange={e => setH('input_abv', e.target.value)} required />
                     </div>
                     <CalcDisplay value={hInputLALs} label="LALs" />
                   </div>
@@ -518,33 +500,33 @@ export default function Dilutions() {
                   <p className="text-xs text-muted-foreground">Fill in <span className="font-medium text-foreground">one</span> of the three fields below and the others will be calculated automatically.</p>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <Label className="flex items-center gap-1">Water Added (L){headsForm.water_added === '' && (hOutputVolRaw || hTargetAbvRaw) ? <Calculator className="w-3 h-3 text-primary" /> : null}</Label>
+                      <Label className="flex items-center gap-1">Water Added (L){heartsForm.water_added === '' && (hOutputVolRaw || hTargetAbvRaw) ? <Calculator className="w-3 h-3 text-primary" /> : null}</Label>
                       <Input
                         type="number" step="0.01"
-                        value={headsForm.water_added !== '' ? headsForm.water_added : (headsForm.output_volume !== '' || headsForm.target_abv !== '') && hWater > 0 ? hWater.toFixed(3) : ''}
-                        onChange={e => setHeadsForm(p => ({ ...p, water_added: e.target.value, output_volume: '', target_abv: '' }))}
+                        value={heartsForm.water_added !== '' ? heartsForm.water_added : (heartsForm.output_volume !== '' || heartsForm.target_abv !== '') && hWater > 0 ? hWater.toFixed(3) : ''}
+                        onChange={e => setHeartsForm(p => ({ ...p, water_added: e.target.value, output_volume: '', target_abv: '' }))}
                         placeholder="e.g. 50"
-                        className={headsForm.water_added === '' && hWater > 0 ? 'bg-primary/5 border-primary/40 font-semibold text-primary' : ''}
+                        className={heartsForm.water_added === '' && hWater > 0 ? 'bg-primary/5 border-primary/40 font-semibold text-primary' : ''}
                       />
                     </div>
                     <div>
-                      <Label className="flex items-center gap-1">Output Vol (L){headsForm.output_volume === '' && (headsForm.water_added !== '' || headsForm.target_abv !== '') ? <Calculator className="w-3 h-3 text-primary" /> : null}</Label>
+                      <Label className="flex items-center gap-1">Output Vol (L){heartsForm.output_volume === '' && (heartsForm.water_added !== '' || heartsForm.target_abv !== '') ? <Calculator className="w-3 h-3 text-primary" /> : null}</Label>
                       <Input
                         type="number" step="0.01"
-                        value={headsForm.output_volume !== '' ? headsForm.output_volume : (headsForm.water_added !== '' || headsForm.target_abv !== '') && hOutputVol > 0 ? hOutputVol.toFixed(3) : ''}
-                        onChange={e => setHeadsForm(p => ({ ...p, output_volume: e.target.value, water_added: '', target_abv: '' }))}
+                        value={heartsForm.output_volume !== '' ? heartsForm.output_volume : (heartsForm.water_added !== '' || heartsForm.target_abv !== '') && hOutputVol > 0 ? hOutputVol.toFixed(3) : ''}
+                        onChange={e => setHeartsForm(p => ({ ...p, output_volume: e.target.value, water_added: '', target_abv: '' }))}
                         placeholder="e.g. 150"
-                        className={headsForm.output_volume === '' && hOutputVol > 0 ? 'bg-primary/5 border-primary/40 font-semibold text-primary' : ''}
+                        className={heartsForm.output_volume === '' && hOutputVol > 0 ? 'bg-primary/5 border-primary/40 font-semibold text-primary' : ''}
                       />
                     </div>
                     <div>
-                      <Label className="flex items-center gap-1">Target ABV %{headsForm.target_abv === '' && (headsForm.water_added !== '' || headsForm.output_volume !== '') ? <Calculator className="w-3 h-3 text-primary" /> : null}</Label>
+                      <Label className="flex items-center gap-1">Target ABV %{heartsForm.target_abv === '' && (heartsForm.water_added !== '' || heartsForm.output_volume !== '') ? <Calculator className="w-3 h-3 text-primary" /> : null}</Label>
                       <Input
                         type="number" step="0.1"
-                        value={headsForm.target_abv !== '' ? headsForm.target_abv : (headsForm.water_added !== '' || headsForm.output_volume !== '') && hOutputABV > 0 ? hOutputABV.toFixed(2) : ''}
-                        onChange={e => setHeadsForm(p => ({ ...p, target_abv: e.target.value, water_added: '', output_volume: '' }))}
+                        value={heartsForm.target_abv !== '' ? heartsForm.target_abv : (heartsForm.water_added !== '' || heartsForm.output_volume !== '') && hOutputABV > 0 ? hOutputABV.toFixed(2) : ''}
+                        onChange={e => setHeartsForm(p => ({ ...p, target_abv: e.target.value, water_added: '', output_volume: '' }))}
                         placeholder="e.g. 45"
-                        className={headsForm.target_abv === '' && hOutputABV > 0 ? 'bg-primary/5 border-primary/40 font-semibold text-primary' : ''}
+                        className={heartsForm.target_abv === '' && hOutputABV > 0 ? 'bg-primary/5 border-primary/40 font-semibold text-primary' : ''}
                       />
                     </div>
                   </div>
@@ -557,14 +539,14 @@ export default function Dilutions() {
 
                 <div>
                   <Label>Notes</Label>
-                  <Textarea value={headsForm.notes} onChange={e => setH('notes', e.target.value)} />
+                  <Textarea value={heartsForm.notes} onChange={e => setH('notes', e.target.value)} />
                 </div>
 
                 <div className="rounded-lg border border-border p-4 space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Transfer Destination (optional)</p>
                   <div>
                     <Label>Transfer to Tank (A, B, C or D)</Label>
-                    <Select value={headsForm.transfer_tank_id} onValueChange={v => setH('transfer_tank_id', v)}>
+                    <Select value={heartsForm.transfer_tank_id} onValueChange={v => setH('transfer_tank_id', v)}>
                       <SelectTrigger><SelectValue placeholder="Select destination tank..." /></SelectTrigger>
                       <SelectContent>
                         {productTanks.length === 0
@@ -580,8 +562,8 @@ export default function Dilutions() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {headsForm.transfer_tank_id && (() => {
-                    const dest = productTanks.find(t => t.id === headsForm.transfer_tank_id);
+                  {heartsForm.transfer_tank_id && (() => {
+                    const dest = productTanks.find(t => t.id === heartsForm.transfer_tank_id);
                     return dest && hOutputVol > 0 ? (
                       <p className="text-xs text-primary font-medium">
                         Tank {dest.name} → {Math.min((dest.current_volume || 0) + hOutputVol, dest.capacity_litres).toFixed(1)}L
@@ -595,22 +577,22 @@ export default function Dilutions() {
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={headsMutation.isPending}
-                    onClick={() => headsMutation.mutate({ data: headsForm, action: 'save' })}
+                    disabled={heartsMutation.isPending}
+                    onClick={() => heartsMutation.mutate({ data: heartsForm, action: 'save' })}
                   >
-                    {headsMutation.isPending ? 'Saving...' : '💾 Save Progress'}
+                    {heartsMutation.isPending ? 'Saving...' : '💾 Save Progress'}
                   </Button>
                   <Button
                     type="button"
-                    disabled={headsMutation.isPending || !headsForm.transfer_tank_id}
-                    onClick={() => headsMutation.mutate({ data: headsForm, action: 'transfer' })}
+                    disabled={heartsMutation.isPending || !heartsForm.transfer_tank_id}
+                    onClick={() => heartsMutation.mutate({ data: heartsForm, action: 'transfer' })}
                     className="bg-green-700 hover:bg-green-800 text-white"
                   >
-                    {headsMutation.isPending ? 'Transferring...' : '✓ Complete & Transfer'}
+                    {heartsMutation.isPending ? 'Transferring...' : '✓ Complete and Transfer'}
                   </Button>
                 </div>
-                {!headsForm.transfer_tank_id && (
-                  <p className="text-xs text-muted-foreground text-center -mt-2">Select a destination tank above to enable Complete & Transfer</p>
+                {!heartsForm.transfer_tank_id && (
+                  <p className="text-xs text-muted-foreground text-center -mt-2">Select a destination tank above to enable Complete and Transfer</p>
                 )}
               </form>
             </DialogContent>
@@ -643,12 +625,12 @@ export default function Dilutions() {
               ) : dilutions.length === 0 ? (
                 <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No dilutions recorded</TableCell></TableRow>
               ) : dilutions.map(d => {
-                const isHeads = d.notes?.includes('[Heads Dilution]');
+                const isHearts = d.notes?.includes('[Heads Dilution]');
                 return (
                   <TableRow key={d.id}>
                     <TableCell className="text-sm">{d.date ? format(new Date(d.date), 'MMM d, yyyy') : '—'}</TableCell>
                     <TableCell className="text-sm">
-                      {isHeads ? (
+                      {isHearts ? (
                         <span className="font-medium">{d.batch_number}</span>
                       ) : (
                         <span className="inline-flex items-center gap-1 font-mono text-xs bg-amber-50 border border-amber-200 text-amber-800 px-2 py-0.5 rounded">
@@ -657,9 +639,9 @@ export default function Dilutions() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${isHeads ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {isHeads ? <Droplets className="w-3 h-3" /> : <FlaskConical className="w-3 h-3" />}
-                        {isHeads ? 'Heads' : 'Ethanol'}
+                      <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${isHearts ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {isHearts ? <Droplets className="w-3 h-3" /> : <FlaskConical className="w-3 h-3" />}
+                        {isHearts ? 'Hearts' : 'Ethanol'}
                       </span>
                     </TableCell>
                     <TableCell className="text-sm">{d.input_ethanol_volume}</TableCell>
@@ -680,9 +662,9 @@ export default function Dilutions() {
                         <Pencil className="w-3.5 h-3.5" />
                       </Button>
                     </TableCell>
-                    </TableRow>
-                    );
-                    })}
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
