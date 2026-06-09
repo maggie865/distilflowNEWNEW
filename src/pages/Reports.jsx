@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
-import { FileSpreadsheet, Loader2, TrendingDown, PackageCheck, ArrowDownToLine, ArrowUpFromLine, Building2 } from 'lucide-react';
+import { FileSpreadsheet, Loader2, TrendingDown, PackageCheck, ArrowDownToLine, ArrowUpFromLine, Building2, Truck, MapPin } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -190,11 +190,12 @@ export default function Reports() {
 
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="overview">Inventory Snapshot</TabsTrigger>
-          <TabsTrigger value="cogs">Cost of Goods</TabsTrigger>
-          <TabsTrigger value="movements">Movements</TabsTrigger>
-          <TabsTrigger value="wastage">Wastage Analysis</TabsTrigger>
-        </TabsList>
+           <TabsTrigger value="overview">Inventory Snapshot</TabsTrigger>
+           <TabsTrigger value="cogs">Cost of Goods</TabsTrigger>
+           <TabsTrigger value="movements">Movements</TabsTrigger>
+           <TabsTrigger value="carbon">Carbon Footprint</TabsTrigger>
+           <TabsTrigger value="wastage">Wastage Analysis</TabsTrigger>
+         </TabsList>
 
         {/* ── INVENTORY SNAPSHOT ── */}
         <TabsContent value="overview" className="space-y-6">
@@ -427,6 +428,71 @@ export default function Reports() {
               </Table>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* ── CARBON FOOTPRINT ── */}
+        <TabsContent value="carbon" className="space-y-6">
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">{monthLabel} — Transport Emissions</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard label="Total CO2e" value={monthDispatches.reduce((s, d) => s + (d.co2e_kg || 0), 0).toFixed(1)} sub="kg emissions" icon={TrendingDown} color="text-green-600" bg="bg-green-50 border-green-200" />
+            <StatCard label="Dispatches" value={monthDispatches.length} sub="outbound shipments" icon={Truck} color="text-primary" bg="bg-accent border-accent-foreground/10" />
+            <StatCard label="Total Distance" value={monthDispatches.reduce((s, d) => s + (d.transport_distance_km || 0), 0).toLocaleString()} sub="km traveled" icon={MapPin} color="text-blue-600" bg="bg-blue-50 border-blue-200" />
+            <StatCard label="Avg CO2e/Dispatch" value={(monthDispatches.length > 0 ? (monthDispatches.reduce((s, d) => s + (d.co2e_kg || 0), 0) / monthDispatches.length) : 0).toFixed(2)} sub="kg per shipment" icon={TrendingDown} color="text-amber-600" bg="bg-amber-50 border-amber-200" />
+          </div>
+
+          <Card className="p-4">
+            <h4 className="text-sm font-semibold mb-4">Emissions by Transport Method — {monthLabel}</h4>
+            {monthDispatches.length > 0 ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={[
+                  ...Object.keys(['road', 'courier', 'air', 'sea', 'pickup']).map(method => ({
+                    method: method.charAt(0).toUpperCase() + method.slice(1),
+                    co2e: monthDispatches.filter(d => d.transport_method === method).reduce((s, d) => s + (d.co2e_kg || 0), 0)
+                  }))
+                ].filter(d => d.co2e > 0)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="method" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="co2e" name="CO2e (kg)" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">No dispatch data available</p>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h4 className="text-sm font-semibold mb-4">Dispatch Emissions Ledger — {monthLabel}</h4>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Distance</TableHead>
+                    <TableHead>Weight</TableHead>
+                    <TableHead>Method</TableHead>
+                    <TableHead>CO2e</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {monthDispatches.length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No dispatches this month</TableCell></TableRow>
+                  ) : monthDispatches.map(d => (
+                    <TableRow key={d.id}>
+                      <TableCell className="text-sm">{d.dispatch_date ? format(parseISO(d.dispatch_date), 'dd MMM') : '—'}</TableCell>
+                      <TableCell className="font-medium text-sm">{d.customer_name}</TableCell>
+                      <TableCell className="text-sm">{d.transport_distance_km ? `${d.transport_distance_km} km` : '—'}</TableCell>
+                      <TableCell className="text-sm">{d.parcel_weight_kg ? `${d.parcel_weight_kg} kg` : '—'}</TableCell>
+                      <TableCell className="text-sm capitalize">{d.transport_method || '—'}</TableCell>
+                      <TableCell className="text-sm font-semibold text-green-600">{d.co2e_kg ? `${d.co2e_kg.toFixed(3)} kg` : '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
         </TabsContent>
 
         {/* ── WASTAGE ── */}

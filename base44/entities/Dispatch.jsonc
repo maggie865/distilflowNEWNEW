@@ -54,6 +54,10 @@
       ],
       "description": "Method of transport"
     },
+    "co2e_kg": {
+      "type": "number",
+      "description": "CO2e emissions in kg for this dispatch"
+    },
     "status": {
       "type": "string",
       "enum": [

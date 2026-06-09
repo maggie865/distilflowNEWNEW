@@ -27,6 +27,21 @@ const calcWeightKg = (bottleSizeMl, numBottles) => {
   return parseFloat((kgPerBottle * numBottles).toFixed(2));
 };
 
+// CO2e calculation by transport method (kg CO2e per km per 1000kg)
+const EMISSION_FACTORS = {
+  road: 0.12,
+  courier: 0.12,
+  air: 0.9,
+  sea: 0.01,
+  pickup: 0,
+};
+
+const calcCO2e = (distanceKm, weightKg, method) => {
+  if (!distanceKm || !weightKg || !method) return 0;
+  const factor = EMISSION_FACTORS[method] || 0;
+  return parseFloat(((distanceKm * weightKg / 1000) * factor).toFixed(3));
+};
+
 const EMPTY_FORM = {
   dispatch_date: new Date().toISOString().split('T')[0],
   customer_name: '',
@@ -125,15 +140,19 @@ export default function Sales() {
 
       const weightKg = calcWeightKg(selectedFG?.bottle_size_ml, qty);
 
+      const distanceKm = parseFloat(form.transport_distance_km) || 0;
+      const co2e = calcCO2e(distanceKm, weightKg, form.transport_method);
+
       // 1. Create dispatch record
-      await base44.entities.Dispatch.create({
-        ...form,
-        quantity_bottles: qty,
-        bottle_size_ml: selectedFG?.bottle_size_ml || null,
-        transport_distance_km: parseFloat(form.transport_distance_km) || null,
-        total_lals: parseFloat(lals.toFixed(4)),
-        parcel_weight_kg: weightKg,
-      });
+       await base44.entities.Dispatch.create({
+         ...form,
+         quantity_bottles: qty,
+         bottle_size_ml: selectedFG?.bottle_size_ml || null,
+         transport_distance_km: distanceKm,
+         total_lals: parseFloat(lals.toFixed(4)),
+         parcel_weight_kg: weightKg,
+         co2e_kg: co2e,
+       });
 
       // 2. Deduct from finished goods stock
       if (selectedFG) {
@@ -249,10 +268,11 @@ export default function Sales() {
   });
 
   // Summary stats
-  const totalBottlesDispatched = dispatches.reduce((s, d) => s + (d.quantity_bottles || 0), 0);
-  const totalLalsDispatched = dispatches.reduce((s, d) => s + (d.total_lals || 0), 0);
-  const totalKm = dispatches.reduce((s, d) => s + (d.transport_distance_km || 0), 0);
-  const uniqueCustomers = new Set(dispatches.map(d => d.customer_name)).size;
+   const totalBottlesDispatched = dispatches.reduce((s, d) => s + (d.quantity_bottles || 0), 0);
+   const totalLalsDispatched = dispatches.reduce((s, d) => s + (d.total_lals || 0), 0);
+   const totalKm = dispatches.reduce((s, d) => s + (d.transport_distance_km || 0), 0);
+   const totalCO2e = dispatches.reduce((s, d) => s + (d.co2e_kg || 0), 0);
+   const uniqueCustomers = new Set(dispatches.map(d => d.customer_name)).size;
 
   return (
     <div className="pb-20 md:pb-0">
@@ -274,13 +294,14 @@ export default function Sales() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        {[
-          { label: 'Total Dispatched', value: totalBottlesDispatched.toLocaleString(), sub: 'bottles', icon: PackageCheck, color: 'text-primary', bg: 'bg-accent border-accent-foreground/10' },
-          { label: 'Total LALs Sold', value: totalLalsDispatched.toFixed(2), sub: 'litres abs. alcohol', icon: Truck, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
-          { label: 'Customers', value: uniqueCustomers, sub: 'unique recipients', icon: PackageCheck, color: 'text-green-600', bg: 'bg-green-50 border-green-200' },
-          { label: 'Total Distance', value: totalKm.toLocaleString(), sub: 'km traveled', icon: MapPin, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
-        ].map(({ label, value, sub, icon: Icon, color, bg }) => (
+       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+         {[
+           { label: 'Total Dispatched', value: totalBottlesDispatched.toLocaleString(), sub: 'bottles', icon: PackageCheck, color: 'text-primary', bg: 'bg-accent border-accent-foreground/10' },
+           { label: 'Total LALs Sold', value: totalLalsDispatched.toFixed(2), sub: 'litres abs. alcohol', icon: Truck, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
+           { label: 'Total CO2e', value: totalCO2e.toFixed(1), sub: 'kg emissions', icon: Truck, color: 'text-green-600', bg: 'bg-green-50 border-green-200' },
+           { label: 'Customers', value: uniqueCustomers, sub: 'unique recipients', icon: PackageCheck, color: 'text-green-600', bg: 'bg-green-50 border-green-200' },
+           { label: 'Total Distance', value: totalKm.toLocaleString(), sub: 'km traveled', icon: MapPin, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
+         ].map(({ label, value, sub, icon: Icon, color, bg }) => (
           <div key={label} className={`rounded-xl border p-4 flex flex-col gap-1 ${bg}`}>
             <div className="flex items-center gap-2">
               <Icon className={`w-4 h-4 ${color}`} />
@@ -319,6 +340,7 @@ export default function Sales() {
                 <TableHead>Distance</TableHead>
                 <TableHead>Weight</TableHead>
                 <TableHead>Method</TableHead>
+                <TableHead>CO2e</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -341,6 +363,7 @@ export default function Sales() {
                   <TableCell>{d.transport_distance_km ? `${d.transport_distance_km} km` : '—'}</TableCell>
                   <TableCell>{d.parcel_weight_kg ? `${d.parcel_weight_kg} kg` : '—'}</TableCell>
                   <TableCell className="capitalize">{d.transport_method || '—'}</TableCell>
+                  <TableCell className="font-semibold text-green-600">{d.co2e_kg ? `${d.co2e_kg.toFixed(2)} kg` : '—'}</TableCell>
                   <TableCell><StatusBadge status={d.status} /></TableCell>
                   <TableCell>
                     <div className="flex gap-1 justify-end">
