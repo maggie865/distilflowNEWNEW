@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import { FileSpreadsheet, Loader2, TrendingDown, PackageCheck, ArrowDownToLine, ArrowUpFromLine, Building2 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
@@ -72,6 +72,22 @@ export default function Reports() {
   const totalWarehouseBottles = warehouseStock.reduce((s, w) => s + (w.quantity_bottles || 0), 0);
   const totalWarehouseLals = warehouseStock.reduce((s, w) => s + (w.total_lals || 0), 0);
   const totalEthanolLals = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
+
+  // Cost of Goods Breakdown
+  const ethanolCostTotal = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+  const botanicalsCostTotal = rawMaterials.filter(m => m.type === 'botanical').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+  const packagingCostTotal = rawMaterials.filter(m => m.type === 'packaging').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+  const othersCostTotal = rawMaterials.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+
+  const cogBreakdown = [
+    { name: 'Ethanol', value: parseFloat(ethanolCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'ethanol').length },
+    { name: 'Botanicals', value: parseFloat(botanicalsCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'botanical').length },
+    { name: 'Packaging', value: parseFloat(packagingCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'packaging').length },
+    { name: 'Other', value: parseFloat(othersCostTotal.toFixed(2)), items: rawMaterials.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).length },
+  ].filter(c => c.value > 0);
+
+  const totalCogsValue = cogBreakdown.reduce((s, c) => s + c.value, 0);
+  const COGS_COLORS = ['#F97316', '#3B82F6', '#10B981', '#8B5CF6'];
 
   // Distillation dumped data converted to wastage records
   const completedDistillationRuns = distillationRuns.filter(r => r.status === 'completed' && r.dumped_volume && inRange(r.date));
@@ -175,6 +191,7 @@ export default function Reports() {
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList>
           <TabsTrigger value="overview">Inventory Snapshot</TabsTrigger>
+          <TabsTrigger value="cogs">Cost of Goods</TabsTrigger>
           <TabsTrigger value="movements">Movements</TabsTrigger>
           <TabsTrigger value="wastage">Wastage Analysis</TabsTrigger>
         </TabsList>
@@ -237,10 +254,110 @@ export default function Reports() {
               </TableBody>
             </Table>
           </Card>
-        </TabsContent>
+          </TabsContent>
 
-        {/* ── MOVEMENTS ── */}
-        <TabsContent value="movements" className="space-y-6">
+          {/* ── COST OF GOODS ── */}
+          <TabsContent value="cogs" className="space-y-6">
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Cost of Goods — Current Inventory</h3>
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card className="p-6">
+              <h4 className="text-sm font-semibold mb-4">COGS Breakdown by Category</h4>
+              {cogBreakdown.length > 0 ? (
+                <>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie
+                        data={cogBreakdown}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, value }) => `${name}: $${value.toFixed(0)}`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {cogBreakdown.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COGS_COLORS[index % COGS_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="mt-4 space-y-2">
+                    {cogBreakdown.map((item, i) => (
+                      <div key={item.name} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COGS_COLORS[i] }}></div>
+                          <span className="text-muted-foreground">{item.name}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">${item.value.toFixed(2)}</p>
+                          <p className="text-xs text-muted-foreground">{item.items} item{item.items !== 1 ? 's' : ''}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">No cost data available</p>
+              )}
+            </Card>
+
+            <Card className="p-6">
+              <h4 className="text-sm font-semibold mb-4">Summary</h4>
+              <div className="space-y-4">
+                <div className="rounded-lg border border-border p-4">
+                  <p className="text-xs text-muted-foreground mb-1">Total COGS Value</p>
+                  <p className="text-3xl font-bold font-display">${totalCogsValue.toFixed(2)}</p>
+                  <p className="text-xs text-muted-foreground mt-2">All on-hand inventory</p>
+                </div>
+                <div className="space-y-2">
+                  {cogBreakdown.map((item) => (
+                    <div key={item.name} className="flex justify-between text-sm border-b pb-2">
+                      <span className="text-muted-foreground">{item.name}</span>
+                      <span className="font-semibold">{((item.value / totalCogsValue) * 100).toFixed(1)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <Card className="p-4">
+            <h4 className="text-sm font-semibold mb-4">Raw Materials Cost Detail</h4>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Material</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Cost / Unit</TableHead>
+                    <TableHead>Total Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rawMaterials.filter(m => m.cost_per_unit && m.quantity).length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No cost data recorded</TableCell></TableRow>
+                  ) : rawMaterials.filter(m => m.cost_per_unit && m.quantity).map(m => (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-medium text-sm">{m.name}</TableCell>
+                      <TableCell className="text-sm capitalize">{m.type}</TableCell>
+                      <TableCell className="text-sm">{m.quantity}</TableCell>
+                      <TableCell className="text-sm">{m.unit}</TableCell>
+                      <TableCell className="text-sm">${m.cost_per_unit?.toFixed(2)}</TableCell>
+                      <TableCell className="text-sm font-semibold">${(m.quantity * m.cost_per_unit).toFixed(2)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
+          </TabsContent>
+
+          {/* ── MOVEMENTS ── */}
+          <TabsContent value="movements" className="space-y-6">
           <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">{monthLabel} — Stock Movements</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard label="Received (lines)" value={monthReceiving.length} sub="inbound receipts" icon={ArrowDownToLine} color="text-green-600" bg="bg-green-50 border-green-200" />

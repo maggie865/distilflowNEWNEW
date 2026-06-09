@@ -16,7 +16,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 
-const TYPES = ['ethanol', 'botanical', 'grain', 'sugar', 'water', 'flavoring', 'other'];
+const TYPES = ['ethanol', 'botanical', 'grain', 'sugar', 'water', 'flavoring', 'packaging', 'other'];
 const UNITS = ['litres', 'kg', 'units'];
 
 const BLANK_FORM = {

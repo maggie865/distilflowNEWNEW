@@ -112,6 +112,10 @@ export default function Dilutions() {
     if (tank) {
       setH('input_abv', tank.current_abv || '');
       setH('input_ethanol_volume', tank.current_volume || '');
+      // Auto-populate batch name from tank's current batch
+      if (tank.current_batch) {
+        setH('batch_number', tank.current_batch);
+      }
     }
   };
 
