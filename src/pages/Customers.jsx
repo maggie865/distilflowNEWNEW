@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Plus, Trash2, Users, MapPin, RefreshCw, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
+import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 
 const EMPTY_FORM = { business_name: '', delivery_address: '' };
 
@@ -153,9 +154,9 @@ export default function Customers() {
             </div>
             <div>
               <Label>Delivery Address</Label>
-              <Input
+              <AddressAutocomplete
                 value={form.delivery_address}
-                onChange={e => setForm(f => ({ ...f, delivery_address: e.target.value }))}
+                onChange={v => setForm(f => ({ ...f, delivery_address: v }))}
                 placeholder="Full delivery address"
                 className="mt-1"
               />
@@ -188,9 +189,9 @@ export default function Customers() {
             </div>
             <div>
               <Label>Delivery Address</Label>
-              <Input
+              <AddressAutocomplete
                 value={editForm.delivery_address}
-                onChange={e => setEditForm(f => ({ ...f, delivery_address: e.target.value }))}
+                onChange={v => setEditForm(f => ({ ...f, delivery_address: v }))}
                 className="mt-1"
               />
             </div>
