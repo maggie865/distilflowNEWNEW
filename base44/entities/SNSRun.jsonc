@@ -7,20 +7,17 @@
       "format": "date",
       "description": "Date of SNS distillation run"
     },
-    "source_distillation_ids": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "IDs of distillation runs whose heads/tails were stripped"
+    "source_tank_id": {
+      "type": "string",
+      "description": "ID of the storage tank containing heads and tails to be stripped"
     },
     "input_volume": {
       "type": "number",
-      "description": "Total input volume of heads and tails combined (litres)"
+      "description": "Input volume from the source tank (litres)"
     },
     "input_abv": {
       "type": "number",
-      "description": "Average input ABV %"
+      "description": "Input ABV % from the source tank"
     },
     "output_volume": {
       "type": "number",
@@ -47,7 +44,7 @@
   },
   "required": [
     "date",
-    "source_distillation_ids",
+    "source_tank_id",
     "input_volume",
     "output_volume",
     "output_abv"

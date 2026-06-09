@@ -17,7 +17,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 
 const BLANK_FORM = {
   date: new Date().toISOString().split('T')[0],
-  source_distillation_ids: [],
+  source_tank_id: '',
   input_volume: '',
   input_abv: '',
   output_volume: '',
@@ -30,7 +30,6 @@ export default function SNSDistillation() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(BLANK_FORM);
-  const [selectedRuns, setSelectedRuns] = useState([]);
   const queryClient = useQueryClient();
 
   const { data: snsRuns = [] } = useQuery({
@@ -44,99 +43,45 @@ export default function SNSDistillation() {
     },
   });
 
-  const { data: distillationRuns = [] } = useQuery({
-    queryKey: ['distillationRuns'],
-    queryFn: () => base44.entities.DistillationRun.list('-date', 200),
+  const { data: tanks = [] } = useQuery({
+    queryKey: ['storageTanks'],
+    queryFn: () => base44.entities.StorageTank.list('name', 50),
   });
 
-  // Filter for runs with heads/tails available
-  const availableHeadsAndTails = distillationRuns.filter(r => 
-    (r.heads_volume > 0 || r.tails_volume > 0) && r.status === 'completed'
+  // Tanks with heads/tails content (maceration tanks with product)
+  const headsAndTailsTanks = tanks.filter(t => 
+    t.purpose === 'maceration_dilution' && t.status === 'in_use' && t.current_volume > 0
   );
+
+  const selectedTank = tanks.find(t => t.id === form.source_tank_id);
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
   const openNew = () => {
     setEditingId(null);
     setForm(BLANK_FORM);
-    setSelectedRuns([]);
     setOpen(true);
   };
 
-  const addRunToSelection = (runId) => {
-    if (selectedRuns.includes(runId)) return;
-    const run = distillationRuns.find(r => r.id === runId);
-    if (!run) return;
-    
-    setSelectedRuns([...selectedRuns, runId]);
-    
-    // Auto-calculate total input volume and ABV from selected runs
-    const newSelected = [...selectedRuns, runId];
-    const headsAndTails = newSelected.map(id => {
-      const r = distillationRuns.find(x => x.id === id);
-      return {
-        heads_vol: r.heads_volume || 0,
-        heads_abv: r.heads_abv || 0,
-        tails_vol: r.tails_volume || 0,
-        tails_abv: r.tails_abv || 0,
-      };
-    });
-
-    const totalVol = headsAndTails.reduce((s, h) => s + h.heads_vol + h.tails_vol, 0);
-    const totalLals = headsAndTails.reduce((s, h) => 
-      s + (h.heads_vol * h.heads_abv / 100) + (h.tails_vol * h.tails_abv / 100), 0
-    );
-    const avgAbv = totalVol > 0 ? (totalLals / totalVol * 100).toFixed(2) : 0;
-
-    setForm(prev => ({
-      ...prev,
-      input_volume: totalVol.toFixed(2),
-      input_abv: avgAbv,
-    }));
-  };
-
-  const removeRunFromSelection = (runId) => {
-    const newSelected = selectedRuns.filter(id => id !== runId);
-    setSelectedRuns(newSelected);
-
-    if (newSelected.length === 0) {
-      setForm(prev => ({ ...prev, input_volume: '', input_abv: '' }));
-      return;
+  const handleTankChange = (tankId) => {
+    set('source_tank_id', tankId);
+    const tank = tanks.find(t => t.id === tankId);
+    if (tank) {
+      set('input_volume', tank.current_volume?.toString() || '');
+      set('input_abv', tank.current_abv?.toString() || '');
     }
-
-    const headsAndTails = newSelected.map(id => {
-      const r = distillationRuns.find(x => x.id === id);
-      return {
-        heads_vol: r.heads_volume || 0,
-        heads_abv: r.heads_abv || 0,
-        tails_vol: r.tails_volume || 0,
-        tails_abv: r.tails_abv || 0,
-      };
-    });
-
-    const totalVol = headsAndTails.reduce((s, h) => s + h.heads_vol + h.tails_vol, 0);
-    const totalLals = headsAndTails.reduce((s, h) => 
-      s + (h.heads_vol * h.heads_abv / 100) + (h.tails_vol * h.tails_abv / 100), 0
-    );
-    const avgAbv = totalVol > 0 ? (totalLals / totalVol * 100).toFixed(2) : 0;
-
-    setForm(prev => ({
-      ...prev,
-      input_volume: totalVol.toFixed(2),
-      input_abv: avgAbv,
-    }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.date || !form.input_volume || !form.output_volume || selectedRuns.length === 0) {
-      toast.error('Please fill in all required fields and select at least one run');
+    if (!form.date || !form.source_tank_id || !form.output_volume || !form.output_abv) {
+      toast.error('Please fill in all required fields');
       return;
     }
 
     const payload = {
       date: form.date,
-      source_distillation_ids: selectedRuns,
+      source_tank_id: form.source_tank_id,
       input_volume: parseFloat(form.input_volume),
       input_abv: parseFloat(form.input_abv),
       output_volume: parseFloat(form.output_volume),
@@ -175,14 +120,24 @@ export default function SNSDistillation() {
         });
       }
       
+      // Clear the source tank after completion
+      if (selectedTank) {
+        await base44.entities.StorageTank.update(form.source_tank_id, {
+          current_volume: 0,
+          current_abv: 0,
+          current_product: '',
+          status: 'empty',
+        });
+      }
+      
       toast.success('SNS run recorded and output stored in inventory');
     }
 
     queryClient.invalidateQueries({ queryKey: ['snsRuns'] });
+    queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
     queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
     setOpen(false);
     setForm(BLANK_FORM);
-    setSelectedRuns([]);
   };
 
   return (
@@ -194,7 +149,7 @@ export default function SNSDistillation() {
         </Button>
       </PageHeader>
 
-      <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setEditingId(null); setForm(BLANK_FORM); setSelectedRuns([]); } }}>
+      <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setEditingId(null); setForm(BLANK_FORM); } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">SNS Distillation Run</DialogTitle>
@@ -220,55 +175,21 @@ export default function SNSDistillation() {
             </div>
 
             <div className="rounded-lg border border-border p-4 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Select source runs</p>
-              <Select>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Select tank with heads and tails</p>
+              <Select value={form.source_tank_id} onValueChange={handleTankChange}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Add a distillation run..." />
+                  <SelectValue placeholder="Choose a tank..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableHeadsAndTails.length === 0 ? (
-                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No runs with heads/tails available</div>
-                  ) : availableHeadsAndTails.map(r => (
-                    <SelectItem 
-                      key={r.id} 
-                      value={r.id}
-                      onSelect={() => addRunToSelection(r.id)}
-                    >
-                      {r.batch_number} (Heads: {r.heads_volume}L, Tails: {r.tails_volume}L)
+                  {headsAndTailsTanks.length === 0 ? (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No tanks available</div>
+                  ) : headsAndTailsTanks.map(t => (
+                    <SelectItem key={t.id} value={t.id}>
+                      Tank {t.name} — {t.current_volume}L @ {t.current_abv}% ({t.current_product})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-
-              {selectedRuns.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Selected runs ({selectedRuns.length}):</p>
-                  <div className="space-y-1.5">
-                    {selectedRuns.map(runId => {
-                      const run = distillationRuns.find(r => r.id === runId);
-                      return (
-                        <div key={runId} className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded px-3 py-2">
-                          <div className="text-sm">
-                            <p className="font-medium text-blue-900">{run?.batch_number}</p>
-                            <p className="text-xs text-blue-700">
-                              Heads: {run?.heads_volume}L @ {run?.heads_abv}% | Tails: {run?.tails_volume}L @ {run?.tails_abv}%
-                            </p>
-                          </div>
-                          <Button 
-                            type="button" 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => removeRunFromSelection(runId)}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            x
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="rounded-lg border border-border p-4 space-y-3">
@@ -341,7 +262,7 @@ export default function SNSDistillation() {
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Runs Stripped</TableHead>
+                <TableHead>Source Tank</TableHead>
                 <TableHead>Input Vol (L)</TableHead>
                 <TableHead>Input ABV</TableHead>
                 <TableHead>Output Vol (L)</TableHead>
@@ -356,11 +277,12 @@ export default function SNSDistillation() {
                   <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No SNS runs recorded</TableCell>
                 </TableRow>
               ) : snsRuns.map(run => {
-                const outputLals = (run.output_volume * run.output_abv) / 100;
-                return (
-                  <TableRow key={run.id}>
-                    <TableCell className="text-sm">{run.date ? format(new Date(run.date), 'MMM d, yyyy') : '—'}</TableCell>
-                    <TableCell className="text-sm">{run.source_distillation_ids?.length || 0}</TableCell>
+               const outputLals = (run.output_volume * run.output_abv) / 100;
+               const sourceTank = tanks.find(t => t.id === run.source_tank_id);
+               return (
+                 <TableRow key={run.id}>
+                   <TableCell className="text-sm">{run.date ? format(new Date(run.date), 'MMM d, yyyy') : '—'}</TableCell>
+                   <TableCell className="text-sm">Tank {sourceTank?.name || '—'}</TableCell>
                     <TableCell className="text-sm">{run.input_volume?.toFixed(2)}</TableCell>
                     <TableCell className="text-sm">{run.input_abv?.toFixed(2)}%</TableCell>
                     <TableCell className="text-sm font-semibold">{run.output_volume?.toFixed(2)}</TableCell>
