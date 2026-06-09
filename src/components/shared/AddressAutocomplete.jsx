@@ -1,135 +1,120 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Input } from '@/components/ui/input';
-import { MapPin, Loader2 } from 'lucide-react';
+import { MapPin } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-// Module-level state so we only load the script once
-let mapsState = 'idle'; // 'idle' | 'loading' | 'ready' | 'error'
-let mapsCallbacks = [];
+// Load the Maps script once globally
+let scriptStatus = 'idle'; // idle | loading | ready | error
+const listeners = [];
 
-function onMapsReady(cb) {
-  if (mapsState === 'ready') { cb(); return; }
-  if (mapsState === 'error') return;
-  mapsCallbacks.push(cb);
-  if (mapsState === 'idle') initMaps();
+function loadMapsScript(apiKey) {
+  if (scriptStatus === 'ready') return Promise.resolve();
+  if (scriptStatus === 'loading') {
+    return new Promise((res, rej) => listeners.push({ res, rej }));
+  }
+  scriptStatus = 'loading';
+  return new Promise((res, rej) => {
+    listeners.push({ res, rej });
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=__mapsReady`;
+    script.async = true;
+    script.defer = true;
+    window.__mapsReady = () => {
+      scriptStatus = 'ready';
+      listeners.forEach(l => l.res());
+      listeners.length = 0;
+    };
+    script.onerror = (e) => {
+      scriptStatus = 'error';
+      listeners.forEach(l => l.rej(e));
+      listeners.length = 0;
+    };
+    document.head.appendChild(script);
+  });
 }
 
-async function initMaps() {
-  mapsState = 'loading';
-  try {
-    const res = await base44.functions.invoke('getMapsConfig', {});
-    const apiKey = res.data?.apiKey;
-    if (!apiKey) throw new Error('No API key returned');
-
-    await new Promise((resolve, reject) => {
-      // Don't load twice if already present
-      if (window.google?.maps?.places) { resolve(); return; }
-      const existing = document.querySelector('script[data-maps]');
-      if (existing) { existing.addEventListener('load', resolve); existing.addEventListener('error', reject); return; }
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
-      script.async = true;
-      script.dataset.maps = 'true';
-      script.addEventListener('load', resolve);
-      script.addEventListener('error', reject);
-      document.head.appendChild(script);
-    });
-
-    mapsState = 'ready';
-    mapsCallbacks.forEach(cb => cb());
-    mapsCallbacks = [];
-  } catch (err) {
-    console.error('AddressAutocomplete: failed to load Google Maps', err);
-    mapsState = 'error';
-    mapsCallbacks = [];
+let apiKeyPromise = null;
+function getApiKey() {
+  if (!apiKeyPromise) {
+    apiKeyPromise = base44.functions.invoke('getMapsConfig', {}).then(r => r.data?.apiKey);
   }
+  return apiKeyPromise;
 }
 
 export default function AddressAutocomplete({ value, onChange, placeholder, className }) {
-  const [suggestions, setSuggestions] = useState([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [ready, setReady] = useState(mapsState === 'ready');
-  const serviceRef = useRef(null);
-  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+  const autocompleteRef = useRef(null);
+  const [inputVal, setInputVal] = useState(value || '');
+  const [status, setStatus] = useState(scriptStatus); // 'idle'|'loading'|'ready'|'error'
+
+  // Keep local input in sync if parent changes value externally
+  useEffect(() => {
+    setInputVal(value || '');
+  }, [value]);
 
   useEffect(() => {
-    onMapsReady(() => {
-      serviceRef.current = new window.google.maps.places.AutocompleteService();
-      setReady(true);
-    });
-  }, []);
+    let cancelled = false;
 
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleInput = (e) => {
-    const val = e.target.value;
-    onChange(val);
-
-    if (!val || val.length < 3 || !serviceRef.current) {
-      setSuggestions([]);
-      setShowDropdown(false);
-      return;
-    }
-
-    serviceRef.current.getPlacePredictions(
-      { input: val, componentRestrictions: { country: 'nz' } },
-      (predictions, status) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions?.length) {
-          setSuggestions(predictions);
-          setShowDropdown(true);
-        } else {
-          setSuggestions([]);
-          setShowDropdown(false);
+    async function init() {
+      if (scriptStatus !== 'ready') {
+        setStatus('loading');
+        try {
+          const key = await getApiKey();
+          if (!key) throw new Error('No API key');
+          await loadMapsScript(key);
+        } catch (e) {
+          if (!cancelled) setStatus('error');
+          return;
         }
       }
-    );
-  };
+      if (cancelled || !inputRef.current) return;
+      setStatus('ready');
 
-  const handleSelect = (prediction) => {
-    onChange(prediction.description);
-    setSuggestions([]);
-    setShowDropdown(false);
+      // Attach native Google Places Autocomplete to the input
+      const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
+        componentRestrictions: { country: 'nz' },
+        fields: ['formatted_address'],
+        types: ['address'],
+      });
+      autocompleteRef.current = ac;
+
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        const addr = place.formatted_address || inputRef.current.value;
+        setInputVal(addr);
+        onChange(addr);
+      });
+    }
+
+    init();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleChange = (e) => {
+    setInputVal(e.target.value);
+    onChange(e.target.value);
   };
 
   return (
-    <div ref={containerRef} className="relative">
-      <div className="relative">
-        <Input
-          value={value}
-          onChange={handleInput}
-          onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
-          placeholder={ready ? (placeholder || 'Start typing an address…') : 'Loading maps…'}
-          className={className}
-          autoComplete="off"
-          disabled={!ready}
-        />
-        {!ready && mapsState === 'loading' && (
-          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+    <div className="relative">
+      <input
+        ref={inputRef}
+        value={inputVal}
+        onChange={handleChange}
+        placeholder={status === 'loading' ? 'Loading address search…' : (placeholder || 'Start typing an address…')}
+        disabled={status === 'loading'}
+        autoComplete="off"
+        className={cn(
+          "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors",
+          "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+          className
         )}
-      </div>
-      {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border bg-popover shadow-lg overflow-hidden">
-          {suggestions.map((s) => (
-            <button
-              key={s.place_id}
-              type="button"
-              className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-accent transition-colors"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => handleSelect(s)}
-            >
-              <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />
-              <span className="leading-snug">{s.description}</span>
-            </button>
-          ))}
-        </div>
+      />
+      {status === 'error' && (
+        <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+          <MapPin className="w-3 h-3" /> Address search unavailable — type manually
+        </p>
       )}
     </div>
   );
