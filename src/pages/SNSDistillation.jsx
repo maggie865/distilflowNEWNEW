@@ -104,10 +104,12 @@ export default function SNSDistillation() {
   };
 
   const calculateDumpedValues = () => {
-    if (form.dumped_volume && form.hearts_abv) {
-      const dumpedAbv = parseFloat(form.hearts_abv);
-      const dumpedLals = (parseFloat(form.dumped_volume) * dumpedAbv) / 100;
-      return { dumpedAbv, dumpedLals };
+    if (form.dumped_volume && form.input_volume && form.input_abv && form.hearts_volume && form.hearts_abv) {
+      const inputLals = (parseFloat(form.input_volume) * parseFloat(form.input_abv)) / 100;
+      const heartsLals = (parseFloat(form.hearts_volume) * parseFloat(form.hearts_abv)) / 100;
+      const remainderLals = inputLals - heartsLals;
+      const dumpedAbv = (remainderLals / parseFloat(form.dumped_volume)) * 100;
+      return { dumpedAbv: Math.max(0, dumpedAbv), dumpedLals: remainderLals };
     }
     return null;
   };
