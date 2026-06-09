@@ -132,6 +132,22 @@ export const AuthProvider = ({ children }) => {
     base44.auth.redirectToLogin(window.location.href);
   };
 
+  const deleteAccount = async () => {
+    try {
+      setIsLoadingAuth(true);
+      await base44.auth.deleteAccount();
+      setUser(null);
+      setIsAuthenticated(false);
+      // Redirect to login after deletion
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Account deletion failed:', error);
+      throw error;
+    } finally {
+      setIsLoadingAuth(false);
+    }
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -143,6 +159,7 @@ export const AuthProvider = ({ children }) => {
       authChecked,
       logout,
       navigateToLogin,
+      deleteAccount,
       checkUserAuth,
       checkAppState
     }}>

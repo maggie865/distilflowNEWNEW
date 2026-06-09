@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +31,17 @@ export default function Receiving() {
   const [extracting, setExtracting] = useState(false);
   const [form, setForm] = useState(BLANK_FORM);
   const queryClient = useQueryClient();
+  const { refetch } = useQuery({
+    queryKey: ['receivings'],
+    queryFn: () => base44.entities.Receiving.list('-date_received', 50),
+  });
+
+  const isRefreshing = usePullToRefresh(() => refetch());
+
+  const receivingsQuery = useQuery({
+    queryKey: ['receivings'],
+    queryFn: () => base44.entities.Receiving.list('-date_received', 50),
+  });
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -119,10 +131,7 @@ export default function Receiving() {
     }
   };
 
-  const { data: receivings = [], isLoading } = useQuery({
-    queryKey: ['receivings'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 50),
-  });
+
 
   const buildPayload = (data) => {
     const lals = data.material_type === 'ethanol' && data.abv_percent
@@ -222,9 +231,16 @@ export default function Receiving() {
   });
 
   const isPending = createMutation.isPending || updateMutation.isPending;
+  const data = receivingsQuery.data || [];
+  const isLoading = receivingsQuery.isLoading;
 
   return (
-    <div className="pb-20 md:pb-0">
+    <div className="pb-20 md:pb-0 relative">
+      {isRefreshing && (
+        <div className="fixed top-0 left-0 right-0 h-1 bg-primary/20 z-50">
+          <div className="h-full bg-primary animate-pulse" style={{ width: '100%' }} />
+        </div>
+      )}
       <PageHeader title="Receiving" subtitle="Log incoming raw materials and ethanol">
         <label className="cursor-pointer">
           <input type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={handlePackingSlip} />
@@ -362,9 +378,9 @@ export default function Receiving() {
             <TableBody>
               {isLoading ? (
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-              ) : receivings.length === 0 ? (
+              ) : data.length === 0 ? (
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No receivings yet</TableCell></TableRow>
-              ) : receivings.map(r => (
+              ) : data.map(r => (
                 <TableRow key={r.id}>
                   <TableCell className="text-sm">{r.date_received ? format(new Date(r.date_received), 'MMM d, yyyy') : '—'}</TableCell>
                   <TableCell className="font-medium text-sm">{r.material_name}</TableCell>

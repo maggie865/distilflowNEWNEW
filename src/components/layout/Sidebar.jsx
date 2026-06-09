@@ -15,10 +15,23 @@ import {
   Building2,
   BarChart2,
   ChevronLeft,
-  ChevronRight } from
+  ChevronRight,
+  LogOut,
+  Trash2 } from
 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/AuthContext';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 
 const navItems = [
 { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
@@ -40,6 +53,16 @@ const navItems = [
 export default function Sidebar() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const { logout, deleteAccount } = useAuth();
+
+  const handleDeleteAccount = async () => {
+    try {
+      await deleteAccount();
+    } catch (error) {
+      console.error('Failed to delete account:', error);
+    }
+  };
 
   return (
     <aside className={cn(
@@ -83,13 +106,49 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="p-3 border-t border-sidebar-border text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors flex items-center justify-center">
-        
-        {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-      </button>
+      {/* Footer with user actions */}
+      <div className="border-t border-sidebar-border p-3 space-y-2">
+        <button
+          onClick={() => logout()}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-all duration-200">
+          <LogOut className="w-[18px] h-[18px] flex-shrink-0" />
+          {!collapsed && <span>Logout</span>}
+        </button>
+        <button
+          onClick={() => setShowDeleteDialog(true)}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-destructive/70 hover:text-destructive hover:bg-destructive/10 transition-all duration-200">
+          <Trash2 className="w-[18px] h-[18px] flex-shrink-0" />
+          {!collapsed && <span>Delete Account</span>}
+        </button>
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="w-full flex items-center justify-center p-3 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors">
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+      </div>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Your Account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. All your data will be permanently deleted from the system.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 mt-4">
+            <Trash2 className="w-4 h-4 text-destructive flex-shrink-0" />
+            <p className="text-sm text-destructive font-medium">This will delete your account and all associated data.</p>
+          </div>
+          <div className="flex gap-3 mt-6">
+            <AlertDialogCancel asChild>
+              <Button variant="outline">Cancel</Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button variant="destructive" onClick={handleDeleteAccount}>Delete Account</Button>
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>);
 
 }
