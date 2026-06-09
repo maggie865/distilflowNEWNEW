@@ -38,10 +38,8 @@ import { Button } from '@/components/ui/button';
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
-  { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
-{ label: 'Suppliers', icon: Truck, path: '/suppliers' },
   { 
-    label: 'Production',
+      label: 'Production',
     icon: Flame,
     children: [
       { label: 'Dilutions', icon: Droplets, path: '/dilutions' },
@@ -62,9 +60,11 @@ const navItems = [
   ]
 },
 {
-  label: 'Sales',
+  label: 'Inwards/Outwards',
   icon: TrendingUp,
   children: [
+    { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
+    { label: 'Suppliers', icon: Truck, path: '/suppliers' },
     { label: 'Sales & Dispatch', icon: TrendingUp, path: '/sales' },
     { label: '3PL Warehouse', icon: Building2, path: '/warehouse' },
     { label: 'Customers', icon: Users, path: '/customers' }
