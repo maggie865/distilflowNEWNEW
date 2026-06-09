@@ -75,18 +75,33 @@ export default function Reports() {
   const totalWarehouseLals = warehouseStock.reduce((s, w) => s + (w.total_lals || 0), 0);
   const totalEthanolLals = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
 
-  // Cost of Goods Breakdown
-  const ethanolCostTotal = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + ((m.lals || 0) * (m.cost_per_unit || 0)), 0);
-  const botanicalsCostTotal = rawMaterials.filter(m => m.type === 'botanical').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
-  const packagingCostTotal = rawMaterials.filter(m => m.type === 'packaging').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
-  const othersCostTotal = rawMaterials.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+  // Cost of Goods Breakdown — including finished goods, tanks, and packaging
+   const ethanolCostTotal = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + ((m.lals || 0) * (m.cost_per_unit || 0)), 0);
+   const botanicalsCostTotal = rawMaterials.filter(m => m.type === 'botanical').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+   const rawPackagingCostTotal = rawMaterials.filter(m => m.type === 'packaging').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+   const othersCostTotal = rawMaterials.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
 
-  const cogBreakdown = [
-    { name: 'Ethanol', value: parseFloat(ethanolCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'ethanol').length },
-    { name: 'Botanicals', value: parseFloat(botanicalsCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'botanical').length },
-    { name: 'Packaging', value: parseFloat(packagingCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'packaging').length },
-    { name: 'Other', value: parseFloat(othersCostTotal.toFixed(2)), items: rawMaterials.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).length },
-  ].filter(c => c.value > 0);
+   // Estimate finished goods value (using avg ethanol cost per bottle)
+   const avgEthanolCostPerLal = rawMaterials.filter(m => m.type === 'ethanol' && m.cost_per_unit)
+     .reduce((avg, m, _, arr) => avg + m.cost_per_unit / arr.length, 0) || 3.5;
+   const finishedGoodsCost = finishedGoods.reduce((s, fg) => s + ((fg.total_lals || 0) * avgEthanolCostPerLal), 0);
+
+   // Tank stock value
+   const tankStockCost = distillationRuns
+     .filter(r => r.status !== 'completed')
+     .reduce((s, r) => s + ((r.output_lals || 0) * avgEthanolCostPerLal), 0);
+
+   // Total packaging (raw + allocated to finished goods estimate)
+   const packagingCostTotal = rawPackagingCostTotal;
+
+   const cogBreakdown = [
+     { name: 'Ethanol (Raw)', value: parseFloat(ethanolCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'ethanol').length },
+     { name: 'Botanicals', value: parseFloat(botanicalsCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'botanical').length },
+     { name: 'Packaging', value: parseFloat(packagingCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'packaging').length },
+     { name: 'Finished Goods', value: parseFloat(finishedGoodsCost.toFixed(2)), items: finishedGoods.filter(fg => fg.total_lals > 0).length },
+     { name: 'Tank Stock', value: parseFloat(tankStockCost.toFixed(2)), items: distillationRuns.filter(r => r.status !== 'completed' && r.output_lals).length },
+     { name: 'Other', value: parseFloat(othersCostTotal.toFixed(2)), items: rawMaterials.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).length },
+   ].filter(c => c.value > 0);
 
   const totalCogsValue = cogBreakdown.reduce((s, c) => s + c.value, 0);
   const COGS_COLORS = ['#F97316', '#3B82F6', '#10B981', '#8B5CF6'];
@@ -327,36 +342,108 @@ export default function Reports() {
           </div>
 
           <Card className="p-4">
-            <h4 className="text-sm font-semibold mb-4">Raw Materials Cost Detail</h4>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Material</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>Unit</TableHead>
-                    <TableHead>Cost / Unit</TableHead>
-                    <TableHead>Total Cost</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rawMaterials.filter(m => m.cost_per_unit && m.quantity).length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No cost data recorded</TableCell></TableRow>
-                  ) : rawMaterials.filter(m => m.cost_per_unit && m.quantity).map(m => (
-                    <TableRow key={m.id}>
-                      <TableCell className="font-medium text-sm">{m.name}</TableCell>
-                      <TableCell className="text-sm capitalize">{m.type}</TableCell>
-                      <TableCell className="text-sm">{m.quantity}</TableCell>
-                      <TableCell className="text-sm">{m.unit}</TableCell>
-                      <TableCell className="text-sm">${m.cost_per_unit?.toFixed(2)}</TableCell>
-                      <TableCell className="text-sm font-semibold">${(m.quantity * m.cost_per_unit).toFixed(2)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </Card>
+             <h4 className="text-sm font-semibold mb-4">Raw Materials Cost Detail</h4>
+             <div className="overflow-x-auto">
+               <Table>
+                 <TableHeader>
+                   <TableRow>
+                     <TableHead>Material</TableHead>
+                     <TableHead>Type</TableHead>
+                     <TableHead>Qty</TableHead>
+                     <TableHead>Unit</TableHead>
+                     <TableHead>Cost / Unit</TableHead>
+                     <TableHead>Total Cost</TableHead>
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+                   {rawMaterials.filter(m => m.cost_per_unit && m.quantity).length === 0 ? (
+                     <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No cost data recorded</TableCell></TableRow>
+                   ) : rawMaterials.filter(m => m.cost_per_unit && m.quantity).map(m => (
+                     <TableRow key={m.id}>
+                       <TableCell className="font-medium text-sm">{m.name}</TableCell>
+                       <TableCell className="text-sm capitalize">{m.type}</TableCell>
+                       <TableCell className="text-sm">{m.quantity}</TableCell>
+                       <TableCell className="text-sm">{m.unit}</TableCell>
+                       <TableCell className="text-sm">${m.cost_per_unit?.toFixed(2)}</TableCell>
+                       <TableCell className="text-sm font-semibold">${(m.quantity * m.cost_per_unit).toFixed(2)}</TableCell>
+                     </TableRow>
+                   ))}
+                 </TableBody>
+               </Table>
+             </div>
+           </Card>
+
+           <Card className="p-4">
+             <h4 className="text-sm font-semibold mb-4">Finished Goods Inventory Value</h4>
+             <div className="overflow-x-auto">
+               <Table>
+                 <TableHeader>
+                   <TableRow>
+                     <TableHead>Product</TableHead>
+                     <TableHead>Batch</TableHead>
+                     <TableHead>Bottles</TableHead>
+                     <TableHead>LALs</TableHead>
+                     <TableHead>Cost / LAL</TableHead>
+                     <TableHead>Total Value</TableHead>
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+                   {finishedGoods.filter(fg => fg.total_lals > 0).length === 0 ? (
+                     <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No finished goods in inventory</TableCell></TableRow>
+                   ) : finishedGoods.filter(fg => fg.total_lals > 0).map(fg => (
+                     <TableRow key={fg.id}>
+                       <TableCell className="font-medium text-sm">{fg.product_name}</TableCell>
+                       <TableCell className="font-mono text-xs">{fg.batch_number}</TableCell>
+                       <TableCell className="text-sm">{fg.quantity_bottles}</TableCell>
+                       <TableCell className="text-sm">{fg.total_lals?.toFixed(3)}</TableCell>
+                       <TableCell className="text-sm">${avgEthanolCostPerLal?.toFixed(2)}</TableCell>
+                       <TableCell className="text-sm font-semibold">${((fg.total_lals || 0) * avgEthanolCostPerLal).toFixed(2)}</TableCell>
+                     </TableRow>
+                   ))}
+                   <TableRow className="font-semibold bg-accent/20">
+                     <TableCell colSpan={5} className="text-right">Subtotal:</TableCell>
+                     <TableCell className="text-sm">${finishedGoodsCost.toFixed(2)}</TableCell>
+                   </TableRow>
+                 </TableBody>
+               </Table>
+             </div>
+           </Card>
+
+           <Card className="p-4">
+             <h4 className="text-sm font-semibold mb-4">Tank Stock Value (In-Progress Runs)</h4>
+             <div className="overflow-x-auto">
+               <Table>
+                 <TableHeader>
+                   <TableRow>
+                     <TableHead>Product</TableHead>
+                     <TableHead>Batch</TableHead>
+                     <TableHead>Status</TableHead>
+                     <TableHead>Output LALs</TableHead>
+                     <TableHead>Cost / LAL</TableHead>
+                     <TableHead>Total Value</TableHead>
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+                   {distillationRuns.filter(r => r.status !== 'completed' && r.output_lals).length === 0 ? (
+                     <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No in-progress tank stock</TableCell></TableRow>
+                   ) : distillationRuns.filter(r => r.status !== 'completed' && r.output_lals).map(r => (
+                     <TableRow key={r.id}>
+                       <TableCell className="font-medium text-sm">{r.product_name}</TableCell>
+                       <TableCell className="font-mono text-xs">{r.batch_number}</TableCell>
+                       <TableCell className="text-sm capitalize">{r.status}</TableCell>
+                       <TableCell className="text-sm">{r.output_lals?.toFixed(3)}</TableCell>
+                       <TableCell className="text-sm">${avgEthanolCostPerLal?.toFixed(2)}</TableCell>
+                       <TableCell className="text-sm font-semibold">${((r.output_lals || 0) * avgEthanolCostPerLal).toFixed(2)}</TableCell>
+                     </TableRow>
+                   ))}
+                   <TableRow className="font-semibold bg-accent/20">
+                     <TableCell colSpan={5} className="text-right">Subtotal:</TableCell>
+                     <TableCell className="text-sm">${tankStockCost.toFixed(2)}</TableCell>
+                   </TableRow>
+                 </TableBody>
+               </Table>
+             </div>
+           </Card>
           </TabsContent>
 
           {/* ── MOVEMENTS ── */}
