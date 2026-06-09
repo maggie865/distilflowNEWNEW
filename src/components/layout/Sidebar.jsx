@@ -135,7 +135,7 @@ export default function Sidebar() {
                     </>
                   )}
                 </button>
-                {(isExpanded || collapsed === false) && !collapsed && (
+                {isExpanded && !collapsed && (
                   <div className="pl-6 space-y-1 mt-1">
                     {item.children.map(child => {
                       const isActive = isPathActive(child.path);
