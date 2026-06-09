@@ -88,9 +88,9 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
 
       ac.addListener('place_changed', () => {
         const place = ac.getPlace();
-        const addr = place?.formatted_address || inputRef.current.value;
-        inputRef.current.value = addr;
-        onChange(addr);
+        const addr = place?.formatted_address || inputRef.current?.value;
+        if (addr && inputRef.current) inputRef.current.value = addr;
+        if (addr) onChange(addr);
       });
     }
 
