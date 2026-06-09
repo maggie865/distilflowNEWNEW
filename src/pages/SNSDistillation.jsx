@@ -21,8 +21,13 @@ const BLANK_FORM = {
   destination_tank_id: '',
   input_volume: '',
   input_abv: '',
-  output_volume: '',
-  output_abv: '',
+  input_lals: '',
+  hearts_volume: '',
+  hearts_abv: '',
+  hearts_lals: '',
+  dumped_volume: '',
+  dumped_abv: '',
+  dumped_notes: '',
   status: 'completed',
   notes: '',
 };
@@ -77,9 +82,30 @@ export default function SNSDistillation() {
     }
   };
 
+  const calculateInputLals = () => {
+    if (form.input_volume && form.input_abv) {
+      return ((parseFloat(form.input_volume) * parseFloat(form.input_abv)) / 100).toFixed(3);
+    }
+    return '—';
+  };
+
+  const calculateHeartsLals = () => {
+    if (form.hearts_volume && form.hearts_abv) {
+      return ((parseFloat(form.hearts_volume) * parseFloat(form.hearts_abv)) / 100).toFixed(3);
+    }
+    return '—';
+  };
+
+  const calculateDumpedLals = () => {
+    if (form.dumped_volume && form.dumped_abv) {
+      return ((parseFloat(form.dumped_volume) * parseFloat(form.dumped_abv)) / 100).toFixed(3);
+    }
+    return '—';
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.date || !form.source_tank_id || !form.output_volume || !form.output_abv) {
+    if (!form.date || !form.source_tank_id || !form.hearts_volume || !form.hearts_abv) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -89,8 +115,13 @@ export default function SNSDistillation() {
       source_tank_id: form.source_tank_id,
       input_volume: parseFloat(form.input_volume),
       input_abv: parseFloat(form.input_abv),
-      output_volume: parseFloat(form.output_volume),
-      output_abv: parseFloat(form.output_abv),
+      hearts_volume: parseFloat(form.hearts_volume),
+      hearts_abv: parseFloat(form.hearts_abv),
+      hearts_lals: parseFloat(form.hearts_volume) * parseFloat(form.hearts_abv) / 100,
+      dumped_volume: form.dumped_volume ? parseFloat(form.dumped_volume) : 0,
+      dumped_abv: form.dumped_abv ? parseFloat(form.dumped_abv) : 0,
+      dumped_lals: form.dumped_volume && form.dumped_abv ? parseFloat(form.dumped_volume) * parseFloat(form.dumped_abv) / 100 : 0,
+      dumped_notes: form.dumped_notes,
       status: form.status,
       notes: form.notes,
     };
@@ -101,14 +132,14 @@ export default function SNSDistillation() {
     } else {
       await base44.entities.SNSRun.create(payload);
       
-      // Transfer output to destination tank if specified
+      // Transfer hearts to destination tank if specified
       if (form.destination_tank_id) {
         const destTank = tanks.find(t => t.id === form.destination_tank_id);
         if (destTank) {
-          const newVolume = Math.min((destTank.current_volume || 0) + parseFloat(form.output_volume), destTank.capacity_litres);
+          const newVolume = Math.min((destTank.current_volume || 0) + parseFloat(form.hearts_volume), destTank.capacity_litres);
           await base44.entities.StorageTank.update(form.destination_tank_id, {
             current_volume: newVolume,
-            current_abv: parseFloat(form.output_abv),
+            current_abv: parseFloat(form.hearts_abv),
             current_product: 'High ABV Ethanol (SNS)',
             status: 'in_use',
           });
@@ -125,7 +156,7 @@ export default function SNSDistillation() {
         });
       }
       
-      toast.success('SNS run recorded and output transferred to destination tank');
+      toast.success('SNS run recorded');
     }
 
     queryClient.invalidateQueries({ queryKey: ['snsRuns'] });
@@ -211,7 +242,7 @@ export default function SNSDistillation() {
 
             <div className="rounded-lg border border-border p-4 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Input totals</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <Label className="flex items-center gap-1">Input Volume (L) <Calculator className="w-3 h-3 text-primary" /></Label>
                   <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold">
@@ -224,41 +255,87 @@ export default function SNSDistillation() {
                     {form.input_abv || '—'}
                   </div>
                 </div>
+                <div>
+                  <Label className="flex items-center gap-1">Input LALs <Calculator className="w-3 h-3 text-primary" /></Label>
+                  <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold">
+                    {calculateInputLals()}
+                  </div>
+                </div>
               </div>
             </div>
 
             <div className="rounded-lg border border-border p-4 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Output high ABV ethanol</p>
-              <div className="grid grid-cols-2 gap-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hearts (collected)</p>
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <Label>Output Volume (L) *</Label>
+                  <Label>Hearts Volume (L) *</Label>
                   <Input 
                     type="number" 
                     step="0.01" 
-                    value={form.output_volume} 
-                    onChange={e => set('output_volume', e.target.value)} 
+                    value={form.hearts_volume} 
+                    onChange={e => set('hearts_volume', e.target.value)} 
                     required
                     placeholder="e.g. 45"
                   />
                 </div>
                 <div>
-                  <Label>Output ABV % *</Label>
+                  <Label>Hearts ABV % *</Label>
                   <Input 
                     type="number" 
                     step="0.1" 
-                    value={form.output_abv} 
-                    onChange={e => set('output_abv', e.target.value)} 
+                    value={form.hearts_abv} 
+                    onChange={e => set('hearts_abv', e.target.value)} 
                     required
                     placeholder="e.g. 94"
                   />
                 </div>
+                <div>
+                  <Label className="flex items-center gap-1">Hearts LALs <Calculator className="w-3 h-3 text-primary" /></Label>
+                  <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold text-primary">
+                    {calculateHeartsLals()}
+                  </div>
+                </div>
               </div>
-              {form.output_volume && form.output_abv && (
-                <p className="text-xs text-primary font-medium flex items-center gap-1">
-                  <Calculator className="w-3 h-3" />
-                  LALs: {((parseFloat(form.output_volume) * parseFloat(form.output_abv)) / 100).toFixed(3)}
-                </p>
-              )}
+            </div>
+
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Dumped / Discarded</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label>Dumped Volume (L)</Label>
+                  <Input 
+                    type="number" 
+                    step="0.01" 
+                    value={form.dumped_volume} 
+                    onChange={e => set('dumped_volume', e.target.value)} 
+                    placeholder="e.g. 10"
+                  />
+                </div>
+                <div>
+                  <Label>Dumped ABV %</Label>
+                  <Input 
+                    type="number" 
+                    step="0.1" 
+                    value={form.dumped_abv} 
+                    onChange={e => set('dumped_abv', e.target.value)} 
+                    placeholder="e.g. 50"
+                  />
+                </div>
+                <div>
+                  <Label className="flex items-center gap-1">Dumped LALs <Calculator className="w-3 h-3 text-primary" /></Label>
+                  <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold">
+                    {calculateDumpedLals()}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <Label>Dump Notes</Label>
+                <Input 
+                  value={form.dumped_notes} 
+                  onChange={e => set('dumped_notes', e.target.value)} 
+                  placeholder="e.g. Remaining still heads"
+                />
+              </div>
             </div>
 
             <div>
@@ -282,9 +359,10 @@ export default function SNSDistillation() {
                 <TableHead>Source Tank</TableHead>
                 <TableHead>Input Vol (L)</TableHead>
                 <TableHead>Input ABV</TableHead>
-                <TableHead>Output Vol (L)</TableHead>
-                <TableHead>Output ABV</TableHead>
-                <TableHead>Output LALs</TableHead>
+                <TableHead>Hearts Vol (L)</TableHead>
+                <TableHead>Hearts ABV</TableHead>
+                <TableHead>Hearts LALs</TableHead>
+                <TableHead>Dumped Vol (L)</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -294,21 +372,22 @@ export default function SNSDistillation() {
                   <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No SNS runs recorded</TableCell>
                 </TableRow>
               ) : snsRuns.map(run => {
-               const outputLals = (run.output_volume * run.output_abv) / 100;
-               const sourceTank = tanks.find(t => t.id === run.source_tank_id);
-               return (
-                 <TableRow key={run.id}>
-                   <TableCell className="text-sm">{run.date ? format(new Date(run.date), 'MMM d, yyyy') : '—'}</TableCell>
-                   <TableCell className="text-sm">Tank {sourceTank?.name || '—'}</TableCell>
+                const heartsLals = (run.hearts_volume * run.hearts_abv) / 100;
+                const sourceTank = tanks.find(t => t.id === run.source_tank_id);
+                return (
+                  <TableRow key={run.id}>
+                    <TableCell className="text-sm">{run.date ? format(new Date(run.date), 'MMM d, yyyy') : '—'}</TableCell>
+                    <TableCell className="text-sm">Tank {sourceTank?.name || '—'}</TableCell>
                     <TableCell className="text-sm">{run.input_volume?.toFixed(2)}</TableCell>
                     <TableCell className="text-sm">{run.input_abv?.toFixed(2)}%</TableCell>
-                    <TableCell className="text-sm font-semibold">{run.output_volume?.toFixed(2)}</TableCell>
-                    <TableCell className="text-sm font-semibold">{run.output_abv?.toFixed(2)}%</TableCell>
-                    <TableCell className="text-sm font-semibold">{outputLals.toFixed(3)}</TableCell>
+                    <TableCell className="text-sm font-semibold">{run.hearts_volume?.toFixed(2)}</TableCell>
+                    <TableCell className="text-sm font-semibold">{run.hearts_abv?.toFixed(2)}%</TableCell>
+                    <TableCell className="text-sm font-semibold">{heartsLals.toFixed(3)}</TableCell>
+                    <TableCell className="text-sm">{run.dumped_volume?.toFixed(2) || '—'}</TableCell>
                     <TableCell><StatusBadge status={run.status} /></TableCell>
                   </TableRow>
                 );
-              })}
+               })}
             </TableBody>
           </Table>
         </div>

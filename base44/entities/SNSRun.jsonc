@@ -19,13 +19,33 @@
       "type": "number",
       "description": "Input ABV % from the source tank"
     },
-    "output_volume": {
+    "hearts_volume": {
       "type": "number",
-      "description": "Output volume of stripped high ABV ethanol (litres)"
+      "description": "Hearts volume collected (litres)"
     },
-    "output_abv": {
+    "hearts_abv": {
       "type": "number",
-      "description": "Output ABV % (high ethanol stripped back)"
+      "description": "Hearts ABV %"
+    },
+    "hearts_lals": {
+      "type": "number",
+      "description": "Hearts LALs (litres of absolute alcohol)"
+    },
+    "dumped_volume": {
+      "type": "number",
+      "description": "Volume dumped/discarded from still (litres)"
+    },
+    "dumped_abv": {
+      "type": "number",
+      "description": "Dumped material ABV %"
+    },
+    "dumped_lals": {
+      "type": "number",
+      "description": "Dumped material LALs"
+    },
+    "dumped_notes": {
+      "type": "string",
+      "description": "Notes on what was dumped"
     },
     "status": {
       "type": "string",
@@ -46,7 +66,6 @@
     "date",
     "source_tank_id",
     "input_volume",
-    "output_volume",
-    "output_abv"
+    "hearts_volume"
   ]
 }
