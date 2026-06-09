@@ -1,44 +1,62 @@
 import { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Input } from '@/components/ui/input';
-import { MapPin } from 'lucide-react';
+import { MapPin, Loader2 } from 'lucide-react';
 
-let googleMapsLoaded = false;
-let loadingPromise = null;
+// Module-level state so we only load the script once
+let mapsState = 'idle'; // 'idle' | 'loading' | 'ready' | 'error'
+let mapsCallbacks = [];
 
-async function loadGoogleMaps() {
-  if (googleMapsLoaded) return Promise.resolve();
-  if (loadingPromise) return loadingPromise;
+function onMapsReady(cb) {
+  if (mapsState === 'ready') { cb(); return; }
+  if (mapsState === 'error') return;
+  mapsCallbacks.push(cb);
+  if (mapsState === 'idle') initMaps();
+}
 
-  loadingPromise = (async () => {
+async function initMaps() {
+  mapsState = 'loading';
+  try {
     const res = await base44.functions.invoke('getMapsConfig', {});
     const apiKey = res.data?.apiKey;
-    if (!apiKey) throw new Error('No Maps API key');
+    if (!apiKey) throw new Error('No API key returned');
 
     await new Promise((resolve, reject) => {
+      // Don't load twice if already present
+      if (window.google?.maps?.places) { resolve(); return; }
+      const existing = document.querySelector('script[data-maps]');
+      if (existing) { existing.addEventListener('load', resolve); existing.addEventListener('error', reject); return; }
       const script = document.createElement('script');
       script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
       script.async = true;
-      script.onload = resolve;
-      script.onerror = reject;
+      script.dataset.maps = 'true';
+      script.addEventListener('load', resolve);
+      script.addEventListener('error', reject);
       document.head.appendChild(script);
     });
-    googleMapsLoaded = true;
-  })();
 
-  return loadingPromise;
+    mapsState = 'ready';
+    mapsCallbacks.forEach(cb => cb());
+    mapsCallbacks = [];
+  } catch (err) {
+    console.error('AddressAutocomplete: failed to load Google Maps', err);
+    mapsState = 'error';
+    mapsCallbacks = [];
+  }
 }
 
 export default function AddressAutocomplete({ value, onChange, placeholder, className }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
-  const autocompleteService = useRef(null);
+  const [ready, setReady] = useState(mapsState === 'ready');
+  const serviceRef = useRef(null);
   const containerRef = useRef(null);
 
   useEffect(() => {
-    loadGoogleMaps().then(() => {
-      autocompleteService.current = new window.google.maps.places.AutocompleteService();
-    }).catch(() => {});
+    onMapsReady(() => {
+      serviceRef.current = new window.google.maps.places.AutocompleteService();
+      setReady(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -55,16 +73,16 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
     const val = e.target.value;
     onChange(val);
 
-    if (!val || val.length < 3 || !autocompleteService.current) {
+    if (!val || val.length < 3 || !serviceRef.current) {
       setSuggestions([]);
       setShowDropdown(false);
       return;
     }
 
-    autocompleteService.current.getPlacePredictions(
+    serviceRef.current.getPlacePredictions(
       { input: val, componentRestrictions: { country: 'nz' } },
       (predictions, status) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions?.length) {
           setSuggestions(predictions);
           setShowDropdown(true);
         } else {
@@ -83,14 +101,20 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
 
   return (
     <div ref={containerRef} className="relative">
-      <Input
-        value={value}
-        onChange={handleInput}
-        onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
-        placeholder={placeholder || 'Full delivery address'}
-        className={className}
-        autoComplete="off"
-      />
+      <div className="relative">
+        <Input
+          value={value}
+          onChange={handleInput}
+          onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
+          placeholder={ready ? (placeholder || 'Start typing an address…') : 'Loading maps…'}
+          className={className}
+          autoComplete="off"
+          disabled={!ready}
+        />
+        {!ready && mapsState === 'loading' && (
+          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+        )}
+      </div>
       {showDropdown && suggestions.length > 0 && (
         <div className="absolute z-50 mt-1 w-full rounded-lg border bg-popover shadow-lg overflow-hidden">
           {suggestions.map((s) => (
