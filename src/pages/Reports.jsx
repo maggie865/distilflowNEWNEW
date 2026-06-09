@@ -74,7 +74,7 @@ export default function Reports() {
   const totalEthanolLals = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
 
   // Cost of Goods Breakdown
-  const ethanolCostTotal = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+  const ethanolCostTotal = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + ((m.lals || 0) * (m.cost_per_unit || 0)), 0);
   const botanicalsCostTotal = rawMaterials.filter(m => m.type === 'botanical').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
   const packagingCostTotal = rawMaterials.filter(m => m.type === 'packaging').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
   const othersCostTotal = rawMaterials.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
@@ -111,18 +111,18 @@ export default function Reports() {
   const totalWastedLals = combinedWastage.reduce((s, w) => s + (w.lals || 0), 0);
   const totalWastedVol = combinedWastage.reduce((s, w) => s + (w.volume || 0), 0);
 
-  // Cost per litre: look up cost from raw materials by matching ethanol cost_per_unit as a proxy
-  const ethanolCostPerLitre = rawMaterials.filter(m => m.type === 'ethanol' && m.cost_per_unit)
+  // Cost per LAL: look up cost from ethanol raw materials
+  const ethanolCostPerLal = rawMaterials.filter(m => m.type === 'ethanol' && m.cost_per_unit)
     .reduce((avg, m, _, arr) => avg + m.cost_per_unit / arr.length, 0) || 3.5;
 
   const wastageWithCost = combinedWastage.map(w => {
-    const costPerL = w.source === 'distillation' || w.source === 'tank' ? ethanolCostPerLitre : ethanolCostPerLitre * 0.5;
-    const totalLoss = parseFloat(((w.volume || 0) * costPerL).toFixed(2));
-    return { ...w, cost_per_litre: costPerL, total_loss: totalLoss };
+    const costPerLal = ethanolCostPerLal;
+    const totalLoss = parseFloat(((w.lals || 0) * costPerLal).toFixed(2));
+    return { ...w, cost_per_lal: costPerLal, total_loss: totalLoss };
   });
 
   const totalWastageCost = wastageWithCost.reduce((s, w) => s + w.total_loss, 0);
-  const avgCostPerLitreWasted = totalWastedVol > 0 ? (totalWastageCost / totalWastedVol).toFixed(2) : '0.00';
+  const avgCostPerLalWasted = totalWastedLals > 0 ? (totalWastageCost / totalWastedLals).toFixed(2) : '0.00';
 
   // Wastage by source for bar chart
   const wastageBySource = ['distillation', 'bottling', 'tank', 'other'].map(src => ({
@@ -435,7 +435,7 @@ export default function Reports() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard label="Total Volume Wasted" value={totalWastedVol.toFixed(2)} sub="litres" icon={TrendingDown} color="text-destructive" bg="bg-red-50 border-red-200" />
             <StatCard label="Total LALs Wasted" value={totalWastedLals.toFixed(3)} sub="litres abs. alcohol" icon={TrendingDown} color="text-destructive" bg="bg-red-50 border-red-200" />
-            <StatCard label="Avg Cost / Litre" value={`$${avgCostPerLitreWasted}`} sub="of wasted spirit" icon={TrendingDown} color="text-amber-700" bg="bg-amber-50 border-amber-200" />
+            <StatCard label="Avg Cost / LAL" value={`$${avgCostPerLalWasted}`} sub="of wasted spirit" icon={TrendingDown} color="text-amber-700" bg="bg-amber-50 border-amber-200" />
             <StatCard label="Total Wastage Cost" value={`$${totalWastageCost.toFixed(2)}`} sub="estimated loss" icon={TrendingDown} color="text-amber-700" bg="bg-amber-50 border-amber-200" />
           </div>
 
@@ -468,9 +468,9 @@ export default function Reports() {
                     <TableHead>Source</TableHead>
                     <TableHead>Volume (L)</TableHead>
                     <TableHead>ABV %</TableHead>
-                    <TableHead>LALs</TableHead>
-                    <TableHead>Cost / L</TableHead>
-                    <TableHead>Total Loss</TableHead>
+                     <TableHead>LALs</TableHead>
+                     <TableHead>Cost / LAL</TableHead>
+                     <TableHead>Total Loss</TableHead>
                     <TableHead>Reason</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -486,7 +486,7 @@ export default function Reports() {
                       <TableCell className="text-sm font-semibold">{w.volume?.toFixed(2) || '—'}</TableCell>
                       <TableCell className="text-sm">{w.abv ? `${w.abv}%` : '—'}</TableCell>
                       <TableCell className="text-sm">{w.lals?.toFixed(3) || '—'}</TableCell>
-                      <TableCell className="text-sm text-amber-700">${w.cost_per_litre?.toFixed(2)}</TableCell>
+                      <TableCell className="text-sm text-amber-700">${w.cost_per_lal?.toFixed(2)}</TableCell>
                       <TableCell className="text-sm font-semibold text-destructive">${w.total_loss?.toFixed(2)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{w.reason || '—'}</TableCell>
                     </TableRow>
