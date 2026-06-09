@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Pencil, Trash2, Calculator } from 'lucide-react';
+import { Plus, Pencil, Trash2, Calculator, Zap } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -101,6 +101,25 @@ export default function SNSDistillation() {
       return ((parseFloat(form.dumped_volume) * parseFloat(form.dumped_abv)) / 100).toFixed(3);
     }
     return '—';
+  };
+
+  const calculateDumpedValues = () => {
+    if (form.input_volume && form.hearts_volume && form.input_abv) {
+      const dumpedVol = Math.max(0, parseFloat(form.input_volume) - parseFloat(form.hearts_volume));
+      const dumpedAbv = parseFloat(form.input_abv);
+      return { dumpedVol, dumpedAbv };
+    }
+    return null;
+  };
+
+  const handleHeartsChange = (field, value) => {
+    set(field, value);
+    // Auto-populate dumped values based on remaining still liquid
+    const dumped = calculateDumpedValues();
+    if (dumped && field === 'hearts_volume') {
+      set('dumped_volume', dumped.dumpedVol.toString());
+      set('dumped_abv', dumped.dumpedAbv.toString());
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -318,7 +337,7 @@ export default function SNSDistillation() {
                     type="number" 
                     step="0.01" 
                     value={form.hearts_volume} 
-                    onChange={e => set('hearts_volume', e.target.value)} 
+                    onChange={e => handleHeartsChange('hearts_volume', e.target.value)} 
                     required
                     placeholder="e.g. 45"
                   />
@@ -347,24 +366,16 @@ export default function SNSDistillation() {
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Dumped / Discarded</p>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <Label>Dumped Volume (L)</Label>
-                  <Input 
-                    type="number" 
-                    step="0.01" 
-                    value={form.dumped_volume} 
-                    onChange={e => set('dumped_volume', e.target.value)} 
-                    placeholder="e.g. 10"
-                  />
+                  <Label className="flex items-center gap-1">Dumped Volume (L) <Zap className="w-3 h-3 text-primary" /></Label>
+                  <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold">
+                    {calculateDumpedValues()?.dumpedVol.toFixed(2) || '—'}
+                  </div>
                 </div>
                 <div>
-                  <Label>Dumped ABV %</Label>
-                  <Input 
-                    type="number" 
-                    step="0.1" 
-                    value={form.dumped_abv} 
-                    onChange={e => set('dumped_abv', e.target.value)} 
-                    placeholder="e.g. 50"
-                  />
+                  <Label className="flex items-center gap-1">Dumped ABV % <Zap className="w-3 h-3 text-primary" /></Label>
+                  <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold">
+                    {calculateDumpedValues()?.dumpedAbv.toFixed(2) || '—'}%
+                  </div>
                 </div>
                 <div>
                   <Label className="flex items-center gap-1">Dumped LALs <Calculator className="w-3 h-3 text-primary" /></Label>
