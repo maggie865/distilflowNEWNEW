@@ -117,7 +117,7 @@ export default function BottlingFloor() {
 
   const removeStaff = (idx) => setStaffNames(staffNames.filter((_, i) => i !== idx));
 
-  const canStart = selectedBatchId && selectedTankId && staffNames.length > 0;
+  const canStart = selectedBatchId && selectedTankId;
 
   const startRun = () => {
     setActiveRun({
