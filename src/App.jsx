@@ -28,6 +28,7 @@ import Warehouse from '@/pages/Warehouse';
 import Reports from '@/pages/Reports';
 import Settings from '@/pages/Settings';
 import SNSDistillation from '@/pages/SNSDistillation';
+import Suppliers from '@/pages/Suppliers';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -72,6 +73,7 @@ const AuthenticatedApp = () => {
           <Route path="/customers" element={<Customers />} />
           <Route path="/warehouse" element={<Warehouse />} />
           <Route path="/sns-distillation" element={<SNSDistillation />} />
+          <Route path="/suppliers" element={<Suppliers />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

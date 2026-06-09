@@ -18,6 +18,7 @@ import {
   ChevronRight,
   LogOut,
   Trash2,
+  Truck,
   Settings as SettingsIcon } from
 'lucide-react';
 import { useState } from 'react';
@@ -38,6 +39,7 @@ import { Button } from '@/components/ui/button';
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
   { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
+{ label: 'Suppliers', icon: Truck, path: '/suppliers' },
   { 
     label: 'Production',
     icon: Flame,

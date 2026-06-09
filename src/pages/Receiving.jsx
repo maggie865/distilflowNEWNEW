@@ -10,18 +10,21 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Upload, Loader2, FileText, Pencil, ExternalLink, Trash2 } from 'lucide-react';
+import { Plus, Upload, Loader2, FileText, Pencil, ExternalLink, Trash2, MapPin } from 'lucide-react';
 
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 
-const TYPES = ['ethanol', 'botanical', 'grain', 'sugar', 'water', 'flavoring', 'packaging', 'other'];
+const MATERIAL_TYPES = ['Ethanol', 'Botanicals', 'Packaging', 'Grain', 'Sugar', 'Water', 'Flavoring', 'Other'];
+const TRANSPORT_METHODS = ['road', 'courier', 'air', 'sea'];
 const UNITS = ['litres', 'kg', 'units'];
+const DISTILLERY_ADDRESS = '250 Ocean Beach Road, Bluff, New Zealand';
 
 const BLANK_FORM = {
   material_name: '', material_type: '', quantity: '', unit: 'litres',
-  abv_percent: '', supplier: '', cost_per_unit: '', batch_number: '',
+  abv_percent: '', supplier_id: '', supplier_name: '', transport_distance_km: '', transport_method: 'road',
+  weight_kg: '', cost_per_unit: '', batch_number: '',
   date_received: new Date().toISOString().split('T')[0], notes: '', packing_slip_url: ''
 };
 
@@ -29,6 +32,7 @@ export default function Receiving() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [extracting, setExtracting] = useState(false);
+  const [calcingDistance, setCalcingDistance] = useState(false);
   const [form, setForm] = useState(BLANK_FORM);
   const queryClient = useQueryClient();
   const { refetch } = useQuery({
@@ -41,6 +45,11 @@ export default function Receiving() {
   const receivingsQuery = useQuery({
     queryKey: ['receivings'],
     queryFn: () => base44.entities.Receiving.list('-date_received', 50),
+  });
+
+  const suppliersQuery = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: () => base44.entities.Supplier.list('business_name', 100),
   });
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
@@ -59,7 +68,11 @@ export default function Receiving() {
       quantity: r.quantity != null ? String(r.quantity) : '',
       unit: r.unit || 'litres',
       abv_percent: r.abv_percent != null ? String(r.abv_percent) : '',
-      supplier: r.supplier || '',
+      supplier_id: r.supplier_id || '',
+      supplier_name: r.supplier_name || '',
+      transport_distance_km: r.transport_distance_km != null ? String(r.transport_distance_km) : '',
+      transport_method: r.transport_method || 'road',
+      weight_kg: r.weight_kg != null ? String(r.weight_kg) : '',
       cost_per_unit: r.cost_per_unit != null ? String(r.cost_per_unit) : '',
       batch_number: r.batch_number || '',
       date_received: r.date_received || new Date().toISOString().split('T')[0],
@@ -67,6 +80,23 @@ export default function Receiving() {
       packing_slip_url: r.packing_slip_url || '',
     });
     setOpen(true);
+  };
+
+  const calculateDistance = async (supplierAddress) => {
+    if (!supplierAddress) return;
+    setCalcingDistance(true);
+    try {
+      const res = await base44.functions.invoke('getDistanceMatrix', {
+        origin: supplierAddress,
+        destination: DISTILLERY_ADDRESS,
+      });
+      if (res.data?.distance_km) {
+        setForm(f => ({ ...f, transport_distance_km: String(res.data.distance_km) }));
+        toast.success(`Distance: ${res.data.distance_km} km`);
+      }
+    } finally {
+      setCalcingDistance(false);
+    }
   };
 
   const handlePackingSlip = async (e) => {
@@ -104,22 +134,38 @@ export default function Receiving() {
 
       if (result.status === 'success' && result.output) {
         const d = Array.isArray(result.output) ? result.output[0] : result.output;
-        const VALID_TYPES = ['ethanol', 'botanical', 'grain', 'sugar', 'water', 'flavoring', 'other'];
         const VALID_UNITS = ['litres', 'kg', 'units'];
+
+        // Auto-match supplier if extracted
+        let matchedSupplier = null;
+        if (d.supplier && suppliersQuery.data) {
+          matchedSupplier = suppliersQuery.data.find(s => 
+            s.business_name.toLowerCase().includes(d.supplier.toLowerCase()) || 
+            d.supplier.toLowerCase().includes(s.business_name.toLowerCase())
+          );
+        }
+
         setForm(prev => ({
           ...prev,
           material_name: d.material_name || prev.material_name,
-          material_type: VALID_TYPES.includes(d.material_type) ? d.material_type : prev.material_type,
+          material_type: MATERIAL_TYPES.find(t => t.toLowerCase().includes(d.material_type?.toLowerCase())) || prev.material_type,
           quantity: d.quantity != null ? String(d.quantity) : prev.quantity,
           unit: VALID_UNITS.includes(d.unit) ? d.unit : prev.unit,
           abv_percent: d.abv_percent != null ? String(d.abv_percent) : prev.abv_percent,
-          supplier: d.supplier || prev.supplier,
+          supplier_id: matchedSupplier?.id || prev.supplier_id,
+          supplier_name: matchedSupplier?.business_name || d.supplier || prev.supplier_name,
           cost_per_unit: d.cost_per_unit != null ? String(d.cost_per_unit) : prev.cost_per_unit,
           batch_number: d.batch_number || prev.batch_number,
           date_received: d.date_received || prev.date_received,
           notes: d.notes || prev.notes,
         }));
-        toast.success('Packing slip scanned — please review and confirm');
+
+        // Auto-calculate distance if supplier matched
+        if (matchedSupplier?.address) {
+          setTimeout(() => calculateDistance(matchedSupplier.address), 500);
+        }
+
+        toast.success('Packing slip scanned — supplier auto-matched, please review');
       } else {
         toast.error('Could not extract data from the file. Please fill in manually.');
       }
@@ -134,15 +180,41 @@ export default function Receiving() {
 
 
   const buildPayload = (data) => {
-    const lals = data.material_type === 'ethanol' && data.abv_percent
+    const lals = data.material_type === 'Ethanol' && data.abv_percent
       ? (parseFloat(data.quantity) * parseFloat(data.abv_percent) / 100)
       : undefined;
+    
+    // Calculate CO2e for inbound transport
+    let co2e = 0;
+    const weight = data.weight_kg ? parseFloat(data.weight_kg) : 0;
+    const distance = data.transport_distance_km ? parseFloat(data.transport_distance_km) : 0;
+    const method = data.transport_method || 'road';
+    
+    if (weight > 0 && distance > 0) {
+      if (method === 'road') co2e = (distance * weight / 1000) * 0.12;
+      else if (method === 'courier') co2e = (distance * weight / 1000) * 0.15;
+      else if (method === 'air') co2e = (distance * weight / 1000) * 0.55;
+      else if (method === 'sea') co2e = (distance * weight / 1000) * 0.008;
+    }
+    
     return {
-      ...data,
+      material_name: data.material_name,
+      material_type: data.material_type,
       quantity: parseFloat(data.quantity),
+      unit: data.unit,
       abv_percent: data.abv_percent ? parseFloat(data.abv_percent) : undefined,
-      cost_per_unit: data.cost_per_unit ? parseFloat(data.cost_per_unit) : undefined,
       lals,
+      supplier_id: data.supplier_id || undefined,
+      supplier_name: data.supplier_name || undefined,
+      transport_distance_km: distance || undefined,
+      transport_method: distance > 0 ? method : undefined,
+      weight_kg: weight || undefined,
+      co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined,
+      cost_per_unit: data.cost_per_unit ? parseFloat(data.cost_per_unit) : undefined,
+      batch_number: data.batch_number,
+      date_received: data.date_received,
+      notes: data.notes,
+      packing_slip_url: data.packing_slip_url,
     };
   };
 
@@ -156,7 +228,7 @@ export default function Receiving() {
       if (existing.length > 0) {
         const mat = existing[0];
         const newQty = (mat.quantity || 0) + parseFloat(data.quantity);
-        const newLals = data.material_type === 'ethanol'
+        const newLals = data.material_type === 'Ethanol'
           ? (mat.lals || 0) + (payload.lals || 0) : mat.lals;
         await base44.entities.RawMaterial.update(mat.id, {
           quantity: newQty,
@@ -171,7 +243,7 @@ export default function Receiving() {
           unit: data.unit,
           abv_percent: data.abv_percent ? parseFloat(data.abv_percent) : undefined,
           lals: payload.lals,
-          supplier: data.supplier,
+          supplier: data.supplier_name,
           cost_per_unit: data.cost_per_unit ? parseFloat(data.cost_per_unit) : undefined,
           batch_number: data.batch_number,
         });
@@ -299,7 +371,7 @@ export default function Receiving() {
                 <Select value={form.material_type} onValueChange={v => set('material_type', v)}>
                   <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>
-                    {TYPES.map(t => <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>)}
+                    {MATERIAL_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -320,13 +392,13 @@ export default function Receiving() {
                   </SelectContent>
                 </Select>
               </div>
-              {form.material_type === 'ethanol' && (
+              {form.material_type === 'Ethanol' && (
                 <div>
                   <Label>ABV %</Label>
                   <Input type="number" step="0.1" value={form.abv_percent} onChange={e => set('abv_percent', e.target.value)} />
                 </div>
               )}
-              {form.material_type === 'ethanol' && form.quantity && form.abv_percent && (
+              {form.material_type === 'Ethanol' && form.quantity && form.abv_percent && (
                 <div>
                   <Label>Calculated LALs</Label>
                   <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-medium">
@@ -334,9 +406,59 @@ export default function Receiving() {
                   </div>
                 </div>
               )}
-              <div>
+              <div className="col-span-2">
                 <Label>Supplier</Label>
-                <Input value={form.supplier} onChange={e => set('supplier', e.target.value)} />
+                <Select value={form.supplier_id} onValueChange={v => {
+                  const supplier = suppliersQuery.data?.find(s => s.id === v);
+                  set('supplier_id', v);
+                  set('supplier_name', supplier?.business_name || '');
+                  if (supplier?.address) calculateDistance(supplier.address);
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Select supplier…" /></SelectTrigger>
+                  <SelectContent>
+                    {suppliersQuery.data?.map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.business_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.supplier_name && (
+                <div className="col-span-2">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> {suppliersQuery.data?.find(s => s.id === form.supplier_id)?.address || ''}
+                  </p>
+                </div>
+              )}
+              <div>
+                <Label>Weight (kg)</Label>
+                <Input type="number" step="0.1" value={form.weight_kg} onChange={e => set('weight_kg', e.target.value)} placeholder="For CO2e calculation" />
+              </div>
+              <div>
+                <Label>Distance (km)</Label>
+                <div className="relative">
+                  <Input 
+                    type="number" 
+                    step="0.1" 
+                    value={form.transport_distance_km} 
+                    onChange={e => set('transport_distance_km', e.target.value)}
+                    placeholder={calcingDistance ? 'Calculating…' : '0'}
+                    disabled={calcingDistance}
+                  />
+                  {calcingDistance && (
+                    <div className="absolute right-2.5 top-2.5">
+                      <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div>
+                <Label>Transport Method</Label>
+                <Select value={form.transport_method} onValueChange={v => set('transport_method', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {TRANSPORT_METHODS.map(m => <SelectItem key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>Cost per Unit</Label>
@@ -367,34 +489,34 @@ export default function Receiving() {
                 <TableHead>Material</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Qty</TableHead>
-                <TableHead>ABV</TableHead>
-                <TableHead>LALs</TableHead>
                 <TableHead>Supplier</TableHead>
-                <TableHead>Batch #</TableHead>
+                <TableHead>Distance</TableHead>
+                <TableHead>CO2e</TableHead>
+                <TableHead>LALs</TableHead>
                 <TableHead>Slip</TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
               ) : data.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No receivings yet</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No receivings yet</TableCell></TableRow>
               ) : data.map(r => (
                 <TableRow key={r.id}>
                   <TableCell className="text-sm">{r.date_received ? format(new Date(r.date_received), 'MMM d, yyyy') : '—'}</TableCell>
                   <TableCell className="font-medium text-sm">{r.material_name}</TableCell>
-                  <TableCell className="text-sm capitalize">{r.material_type}</TableCell>
+                  <TableCell className="text-sm">{r.material_type}</TableCell>
                   <TableCell className="text-sm">{r.quantity} {r.unit}</TableCell>
-                  <TableCell className="text-sm">{r.abv_percent ? `${r.abv_percent}%` : '—'}</TableCell>
+                  <TableCell className="text-sm">{r.supplier_name || '—'}</TableCell>
+                  <TableCell className="text-sm">{r.transport_distance_km ? `${r.transport_distance_km} km` : '—'}</TableCell>
+                  <TableCell className="text-sm font-semibold text-green-600">{r.co2e_kg ? `${r.co2e_kg.toFixed(3)} kg` : '—'}</TableCell>
                   <TableCell className="text-sm font-medium">{r.lals ? r.lals.toFixed(3) : '—'}</TableCell>
-                  <TableCell className="text-sm">{r.supplier || '—'}</TableCell>
-                  <TableCell className="text-sm">{r.batch_number || '—'}</TableCell>
                   <TableCell>
                     {r.packing_slip_url ? (
                       <a href={r.packing_slip_url} target="_blank" rel="noopener noreferrer">
                         <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5">
-                          <ExternalLink className="w-3 h-3" />View Slip
+                          <ExternalLink className="w-3 h-3" />View
                         </Button>
                       </a>
                     ) : '—'}
