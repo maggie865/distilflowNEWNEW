@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
@@ -11,17 +11,6 @@ import { FileSpreadsheet, Loader2, TrendingDown, PackageCheck, ArrowDownToLine, 
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
-
-// Generate list of last 12 months
-function getMonthOptions() {
-  const months = [];
-  const now = new Date();
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({ value: format(d, 'yyyy-MM'), label: format(d, 'MMMM yyyy') });
-  }
-  return months;
-}
 
 function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent border-accent-foreground/10', icon: Icon }) {
   return (
@@ -37,8 +26,9 @@ function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent b
 }
 
 export default function Reports() {
-  const monthOptions = getMonthOptions();
-  const [selectedMonth, setSelectedMonth] = useState(monthOptions[0].value);
+  const now = new Date();
+  const [startDate, setStartDate] = useState(format(startOfMonth(now), 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState(format(now, 'yyyy-MM-dd'));
   const [exporting, setExporting] = useState(false);
 
   const { data: wastage = [] } = useQuery({ queryKey: ['wastage'], queryFn: () => base44.entities.WastageRecord.list('-date', 500) });
@@ -50,10 +40,9 @@ export default function Reports() {
   const { data: distillationRuns = [] } = useQuery({ queryKey: ['distillationRuns'], queryFn: () => base44.entities.DistillationRun.list('-date', 500) });
   const { data: tankMovements = [] } = useQuery({ queryKey: ['tankMovements'], queryFn: () => base44.entities.TankMovement.list('-date', 500) });
 
-  // Date range for selected month
-  const [year, month] = selectedMonth.split('-').map(Number);
-  const rangeStart = startOfMonth(new Date(year, month - 1));
-  const rangeEnd = endOfMonth(new Date(year, month - 1));
+  // Date range
+  const rangeStart = startDate ? parseISO(startDate) : startOfMonth(new Date());
+  const rangeEnd = endDate ? parseISO(endDate) : new Date();
 
   const inRange = (dateStr) => {
     if (!dateStr) return false;
@@ -148,12 +137,11 @@ export default function Reports() {
     volume: parseFloat(combinedWastage.filter(w => w.source === src).reduce((s, w) => s + (w.volume || 0), 0).toFixed(2)),
   })).filter(d => d.lals > 0 || d.volume > 0);
 
-  // Monthly trend (last 6 months)
-  const trendMonths = getMonthOptions().slice(0, 6).reverse();
-  const trendData = trendMonths.map(m => {
-    const [y, mo] = m.value.split('-').map(Number);
-    const s = startOfMonth(new Date(y, mo - 1));
-    const e = endOfMonth(new Date(y, mo - 1));
+  // 6-month trend (always last 6 calendar months regardless of date range)
+  const trendData = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+    const s = startOfMonth(d);
+    const e = endOfMonth(d);
     const inM = (ds) => { try { return ds && isWithinInterval(parseISO(ds), { start: s, end: e }); } catch { return false; } };
     const monthWastageData = wastage.filter(w => inM(w.date));
     const monthDistillDumped = distillationRuns.filter(r => r.status === 'completed' && r.dumped_lals && inM(r.date)).reduce((acc, r) => acc + (r.dumped_lals || 0), 0);
@@ -169,7 +157,7 @@ export default function Reports() {
     setExporting(true);
     try {
       const res = await base44.functions.invoke('generateMonthlyReport', {
-        month: selectedMonth,
+        month: `${startDate}_${endDate}`,
         wastage: wastageWithCost,
         receiving: monthReceiving,
         dispatches: monthDispatches,
@@ -188,21 +176,25 @@ export default function Reports() {
     }
   };
 
-  const monthLabel = monthOptions.find(m => m.value === selectedMonth)?.label;
+  const monthLabel = `${format(rangeStart, 'dd MMM yyyy')} – ${format(rangeEnd, 'dd MMM yyyy')}`;
 
   return (
     <div className="pb-20 md:pb-0">
-      <PageHeader title="Monthly Reports" subtitle="Operational audit, inventory snapshot, and wastage analysis">
-        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-          <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {monthOptions.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Button onClick={handleExport} disabled={exporting} className="gap-2">
-          {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-          {exporting ? 'Exporting…' : 'Export to Google Sheets'}
-        </Button>
+      <PageHeader title="Reports" subtitle="Operational audit, inventory snapshot, and wastage analysis">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground whitespace-nowrap">From</label>
+            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-36 text-sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground whitespace-nowrap">To</label>
+            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-36 text-sm" />
+          </div>
+          <Button onClick={handleExport} disabled={exporting} className="gap-2">
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+            {exporting ? 'Exporting…' : 'Export to Google Sheets'}
+          </Button>
+        </div>
       </PageHeader>
 
       <Tabs defaultValue="overview" className="space-y-6">
