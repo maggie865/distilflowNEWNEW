@@ -7,7 +7,7 @@ let googleMapsLoaded = false;
 let loadingPromise = null;
 
 async function loadGoogleMaps() {
-  if (googleMapsLoaded) return;
+  if (googleMapsLoaded) return Promise.resolve();
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
