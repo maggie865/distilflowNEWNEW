@@ -17,7 +17,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import BottlingRunTracker from '@/components/bottling/BottlingRunTracker';
 
-const BOTTLE_SIZES = [200, 350, 500, 700, 750, 1000];
+const BOTTLE_SIZES = [200, 700];
 
 export default function BottlingFloor() {
   const [activeRun, setActiveRun] = useState(null);
