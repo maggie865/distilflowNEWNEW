@@ -48,6 +48,7 @@ export default function Reports() {
   const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => base44.entities.FinishedGood.list('product_name', 200) });
   const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => base44.entities.WarehouseStock.list('-date_transferred_in', 200) });
   const { data: distillationRuns = [] } = useQuery({ queryKey: ['distillationRuns'], queryFn: () => base44.entities.DistillationRun.list('-date', 500) });
+  const { data: tankMovements = [] } = useQuery({ queryKey: ['tankMovements'], queryFn: () => base44.entities.TankMovement.list('-date', 500) });
 
   // Date range for selected month
   const [year, month] = selectedMonth.split('-').map(Number);
@@ -65,6 +66,7 @@ export default function Reports() {
   const monthDispatches = dispatches.filter(d => inRange(d.dispatch_date));
   const warehouseDispatches = monthDispatches.filter(d => d.notes?.startsWith('[3PL]'));
   const distilleryDispatches = monthDispatches.filter(d => !d.notes?.startsWith('[3PL]'));
+  const monthTankMovements = tankMovements.filter(tm => inRange(tm.date) && tm.counterpart_tank === 'Auckland 3PL');
 
   // Inventory snapshot totals
   const totalDistilleryBottles = finishedGoods.reduce((s, g) => s + (g.quantity_bottles || 0), 0);
@@ -433,11 +435,12 @@ export default function Reports() {
         {/* ── CARBON FOOTPRINT ── */}
         <TabsContent value="carbon" className="space-y-6">
           <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">{monthLabel} — Transport Emissions</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="Total CO2e" value={monthDispatches.reduce((s, d) => s + (d.co2e_kg || 0), 0).toFixed(1)} sub="kg emissions" icon={TrendingDown} color="text-green-600" bg="bg-green-50 border-green-200" />
-            <StatCard label="Dispatches" value={monthDispatches.length} sub="outbound shipments" icon={Truck} color="text-primary" bg="bg-accent border-accent-foreground/10" />
-            <StatCard label="Total Distance" value={monthDispatches.reduce((s, d) => s + (d.transport_distance_km || 0), 0).toLocaleString()} sub="km traveled" icon={MapPin} color="text-blue-600" bg="bg-blue-50 border-blue-200" />
-            <StatCard label="Avg CO2e/Dispatch" value={(monthDispatches.length > 0 ? (monthDispatches.reduce((s, d) => s + (d.co2e_kg || 0), 0) / monthDispatches.length) : 0).toFixed(2)} sub="kg per shipment" icon={TrendingDown} color="text-amber-600" bg="bg-amber-50 border-amber-200" />
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <StatCard label="Total CO2e" value={(monthDispatches.reduce((s, d) => s + (d.co2e_kg || 0), 0) + monthTankMovements.reduce((s, tm) => s + (tm.co2e_kg || 0), 0)).toFixed(1)} sub="kg emissions" icon={TrendingDown} color="text-green-600" bg="bg-green-50 border-green-200" />
+            <StatCard label="Customer Dispatches" value={monthDispatches.length} sub="shipments to customers" icon={Truck} color="text-primary" bg="bg-accent border-accent-foreground/10" />
+            <StatCard label="3PL Transfers" value={monthTankMovements.length} sub="to Auckland warehouse" icon={Truck} color="text-blue-600" bg="bg-blue-50 border-blue-200" />
+            <StatCard label="Total Distance" value={monthDispatches.reduce((s, d) => s + (d.transport_distance_km || 0), 0).toLocaleString()} sub="km to customers" icon={MapPin} color="text-amber-600" bg="bg-amber-50 border-amber-200" />
+            <StatCard label="3PL CO2e" value={monthTankMovements.reduce((s, tm) => s + (tm.co2e_kg || 0), 0).toFixed(1)} sub="kg warehouse transfers" icon={TrendingDown} color="text-blue-600" bg="bg-blue-50 border-blue-200" />
           </div>
 
           <Card className="p-4">
@@ -462,37 +465,63 @@ export default function Reports() {
             )}
           </Card>
 
-          <Card className="p-4">
-            <h4 className="text-sm font-semibold mb-4">Dispatch Emissions Ledger — {monthLabel}</h4>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Distance</TableHead>
-                    <TableHead>Weight</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>CO2e</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {monthDispatches.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No dispatches this month</TableCell></TableRow>
-                  ) : monthDispatches.map(d => (
-                    <TableRow key={d.id}>
-                      <TableCell className="text-sm">{d.dispatch_date ? format(parseISO(d.dispatch_date), 'dd MMM') : '—'}</TableCell>
-                      <TableCell className="font-medium text-sm">{d.customer_name}</TableCell>
-                      <TableCell className="text-sm">{d.transport_distance_km ? `${d.transport_distance_km} km` : '—'}</TableCell>
-                      <TableCell className="text-sm">{d.parcel_weight_kg ? `${d.parcel_weight_kg} kg` : '—'}</TableCell>
-                      <TableCell className="text-sm capitalize">{d.transport_method || '—'}</TableCell>
-                      <TableCell className="text-sm font-semibold text-green-600">{d.co2e_kg ? `${d.co2e_kg.toFixed(3)} kg` : '—'}</TableCell>
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card className="p-4">
+              <h4 className="text-sm font-semibold mb-4">Customer Dispatch Emissions — {monthLabel}</h4>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Method</TableHead>
+                      <TableHead>CO2e</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {monthDispatches.filter(d => !d.notes?.startsWith('[3PL]')).length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No dispatches</TableCell></TableRow>
+                    ) : monthDispatches.filter(d => !d.notes?.startsWith('[3PL]')).map(d => (
+                      <TableRow key={d.id}>
+                        <TableCell className="text-sm">{d.dispatch_date ? format(parseISO(d.dispatch_date), 'dd MMM') : '—'}</TableCell>
+                        <TableCell className="text-sm">{d.customer_name}</TableCell>
+                        <TableCell className="text-sm capitalize">{d.transport_method || '—'}</TableCell>
+                        <TableCell className="text-sm font-semibold text-green-600">{d.co2e_kg ? `${d.co2e_kg.toFixed(3)} kg` : '—'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <h4 className="text-sm font-semibold mb-4">3PL Transfer Emissions — {monthLabel}</h4>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Volume</TableHead>
+                      <TableHead>CO2e</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {monthTankMovements.length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No 3PL transfers</TableCell></TableRow>
+                    ) : monthTankMovements.map(tm => (
+                      <TableRow key={tm.id}>
+                        <TableCell className="text-sm">{tm.date ? format(parseISO(tm.date), 'dd MMM') : '—'}</TableCell>
+                        <TableCell className="text-sm font-medium">{tm.product}</TableCell>
+                        <TableCell className="text-sm">{tm.volume_litres ? `${tm.volume_litres.toFixed(2)} L` : '—'}</TableCell>
+                        <TableCell className="text-sm font-semibold text-blue-600">{tm.co2e_kg ? `${tm.co2e_kg.toFixed(3)} kg` : '—'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* ── WASTAGE ── */}

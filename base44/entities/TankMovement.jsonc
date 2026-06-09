@@ -58,6 +58,10 @@
       "type": "string",
       "description": "Person who performed the movement"
     },
+    "co2e_kg": {
+      "type": "number",
+      "description": "CO2e emissions in kg for transport (e.g., to 3PL)"
+    },
     "notes": {
       "type": "string",
       "description": "Additional notes"

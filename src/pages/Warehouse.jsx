@@ -18,6 +18,23 @@ import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 
 const WAREHOUSE_ADDRESS = '27 Pavillion Drive, Māngere, Auckland 2015, New Zealand';
+const DISTILLERY_ADDRESS = '250 Ocean Beach Road, Bluff, New Zealand';
+const BLUFF_TO_AUCKLAND_KM = 159; // Approximate distance
+
+// Weight calculation (consistent with Sales)
+const calcWeightKg = (bottleSizeMl, numBottles) => {
+  if (!numBottles) return 0;
+  const kgPerBottle = bottleSizeMl <= 250 ? (6 / 12) : (10 / 6);
+  return parseFloat((kgPerBottle * numBottles).toFixed(2));
+};
+
+// CO2e calculation for road transport to Auckland 3PL
+const calcCO2eTransfer = (bottleSizeMl, numBottles) => {
+  const weightKg = calcWeightKg(bottleSizeMl, numBottles);
+  // Road transport: 0.12 kg CO2e per km per 1000kg
+  const co2e = (BLUFF_TO_AUCKLAND_KM * weightKg / 1000) * 0.12;
+  return parseFloat(co2e.toFixed(3));
+};
 
 const EMPTY_TRANSFER = { quantity_bottles: '', date_transferred_in: new Date().toISOString().split('T')[0], notes: '' };
 const EMPTY_DISPATCH = {
@@ -89,6 +106,9 @@ export default function Warehouse() {
         batch_number: fg.batch_number,
       });
 
+      // Calculate CO2e for transport to 3PL
+      const co2e = calcCO2eTransfer(fg.bottle_size_ml, transferQty);
+
       if (existing.length > 0) {
         const ws = existing[0];
         await base44.entities.WarehouseStock.update(ws.id, {
@@ -105,8 +125,24 @@ export default function Warehouse() {
           total_lals: parseFloat(lals.toFixed(4)),
           date_transferred_in: transferForm.date_transferred_in,
           notes: transferForm.notes,
+          co2e_kg: co2e,
         });
       }
+
+      // Also create a TankMovement record for tracking
+      await base44.entities.TankMovement.create({
+        date: transferForm.date_transferred_in,
+        action: 'transfer_out',
+        tank_name: 'Distillery Stock',
+        counterpart_tank: 'Auckland 3PL',
+        volume_litres: (transferQty * (fg.bottle_size_ml || 700)) / 1000,
+        abv: fg.abv_percent,
+        lals: parseFloat(lals.toFixed(4)),
+        product: fg.product_name,
+        batch_number: fg.batch_number,
+        co2e_kg: co2e,
+        notes: `[3PL TRANSFER] ${transferForm.notes}`.trim(),
+      });
 
       // Deduct from FinishedGood
       const newQty = fg.quantity_bottles - transferQty;
