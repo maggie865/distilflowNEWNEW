@@ -23,6 +23,7 @@ import {
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
+import { ChevronDown } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,25 +38,55 @@ import { Button } from '@/components/ui/button';
 const navItems = [
 { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
 { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
-{ label: 'Dilutions', icon: Droplets, path: '/dilutions' },
-{ label: 'Distillation', icon: Flame, path: '/distillation' },
-{ label: 'Recipes', icon: FlaskConical, path: '/recipes' },
+{ 
+  label: 'Production',
+  icon: Flame,
+  children: [
+    { label: 'Dilutions', icon: Droplets, path: '/dilutions' },
+    { label: 'Distillation', icon: Flame, path: '/distillation' },
+    { label: 'Tanks', icon: Cylinder, path: '/tanks' },
+    { label: 'Recipes', icon: FlaskConical, path: '/recipes' }
+  ]
+},
 { label: 'Bottling Floor', icon: Wine, path: '/bottling-floor' },
-{ label: "Tanks", icon: Cylinder, path: '/tanks' },
-{ label: 'Batch Tracker', icon: GitBranch, path: '/batch-tracker' },
-{ label: 'Raw Materials', icon: Package, path: '/raw-materials' },
-{ label: 'Inventory', icon: Warehouse, path: '/inventory' },
-{ label: 'Sales & Dispatch', icon: TrendingUp, path: '/sales' },
-{ label: '3PL Warehouse', icon: Building2, path: '/warehouse' },
-{ label: 'Customers', icon: Users, path: '/customers' },
+{
+  label: 'Planning',
+  icon: GitBranch,
+  children: [
+    { label: 'Batch Tracker', icon: GitBranch, path: '/batch-tracker' },
+    { label: 'Raw Materials', icon: Package, path: '/raw-materials' },
+    { label: 'Inventory', icon: Warehouse, path: '/inventory' }
+  ]
+},
+{
+  label: 'Sales',
+  icon: TrendingUp,
+  children: [
+    { label: 'Sales & Dispatch', icon: TrendingUp, path: '/sales' },
+    { label: '3PL Warehouse', icon: Building2, path: '/warehouse' },
+    { label: 'Customers', icon: Users, path: '/customers' }
+  ]
+},
 { label: 'Reports', icon: BarChart2, path: '/reports' },
-{ label: 'Settings', icon: SettingsIcon, path: '/settings' }];
+{ label: 'Settings', icon: SettingsIcon, path: '/settings' }
+];
 
 
 export default function Sidebar() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState({});
   const { logout } = useAuth();
+
+  const toggleGroup = (label) => {
+    setExpandedGroups(prev => ({ ...prev, [label]: !prev[label] }));
+  };
+
+  const isPathActive = (path) => location.pathname === path;
+  
+  const isGroupActive = (children) => {
+    return children.some(child => isPathActive(child.path));
+  };
 
   return (
     <aside className={cn(
@@ -78,9 +109,57 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 space-y-1">
+      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path;
+          if (item.children) {
+            const isExpanded = expandedGroups[item.label];
+            const hasActiveChild = isGroupActive(item.children);
+            return (
+              <div key={item.label}>
+                <button
+                  onClick={() => !collapsed && toggleGroup(item.label)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+                    hasActiveChild || isExpanded ?
+                    "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm" :
+                    "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                  )}>
+                  <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
+                  {!collapsed && (
+                    <>
+                      <span className="flex-1 text-left">{item.label}</span>
+                      <ChevronDown className={cn(
+                        "w-4 h-4 transition-transform",
+                        isExpanded ? "rotate-180" : ""
+                      )} />
+                    </>
+                  )}
+                </button>
+                {(isExpanded || collapsed === false) && !collapsed && (
+                  <div className="pl-6 space-y-1 mt-1">
+                    {item.children.map(child => {
+                      const isActive = isPathActive(child.path);
+                      return (
+                        <Link
+                          key={child.path}
+                          to={child.path}
+                          className={cn(
+                            "flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200",
+                            isActive ?
+                            "bg-sidebar-primary/80 text-sidebar-primary-foreground" :
+                            "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+                          )}>
+                          <child.icon className="w-[16px] h-[16px] flex-shrink-0" />
+                          <span>{child.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+          const isActive = isPathActive(item.path);
           return (
             <Link
               key={item.path}
@@ -91,11 +170,10 @@ export default function Sidebar() {
                 "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm" :
                 "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
               )}>
-              
               <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
               {!collapsed && <span>{item.label}</span>}
-            </Link>);
-
+            </Link>
+          );
         })}
       </nav>
 
