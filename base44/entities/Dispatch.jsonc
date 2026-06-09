@@ -35,6 +35,10 @@
       "type": "number",
       "description": "Total LALs dispatched"
     },
+    "parcel_weight_kg": {
+      "type": "number",
+      "description": "Estimated total parcel weight in kg (for carbon tracking)"
+    },
     "transport_distance_km": {
       "type": "number",
       "description": "Distance traveled to customer in km"

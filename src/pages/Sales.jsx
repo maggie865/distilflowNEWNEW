@@ -20,6 +20,13 @@ import DeliveryMap from '@/components/sales/DeliveryMap';
 
 const DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
 
+// Average weight per bottle based on bottle size
+const calcWeightKg = (bottleSizeMl, numBottles) => {
+  if (!numBottles) return 0;
+  const kgPerBottle = bottleSizeMl <= 250 ? (6 / 12) : (10 / 12);
+  return parseFloat((kgPerBottle * numBottles).toFixed(2));
+};
+
 const EMPTY_FORM = {
   dispatch_date: new Date().toISOString().split('T')[0],
   customer_name: '',
@@ -71,6 +78,7 @@ export default function Sales() {
   const maxBottles = selectedFG?.quantity_bottles || 0;
   const qty = parseInt(form.quantity_bottles) || 0;
   const overStock = qty > maxBottles;
+  const estimatedWeightKg = selectedFG ? calcWeightKg(selectedFG.bottle_size_ml, qty) : 0;
 
   const handleSelectFG = (id) => {
     setSelectedFGId(id);
@@ -115,6 +123,8 @@ export default function Sales() {
         ? ((qty * (selectedFG.bottle_size_ml || 700)) / 1000) * (selectedFG.abv_percent || 0) / 100
         : 0;
 
+      const weightKg = calcWeightKg(selectedFG?.bottle_size_ml, qty);
+
       // 1. Create dispatch record
       await base44.entities.Dispatch.create({
         ...form,
@@ -122,6 +132,7 @@ export default function Sales() {
         bottle_size_ml: selectedFG?.bottle_size_ml || null,
         transport_distance_km: parseFloat(form.transport_distance_km) || null,
         total_lals: parseFloat(lals.toFixed(4)),
+        parcel_weight_kg: weightKg,
       });
 
       // 2. Deduct from finished goods stock
@@ -306,6 +317,7 @@ export default function Sales() {
                 <TableHead>Bottles</TableHead>
                 <TableHead>LALs</TableHead>
                 <TableHead>Distance</TableHead>
+                <TableHead>Weight</TableHead>
                 <TableHead>Method</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead></TableHead>
@@ -314,7 +326,7 @@ export default function Sales() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">
+                  <TableCell colSpan={11} className="text-center py-10 text-muted-foreground">
                     No dispatches recorded yet
                   </TableCell>
                 </TableRow>
@@ -327,6 +339,7 @@ export default function Sales() {
                   <TableCell className="font-semibold">{d.quantity_bottles}</TableCell>
                   <TableCell>{d.total_lals?.toFixed(3) || '—'}</TableCell>
                   <TableCell>{d.transport_distance_km ? `${d.transport_distance_km} km` : '—'}</TableCell>
+                  <TableCell>{d.parcel_weight_kg ? `${d.parcel_weight_kg} kg` : '—'}</TableCell>
                   <TableCell className="capitalize">{d.transport_method || '—'}</TableCell>
                   <TableCell><StatusBadge status={d.status} /></TableCell>
                   <TableCell>
@@ -421,6 +434,12 @@ export default function Sales() {
               />
               {overStock && (
                 <p className="text-xs text-destructive mt-1">Exceeds available stock ({maxBottles} bottles)</p>
+              )}
+              {qty > 0 && selectedFG && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Estimated parcel weight: <span className="font-semibold text-foreground">{estimatedWeightKg} kg</span>
+                  {' '}({selectedFG.bottle_size_ml <= 250 ? '200ml rate: 6 kg/case' : '700ml rate: 10 kg/case'})
+                </p>
               )}
             </div>
 
