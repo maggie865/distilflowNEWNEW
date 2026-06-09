@@ -49,9 +49,9 @@ export default function SNSDistillation() {
     queryFn: () => base44.entities.StorageTank.list('name', 50),
   });
 
-  // Tanks with heads/tails content (maceration tanks with product)
+  // Tanks with heads/tails content (IBC tanks designated for heads & tails)
   const headsAndTailsTanks = tanks.filter(t => 
-    t.purpose === 'maceration_dilution' && t.status === 'in_use' && t.current_volume > 0
+    t.purpose === 'ibc' && t.status === 'in_use' && t.current_volume > 0
   );
 
   // SNS storage tanks available for destination
