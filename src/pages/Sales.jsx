@@ -23,7 +23,7 @@ const DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
 // Average weight per bottle based on bottle size
 const calcWeightKg = (bottleSizeMl, numBottles) => {
   if (!numBottles) return 0;
-  const kgPerBottle = bottleSizeMl <= 250 ? (6 / 12) : (10 / 12);
+  const kgPerBottle = bottleSizeMl <= 250 ? (6 / 12) : (10 / 6);
   return parseFloat((kgPerBottle * numBottles).toFixed(2));
 };
 
@@ -438,7 +438,7 @@ export default function Sales() {
               {qty > 0 && selectedFG && (
                 <p className="text-xs text-muted-foreground mt-1">
                   Estimated parcel weight: <span className="font-semibold text-foreground">{estimatedWeightKg} kg</span>
-                  {' '}({selectedFG.bottle_size_ml <= 250 ? '200ml rate: 6 kg/case' : '700ml rate: 10 kg/case'})
+                  {' '}({selectedFG.bottle_size_ml <= 250 ? '200ml: 6 kg/12-pack' : '700ml: 10 kg/6-pack'})
                 </p>
               )}
             </div>
