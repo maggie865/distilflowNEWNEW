@@ -11,6 +11,7 @@ const navGroups = [
     items: [
       { label: 'Dilutions', icon: Droplets, path: '/dilutions' },
       { label: 'Distillations', icon: Flame, path: '/distillation' },
+      { label: 'SNS Distillation', icon: Flame, path: '/sns-distillation' },
       { label: 'Tanks', icon: Cylinder, path: '/tanks' },
       { label: 'Recipes', icon: BookOpen, path: '/recipes' },
       { label: 'Bottling Floor', icon: Wine, path: '/bottling-floor' },

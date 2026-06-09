@@ -36,14 +36,15 @@ import {
 import { Button } from '@/components/ui/button';
 
 const navItems = [
-{ label: 'Dashboard', icon: LayoutDashboard, path: '/' },
-{ label: 'Receiving', icon: PackagePlus, path: '/receiving' },
-{ 
-  label: 'Production',
-  icon: Flame,
-  children: [
-    { label: 'Dilutions', icon: Droplets, path: '/dilutions' },
-    { label: 'Distillation', icon: Flame, path: '/distillation' },
+  { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
+  { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
+  { 
+    label: 'Production',
+    icon: Flame,
+    children: [
+      { label: 'Dilutions', icon: Droplets, path: '/dilutions' },
+      { label: 'Distillation', icon: Flame, path: '/distillation' },
+      { label: 'SNS Distillation', icon: Flame, path: '/sns-distillation' },
     { label: 'Tanks', icon: Cylinder, path: '/tanks' },
     { label: 'Recipes', icon: FlaskConical, path: '/recipes' }
   ]

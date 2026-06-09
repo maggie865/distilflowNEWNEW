@@ -1,0 +1,55 @@
+{
+  "name": "SNSRun",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of SNS distillation run"
+    },
+    "source_distillation_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "IDs of distillation runs whose heads/tails were stripped"
+    },
+    "input_volume": {
+      "type": "number",
+      "description": "Total input volume of heads and tails combined (litres)"
+    },
+    "input_abv": {
+      "type": "number",
+      "description": "Average input ABV %"
+    },
+    "output_volume": {
+      "type": "number",
+      "description": "Output volume of stripped high ABV ethanol (litres)"
+    },
+    "output_abv": {
+      "type": "number",
+      "description": "Output ABV % (high ethanol stripped back)"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "in_progress",
+        "completed"
+      ],
+      "default": "planned",
+      "description": "Status of the SNS run"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Additional notes"
+    }
+  },
+  "required": [
+    "date",
+    "source_distillation_ids",
+    "input_volume",
+    "output_volume",
+    "output_abv"
+  ]
+}
