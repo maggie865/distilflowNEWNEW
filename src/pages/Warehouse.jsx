@@ -17,6 +17,8 @@ import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 
+const WAREHOUSE_ADDRESS = '27 Pavillion Drive, Māngere, Auckland 2015, New Zealand';
+
 const EMPTY_TRANSFER = { quantity_bottles: '', date_transferred_in: new Date().toISOString().split('T')[0], notes: '' };
 const EMPTY_DISPATCH = {
   dispatch_date: new Date().toISOString().split('T')[0],
@@ -39,6 +41,7 @@ export default function Warehouse() {
   const [selectedWSId, setSelectedWSId] = useState('');
 
   const [deletingWS, setDeletingWS] = useState(null);
+  const [calcingDistance, setCalcingDistance] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -166,6 +169,20 @@ export default function Warehouse() {
     },
   });
 
+  const calculateDistance = async (customerAddress) => {
+    if (!customerAddress) return;
+    setCalcingDistance(true);
+    const res = await base44.functions.invoke('getDistanceMatrix', {
+      origin: WAREHOUSE_ADDRESS,
+      destination: customerAddress,
+    });
+    if (res.data?.distance_km) {
+      setDispatchForm(f => ({ ...f, transport_distance_km: String(res.data.distance_km) }));
+      toast.success(`Distance: ${res.data.distance_km} km (${res.data.duration_text})`);
+    }
+    setCalcingDistance(false);
+  };
+
   const deleteWSMutation = useMutation({
     mutationFn: async (ws) => {
       // Restore back to FinishedGoods
@@ -204,7 +221,7 @@ export default function Warehouse() {
 
   return (
     <div className="pb-20 md:pb-0">
-      <PageHeader title="3PL Warehouse — Auckland" subtitle="Track stock held at and dispatched from your Auckland warehouse">
+      <PageHeader title="3PL Warehouse — Māngere" subtitle="Track stock held at and dispatched from 27 Pavillion Drive, Māngere">
         <Button variant="outline" onClick={() => setShowTransfer(true)} className="gap-2">
           <ArrowRightLeft className="w-4 h-4" />
           Transfer Stock In
@@ -456,7 +473,9 @@ export default function Warehouse() {
                 value={dispatchForm.customer_name}
                 onValueChange={v => {
                   const c = customers.find(c => c.business_name === v);
-                  setDispatchForm(f => ({ ...f, customer_name: v, customer_address: c?.delivery_address || '' }));
+                  const addr = c?.delivery_address || '';
+                  setDispatchForm(f => ({ ...f, customer_name: v, customer_address: addr }));
+                  if (addr) calculateDistance(addr);
                 }}
               >
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Select customer…" /></SelectTrigger>
@@ -494,7 +513,20 @@ export default function Warehouse() {
               </div>
               <div>
                 <Label>Distance (km)</Label>
-                <Input type="number" min="0" value={dispatchForm.transport_distance_km} onChange={e => setDispatchForm(f => ({ ...f, transport_distance_km: e.target.value }))} placeholder="0" className="mt-1" />
+                <div className="relative mt-1">
+                  <Input
+                    type="number" min="0"
+                    value={dispatchForm.transport_distance_km}
+                    onChange={e => setDispatchForm(f => ({ ...f, transport_distance_km: e.target.value }))}
+                    placeholder={calcingDistance ? 'Calculating…' : '0'}
+                    disabled={calcingDistance}
+                  />
+                  {calcingDistance && (
+                    <div className="absolute right-2.5 top-2.5">
+                      <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
