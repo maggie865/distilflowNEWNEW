@@ -69,7 +69,7 @@ export default function Dilutions() {
   });
 
   const ethanolDestTanks = tanks.filter(t => t.purpose === 'diluted_ethanol');
-  const heartsSrcTanks = tanks.filter(t => t.purpose === 'maceration_dilution');
+  const heartsSrcTanks = tanks.filter(t => t.purpose === 'maceration_dilution' || t.purpose === 'sns');
   const productTanks = tanks.filter(t => t.purpose === 'final_product_storage');
 
   // --- Ethanol Dilution calcs ---

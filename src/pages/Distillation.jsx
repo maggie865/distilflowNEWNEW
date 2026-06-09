@@ -83,9 +83,9 @@ export default function Distillation() {
     queryFn: () => base44.entities.StorageTank.list('name', 50),
   });
 
-  // Only ethanol-holding tanks (diluted_ethanol or maceration_dilution purposes, in_use)
+  // Only ethanol-holding tanks (diluted_ethanol, maceration_dilution, or sns purposes, in_use)
   const ethanolTanks = allTanks.filter(t =>
-    (t.purpose === 'diluted_ethanol' || t.purpose === 'maceration_dilution') && t.status === 'in_use'
+    (t.purpose === 'diluted_ethanol' || t.purpose === 'maceration_dilution' || t.purpose === 'sns') && t.status === 'in_use'
   );
 
 

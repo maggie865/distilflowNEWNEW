@@ -53,7 +53,11 @@ export default function SNSDistillation() {
     t.purpose === 'maceration_dilution' && t.status === 'in_use' && t.current_volume > 0
   );
 
+  // SNS storage tanks available for destination
+  const snsTanks = tanks.filter(t => t.purpose === 'sns');
+
   const selectedTank = tanks.find(t => t.id === form.source_tank_id);
+  const destinationTank = tanks.find(t => t.id === form.destination_tank_id);
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -96,28 +100,18 @@ export default function SNSDistillation() {
     } else {
       await base44.entities.SNSRun.create(payload);
       
-      // Auto-add the output to RawMaterial as high ABV ethanol
-      const outputLals = (parseFloat(form.output_volume) * parseFloat(form.output_abv)) / 100;
-      const existing = await base44.entities.RawMaterial.filter({ 
-        name: 'High ABV Ethanol (SNS)' 
-      });
-      
-      if (existing.length > 0) {
-        const mat = existing[0];
-        await base44.entities.RawMaterial.update(mat.id, {
-          quantity: (mat.quantity || 0) + parseFloat(form.output_volume),
-          lals: (mat.lals || 0) + outputLals,
-        });
-      } else {
-        await base44.entities.RawMaterial.create({
-          name: 'High ABV Ethanol (SNS)',
-          type: 'ethanol',
-          quantity: parseFloat(form.output_volume),
-          unit: 'litres',
-          abv_percent: parseFloat(form.output_abv),
-          lals: outputLals,
-          notes: 'Regenerated from SNS distillation of heads and tails',
-        });
+      // Transfer output to destination tank if specified
+      if (form.destination_tank_id) {
+        const destTank = tanks.find(t => t.id === form.destination_tank_id);
+        if (destTank) {
+          const newVolume = Math.min((destTank.current_volume || 0) + parseFloat(form.output_volume), destTank.capacity_litres);
+          await base44.entities.StorageTank.update(form.destination_tank_id, {
+            current_volume: newVolume,
+            current_abv: parseFloat(form.output_abv),
+            current_product: 'High ABV Ethanol (SNS)',
+            status: 'in_use',
+          });
+        }
       }
       
       // Clear the source tank after completion
@@ -130,12 +124,11 @@ export default function SNSDistillation() {
         });
       }
       
-      toast.success('SNS run recorded and output stored in inventory');
+      toast.success('SNS run recorded and output transferred to destination tank');
     }
 
     queryClient.invalidateQueries({ queryKey: ['snsRuns'] });
     queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
-    queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
     setOpen(false);
     setForm(BLANK_FORM);
   };
@@ -175,7 +168,7 @@ export default function SNSDistillation() {
             </div>
 
             <div className="rounded-lg border border-border p-4 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Select tank with heads and tails</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Source tank (heads and tails)</p>
               <Select value={form.source_tank_id} onValueChange={handleTankChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose a tank..." />
@@ -190,6 +183,29 @@ export default function SNSDistillation() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Destination tank (SNS storage)</p>
+              <Select value={form.destination_tank_id} onValueChange={v => set('destination_tank_id', v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose destination tank..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {snsTanks.length === 0 ? (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No SNS tanks available</div>
+                  ) : snsTanks.map(t => (
+                    <SelectItem key={t.id} value={t.id}>
+                      Tank {t.name} — {t.capacity_litres}L capacity {t.status === 'empty' ? '(empty)' : `(${t.current_volume}L in use)`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {destinationTank && form.output_volume && (
+                <p className="text-xs text-primary font-medium">
+                  Tank {destinationTank.name} → {Math.min((destinationTank.current_volume || 0) + parseFloat(form.output_volume), destinationTank.capacity_litres).toFixed(1)}L / {destinationTank.capacity_litres}L
+                </p>
+              )}
             </div>
 
             <div className="rounded-lg border border-border p-4 space-y-3">
