@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,7 +32,7 @@ export default function Suppliers() {
 
   const suppliersQuery = useQuery({
     queryKey: ['suppliers'],
-    queryFn: () => base44.entities.Supplier.list('business_name', 100),
+    queryFn: () => db.Supplier.list('business_name', 100),
   });
 
   const openNew = () => {
@@ -56,7 +56,7 @@ export default function Suppliers() {
 
   const createMutation = useMutation({
     mutationFn: async (data) => {
-      await base44.entities.Supplier.create(data);
+      await db.Supplier.create(data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
@@ -68,7 +68,7 @@ export default function Suppliers() {
 
   const updateMutation = useMutation({
     mutationFn: async (data) => {
-      await base44.entities.Supplier.update(editingId, data);
+      await db.Supplier.update(editingId, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
@@ -81,7 +81,7 @@ export default function Suppliers() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
-      await base44.entities.Supplier.delete(id);
+      await db.Supplier.delete(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
@@ -92,7 +92,7 @@ export default function Suppliers() {
   const syncMutation = useMutation({
     mutationFn: async () => {
       setSyncing(true);
-      const res = await base44.functions.invoke('syncSuppliersFromSheet', {});
+      toast.info('Sheet sync removed — add suppliers manually'); return;
       return res.data;
     },
     onSuccess: (data) => {
