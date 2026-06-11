@@ -629,7 +629,7 @@ export default function Dilutions() {
               ) : dilutions.length === 0 ? (
                 <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No dilutions recorded</TableCell></TableRow>
               ) : dilutions.map(d => {
-                const isHearts = d.notes?.includes('[Heads Dilution]');
+                const isHearts = d.notes?.includes('[Heads Dilution]') || parseFloat(d.input_abv) === 79;
                 return (
                   <TableRow key={d.id}>
                     <TableCell className="text-sm">{d.date ? format(new Date(d.date), 'MMM d, yyyy') : '—'}</TableCell>
