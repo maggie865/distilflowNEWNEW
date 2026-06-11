@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,32 +31,19 @@ export default function Reports() {
   const [endDate, setEndDate] = useState(format(now, 'yyyy-MM-dd'));
   const [exporting, setExporting] = useState(false);
 
-  const { data: wastage = [] } = useQuery({ queryKey: ['wastage'], queryFn: () => base44.entities.WastageRecord.list('-date', 500) });
-  const { data: receiving = [] } = useQuery({ queryKey: ['receiving'], queryFn: () => base44.entities.Receiving.list('-date_received', 500) });
-  const { data: sheetData = { dispatches: [] } } = useQuery({
-    queryKey: ['sheetDispatches'],
-    queryFn: async () => {
-      const res = await base44.functions.invoke('readSheetDispatches', {});
-      return res.data;
-    },
-    staleTime: 60_000,
+  const { data: wastage = [] } = useQuery({ queryKey: ['wastage'], queryFn: () => db.WastageRecord.list('-date', 500) });
+  const { data: receiving = [] } = useQuery({ queryKey: ['receiving'], queryFn: () => db.Receiving.list('-date_received', 500) });
+  const { data: dispatches = [] } = useQuery({
+    queryKey: ['dispatches'],
+    queryFn: () => db.Dispatch.list('-dispatch_date', 2000),
   });
-  const { data: sheet3PLData = { dispatches: [] } } = useQuery({
-    queryKey: ['sheet3PLDispatches'],
-    queryFn: async () => {
-      const res = await base44.functions.invoke('read3PLSheetDispatches', {});
-      return res.data;
-    },
-    staleTime: 60_000,
-  });
-  const dispatches = [...(sheetData.dispatches || []), ...(sheet3PLData.dispatches || [])];
-  const { data: rawMaterials = [] } = useQuery({ queryKey: ['rawMaterials'], queryFn: () => base44.entities.RawMaterial.list('name', 200) });
-  const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => base44.entities.FinishedGood.list('product_name', 200) });
-  const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => base44.entities.WarehouseStock.list('-date_transferred_in', 200) });
-  const { data: distillationRuns = [] } = useQuery({ queryKey: ['distillationRuns'], queryFn: () => base44.entities.DistillationRun.list('-date', 500) });
-  const { data: bottlingRuns = [] } = useQuery({ queryKey: ['bottlingRuns'], queryFn: () => base44.entities.BottlingRun.list('-date', 200) });
-  const { data: dilutions = [] } = useQuery({ queryKey: ['dilutions'], queryFn: () => base44.entities.Dilution.list('-date', 500) });
-  const { data: tankMovements = [] } = useQuery({ queryKey: ['tankMovements'], queryFn: () => base44.entities.TankMovement.list('-date', 500) });
+  const { data: rawMaterials = [] } = useQuery({ queryKey: ['rawMaterials'], queryFn: () => db.RawMaterial.list('name', 200) });
+  const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => db.FinishedGood.list('product_name', 200) });
+  const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => db.WarehouseStock.list('-date_transferred_in', 200) });
+  const { data: distillationRuns = [] } = useQuery({ queryKey: ['distillationRuns'], queryFn: () => db.DistillationRun.list('-date', 500) });
+  const { data: bottlingRuns = [] } = useQuery({ queryKey: ['bottlingRuns'], queryFn: () => db.BottlingRun.list('-date', 200) });
+  const { data: dilutions = [] } = useQuery({ queryKey: ['dilutions'], queryFn: () => db.Dilution.list('-date', 500) });
+  const { data: tankMovements = [] } = useQuery({ queryKey: ['tankMovements'], queryFn: () => db.TankMovement.list('-date', 500) });
 
   // Date range
   const rangeStart = startDate ? parseISO(startDate) : startOfMonth(new Date());
@@ -261,7 +248,8 @@ export default function Reports() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const res = await base44.functions.invoke('generateMonthlyReport', {
+      // Google Sheets export removed — data now in Supabase
+      // const res = await base44.functions.invoke('generateMonthlyReport', {
         month: `${startDate}_${endDate}`,
         wastage: wastageWithCost,
         receiving: monthReceiving,
