@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,7 @@ export default function CreateBatchDialog({ open, onOpenChange, onCreated }) {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      return base44.entities.MasterBatch.create({
+      return db.MasterBatch.create({
         batch_code: form.batch_code.toUpperCase(),
         product_name: form.product_name,
         date_started: form.date_started,
