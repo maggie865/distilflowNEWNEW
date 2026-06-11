@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,12 +42,12 @@ export default function Recipes() {
 
   const { data: recipes = [], isLoading } = useQuery({
     queryKey: ['recipes'],
-    queryFn: () => base44.entities.Recipe.list('name', 50),
+    queryFn: () => db.Recipe.list('name', 50),
   });
 
   const { data: rawMaterials = [] } = useQuery({
     queryKey: ['rawMaterials'],
-    queryFn: () => base44.entities.RawMaterial.list('name', 500),
+    queryFn: () => db.RawMaterial.list('name', 500),
   });
 
   // Unique material names from stock (excluding ethanol/water)
@@ -114,9 +114,9 @@ export default function Recipes() {
           .map(p => ({ ...p, quantity: parseFloat(p.quantity) || 0 })),
       };
       if (editing) {
-        await base44.entities.Recipe.update(editing.id, payload);
+        await db.Recipe.update(editing.id, payload);
       } else {
-        await base44.entities.Recipe.create(payload);
+        await db.Recipe.create(payload);
       }
     },
     onSuccess: () => {
@@ -127,7 +127,7 @@ export default function Recipes() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.Recipe.delete(id),
+    mutationFn: (id) => db.Recipe.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recipes'] });
       toast.success('Recipe deleted');
