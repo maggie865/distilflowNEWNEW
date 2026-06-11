@@ -197,11 +197,6 @@ export default function Dilutions() {
       queryClient.invalidateQueries({ queryKey: ['dilutions'] });
       queryClient.invalidateQueries({ queryKey: ['dilutions-sheet'] });
       // Append to sheet
-      if (created) {
-        Promise.resolve(); // base44.functions.invoke('appendDilutionToSheet', {
-          dilution: { ...created, type: 'Ethanol', input_volume: created.input_ethanol_volume },
-        }).catch(() => {});
-      }
       setOpenType(null);
       setEthanolForm(BLANK_ETHANOL);
       toast.success('Ethanol dilution recorded');
@@ -301,11 +296,6 @@ export default function Dilutions() {
       queryClient.invalidateQueries({ queryKey: ['dilutions'] });
       queryClient.invalidateQueries({ queryKey: ['dilutions-sheet'] });
       // Append to sheet
-      if (created) {
-        Promise.resolve(); // base44.functions.invoke('appendDilutionToSheet', {
-          dilution: { ...created, type: 'Hearts', input_volume: created.input_ethanol_volume },
-        }).catch(() => {});
-      }
       setOpenType(null);
       setHeartsForm(BLANK_HEARTS);
       toast.success(action === 'transfer' ? 'Hearts dilution complete — product transferred' : 'Progress saved — product remains in source tank');

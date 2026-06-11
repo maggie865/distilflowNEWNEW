@@ -84,7 +84,7 @@ export default function Sales() {
     queryKey: ['sheetDispatches'],
     queryFn: async () => {
       // Sheet sync removed — dispatches now in Supabase
-      return res.data;
+      return { dispatches: [] };
     },
     staleTime: 60_000,
   });
@@ -123,6 +123,7 @@ export default function Sales() {
     if (!customerAddress) return;
     setCalcingDistance(true);
     try {
+      const { base44 } = await import('@/api/base44Client');
       const res = await base44.functions.invoke('getDistanceMatrix', {
         origin: DISTILLERY_ORIGIN,
         destination: customerAddress,

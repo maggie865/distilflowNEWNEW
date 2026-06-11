@@ -26,9 +26,7 @@ export default function Customers() {
 
   const handleSync = async () => {
     setSyncing(true);
-    toast.info('Sheet sync removed — add customers manually'); return;
-    queryClient.invalidateQueries({ queryKey: ['customers'] });
-    toast.success(`Synced! ${res.data.created} added, ${res.data.updated} updated.`);
+    toast.info('Sheet sync removed — add customers manually');
     setSyncing(false);
   };
 

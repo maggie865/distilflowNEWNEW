@@ -86,6 +86,7 @@ export default function Receiving() {
     if (!supplierAddress) return;
     setCalcingDistance(true);
     try {
+      const { base44 } = await import('@/api/base44Client');
       const res = await base44.functions.invoke('getDistanceMatrix', {
         origin: supplierAddress,
         destination: DISTILLERY_ADDRESS,
@@ -107,6 +108,7 @@ export default function Receiving() {
 
     try {
       // Upload file for storage and OCR extraction
+      const { base44 } = await import('@/api/base44Client');
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
 
       // Store the file URL immediately
@@ -308,8 +310,8 @@ export default function Receiving() {
     if (!confirm('This will import all rows from the Google Sheet as Receiving records, skipping any that already exist (matched by batch number + material name). Continue?')) return;
     setSyncing(true);
     try {
-      toast.info('Sheet sync removed — data now in Supabase'); return;
-      const sheetRecords = res.data?.records || [];
+      toast.info('Sheet sync removed — data now in Supabase');
+      return;
       if (sheetRecords.length === 0) {
         toast.error('No records found in sheet');
         return;
@@ -409,8 +411,8 @@ export default function Receiving() {
     if (!confirm('This will update all receiving records with distances from supplier addresses and estimate CO2e from quantity. Continue?')) return;
     setBackfilling(true);
     try {
-      toast.info('Backfill function removed'); return;
-      toast.success(`Updated ${res.data.updated} records (${res.data.skipped} skipped — no supplier/address match)`);
+      toast.info('Backfill function removed');
+      return;
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
     } catch (err) {
       toast.error('Backfill failed: ' + err.message);

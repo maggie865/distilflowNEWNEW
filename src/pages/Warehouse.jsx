@@ -81,7 +81,7 @@ export default function Warehouse() {
     queryKey: ['3plSheetDispatches'],
     queryFn: async () => {
       // Sheet 3PL dispatch reading removed — data now in Supabase
-      return res.data;
+      return { dispatches: [] };
     },
     staleTime: 60_000,
   });
@@ -190,22 +190,7 @@ export default function Warehouse() {
         co2e = (distance * weight / 1000) * 0.008;
       }
 
-      // base44.functions.invoke('append3PLDispatchToSheet', {
-        dispatch: {
-          ...dispatchForm,
-          product_name: ws.product_name,
-          batch_number: ws.batch_number,
-          bottle_size_ml: ws.bottle_size_ml,
-          quantity_bottles: dispatchQty,
-          total_lals: parseFloat(lals.toFixed(4)),
-          parcel_weight_kg: weight,
-          transport_distance_km: distance,
-          co2e_kg: parseFloat(co2e.toFixed(3)),
-          dispatched_from: 'Auckland 3PL',
-          notes: dispatchForm.notes || '',
-          is_sample: 'FALSE',
-        },
-      });
+
 
       // Deduct from WarehouseStock
       const newQty = ws.quantity_bottles - dispatchQty;
@@ -232,6 +217,7 @@ export default function Warehouse() {
   const calculateDistance = async (customerAddress) => {
     if (!customerAddress) return;
     setCalcingDistance(true);
+    const { base44 } = await import('@/api/base44Client');
     const res = await base44.functions.invoke('getDistanceMatrix', {
       origin: WAREHOUSE_ADDRESS,
       destination: customerAddress,

@@ -249,19 +249,7 @@ export default function Reports() {
     setExporting(true);
     try {
       // Google Sheets export removed — data now in Supabase
-      // const res = await base44.functions.invoke('generateMonthlyReport', {
-        month: `${startDate}_${endDate}`,
-        wastage: wastageWithCost,
-        receiving: monthReceiving,
-        dispatches: monthDispatches,
-        rawMaterials,
-        finishedGoods,
-        warehouseStock,
-      });
-      if (res.data?.spreadsheet_url) {
-        window.open(res.data.spreadsheet_url, '_blank');
-        toast.success('Monthly report exported to Google Sheets!');
-      }
+      toast.info('Export to Google Sheets is currently disabled.');
     } catch (err) {
       toast.error('Export failed: ' + err.message);
     } finally {

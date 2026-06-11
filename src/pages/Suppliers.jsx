@@ -92,8 +92,8 @@ export default function Suppliers() {
   const syncMutation = useMutation({
     mutationFn: async () => {
       setSyncing(true);
-      toast.info('Sheet sync removed — add suppliers manually'); return;
-      return res.data;
+      toast.info('Sheet sync removed — add suppliers manually');
+      return;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
