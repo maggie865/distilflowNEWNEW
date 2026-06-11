@@ -86,13 +86,25 @@ export default function Reports() {
   const rawEthanolConsumedInDilutions = dilutions
     .filter(d => d.input_abv !== 79 && d.input_ethanol_volume)
     .reduce((s, d) => s + (d.input_ethanol_volume || 0), 0);
+  const ldgDistillRuns = distillationRuns.filter(r => r.product_name === 'London Dry Gin' && r.input_volume).length;
+  const LDG_BOTANICALS = {
+    'juniper berries': 7.5,
+    'coriander': 3.4,
+    'orris root': 0.1874,
+    'licorice root': 0.1874,
+    'hibiscus flower': 0.1874,
+    'lemongrass': 0.1874,
+  };
   const totalBottlesBottled700 = bottlingRuns
     .filter(r => r.bottle_size_ml === 700)
     .reduce((s, r) => s + (r.bottles_produced || 0), 0);
+  const totalBottlesBottled200 = bottlingRuns
+    .filter(r => r.bottle_size_ml === 200)
+    .reduce((s, r) => s + (r.bottles_produced || 0), 0);
   const rawMaterialsNetStock = rawMaterials.map(m => {
     let netQty = m.quantity || 0;
+    const nameLower = m.name?.toLowerCase() || '';
     if (m.type === 'ethanol') {
-      const nameLower = m.name?.toLowerCase() || '';
       const isLactonol = nameLower.includes('lactonol');
       const isEna = nameLower.includes('extra neutral') || nameLower.includes('ena');
       let consumed = 0;
@@ -109,10 +121,25 @@ export default function Reports() {
       }
       netQty = Math.max(0, netQty - consumed);
     }
+    if (m.type === 'botanical') {
+      const matchedKey = Object.keys(LDG_BOTANICALS).find(k => nameLower.includes(k));
+      if (matchedKey) netQty = Math.max(0, netQty - ldgDistillRuns * LDG_BOTANICALS[matchedKey]);
+    }
     if (m.type === 'packaging') {
-      const name = m.name?.toLowerCase() || '';
-      const is700ml = name.includes('700ml') || name.includes('700 ml');
-      if (is700ml) netQty = Math.max(0, netQty - totalBottlesBottled700);
+      if (nameLower.includes('box for 6x 700ml')) {
+        netQty = Math.max(0, netQty - Math.floor(totalBottlesBottled700 / 6));
+      } else if (
+        nameLower.includes('700ml buoy green gin bottle') ||
+        nameLower.includes('cork for 700ml') ||
+        nameLower.includes('heat seal 700ml') ||
+        nameLower.includes('bottle sticker top 700ml') ||
+        nameLower.includes('bottle sticker triangle 700ml') ||
+        nameLower.includes('bottle sticker neck 700ml')
+      ) {
+        netQty = Math.max(0, netQty - totalBottlesBottled700);
+      } else if (nameLower.includes('200ml')) {
+        netQty = Math.max(0, netQty - totalBottlesBottled200);
+      }
     }
     const netLals = m.abv_percent && m.type === 'ethanol'
       ? parseFloat((netQty * m.abv_percent / 100).toFixed(3))

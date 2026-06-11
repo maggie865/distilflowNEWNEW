@@ -351,28 +351,55 @@ export default function Inventory() {
     .filter(d => d.input_abv !== 79 && d.input_ethanol_volume)
     .reduce((s, d) => s + (d.input_ethanol_volume || 0), 0);
 
-  // Total bottles produced (packaging consumed 1:1 per bottle for 700ml items)
-  const totalBottlesBottled = bottlingRuns
+  // Count completed London Dry Gin distillation runs (each run uses recipe quantities)
+  const ldgDistillRuns = distillationRuns.filter(
+    r => r.product_name === 'London Dry Gin' && r.input_volume
+  ).length;
+
+  // London Dry Gin recipe botanical quantities per still run
+  const LDG_BOTANICALS = {
+    'juniper berries': 7.5,
+    'coriander': 3.4,
+    'orris root': 0.1874,
+    'licorice root': 0.1874,
+    'hibiscus flower': 0.1874,
+    'lemongrass': 0.1874,
+  };
+
+  // Total bottles produced per bottle size
+  const totalBottlesBottled700 = bottlingRuns
     .filter(r => r.bottle_size_ml === 700)
     .reduce((s, r) => s + (r.bottles_produced || 0), 0);
+  const totalBottlesBottled200 = bottlingRuns
+    .filter(r => r.bottle_size_ml === 200)
+    .reduce((s, r) => s + (r.bottles_produced || 0), 0);
+
+  // 700ml packaging recipe components (qty 1 per bottle)
+  const PACKAGING_700ML = [
+    '700ml buoy green gin bottle',
+    'cork for 700ml bottles',
+    'heat seal 700ml',
+    'bottle sticker top 700ml',
+    'bottle sticker triangle 700ml',
+    'bottle sticker neck 700ml',
+    'box for 6x 700ml bottles', // 1 per 6 bottles → handled below
+  ];
 
   // Apply net-stock to raw materials
   const rawMaterialsWithNetStock = rawMaterials.map(m => {
     let netQty = m.quantity || 0;
+    const nameLower = m.name?.toLowerCase() || '';
 
     if (m.type === 'ethanol') {
-      const nameLower = m.name?.toLowerCase() || '';
-      // Match distillation lot codes to this material
       const isLactonol = nameLower.includes('lactonol');
       const isEna = nameLower.includes('extra neutral') || nameLower.includes('ena');
       let consumed = 0;
       if (isLactonol) {
         consumed += (ethanolConsumedByLotCode['eth-lactonol'] || 0) + (ethanolConsumedByLotCode['lactonol'] || 0);
-        consumed += rawEthanolConsumedInDilutions; // non-hearts dilutions using raw lactonol
+        consumed += rawEthanolConsumedInDilutions;
       } else if (isEna) {
         consumed += (ethanolConsumedByLotCode['eth-ena'] || 0) + (ethanolConsumedByLotCode['ena'] || 0);
       } else {
-        // Fall back: sum all lot codes not matched above
         const matched = ['eth-lactonol', 'lactonol', 'eth-ena', 'ena'];
         consumed += Object.entries(ethanolConsumedByLotCode)
           .filter(([k]) => !matched.includes(k))
@@ -381,12 +408,30 @@ export default function Inventory() {
       netQty = Math.max(0, netQty - consumed);
     }
 
-    // Deduct packaging consumed in bottling runs (1 unit per 700ml bottle)
+    // Deduct botanicals based on LDG recipe × number of completed distillation runs
+    if (m.type === 'botanical') {
+      const matchedKey = Object.keys(LDG_BOTANICALS).find(k => nameLower.includes(k));
+      if (matchedKey) {
+        const consumed = ldgDistillRuns * LDG_BOTANICALS[matchedKey];
+        netQty = Math.max(0, netQty - consumed);
+      }
+    }
+
+    // Deduct packaging consumed in bottling runs using recipe (1 per bottle, except boxes = 1 per 6)
     if (m.type === 'packaging') {
-      const name = m.name?.toLowerCase() || '';
-      const is700ml = name.includes('700ml') || name.includes('700 ml');
-      if (is700ml) {
-        netQty = Math.max(0, netQty - totalBottlesBottled);
+      if (nameLower.includes('box for 6x 700ml')) {
+        netQty = Math.max(0, netQty - Math.floor(totalBottlesBottled700 / 6));
+      } else if (
+        nameLower.includes('700ml buoy green gin bottle') ||
+        nameLower.includes('cork for 700ml') ||
+        nameLower.includes('heat seal 700ml') ||
+        nameLower.includes('bottle sticker top 700ml') ||
+        nameLower.includes('bottle sticker triangle 700ml') ||
+        nameLower.includes('bottle sticker neck 700ml')
+      ) {
+        netQty = Math.max(0, netQty - totalBottlesBottled700);
+      } else if (nameLower.includes('200ml')) {
+        netQty = Math.max(0, netQty - totalBottlesBottled200);
       }
     }
 
