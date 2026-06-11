@@ -363,7 +363,7 @@ export default function Sales() {
                 </TableRow>
               ) : filtered.map((d, i) => (
                 <TableRow key={d.id || d._row_index || i}>
-                  <TableCell>{d.dispatch_date ? format(new Date(d.dispatch_date), 'dd MMM yyyy') : '—'}</TableCell>
+                  <TableCell>{(() => { try { const dt = new Date(d.dispatch_date?.replace(/-/g, '/')); return isNaN(dt) ? d.dispatch_date || '—' : format(dt, 'dd MMM yyyy'); } catch { return d.dispatch_date || '—'; } })()}</TableCell>
                   <TableCell className="font-semibold">{d.customer_name}</TableCell>
                   <TableCell>{d.product_name}</TableCell>
                   <TableCell className="font-mono text-xs">{d.batch_number}</TableCell>
