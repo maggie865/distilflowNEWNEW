@@ -44,6 +44,7 @@ export default function Distillation() {
   const [scaledIngredients, setScaledIngredients] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [createBatchOpen, setCreateBatchOpen] = useState(false);
+  const [batchError, setBatchError] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: masterBatches = [] } = useQuery({
@@ -326,6 +327,12 @@ export default function Distillation() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!form.batch_number) {
+      setBatchError(true);
+      toast.error('Please select a Batch Number before saving');
+      return;
+    }
+    setBatchError(false);
     if (editing) {
       updateMutation.mutate(form);
     } else {
@@ -379,7 +386,7 @@ export default function Distillation() {
             {/* Core details */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Batch Number</Label>
+                <Label>Batch Number <span className="text-destructive">*</span></Label>
                 {editing ? (
                   // When editing, show plain text (batch number shouldn't change)
                   <div className="h-9 flex items-center px-3 rounded-md border border-input bg-muted text-sm font-medium">
@@ -392,6 +399,7 @@ export default function Distillation() {
                       onValueChange={v => {
                         const batch = masterBatches.find(b => b.batch_code === v);
                         set('batch_number', v);
+                        setBatchError(false);
                         if (batch?.product_name && !form.product_name) set('product_name', batch.product_name);
                         // Auto-suggest sub-batch code if not already set
                         if (!form.sub_batch_code) {
@@ -400,7 +408,7 @@ export default function Distillation() {
                         }
                       }}
                     >
-                      <SelectTrigger className="flex-1">
+                      <SelectTrigger className={`flex-1 ${batchError ? 'border-destructive ring-1 ring-destructive' : ''}`}>
                         <SelectValue placeholder="Select batch…" />
                       </SelectTrigger>
                       <SelectContent>
