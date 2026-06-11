@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,7 +26,7 @@ export default function Customers() {
 
   const handleSync = async () => {
     setSyncing(true);
-    const res = await base44.functions.invoke('syncCustomersFromSheet', {});
+    toast.info('Sheet sync removed — add customers manually'); return;
     queryClient.invalidateQueries({ queryKey: ['customers'] });
     toast.success(`Synced! ${res.data.created} added, ${res.data.updated} updated.`);
     setSyncing(false);
@@ -34,11 +34,11 @@ export default function Customers() {
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
-    queryFn: () => base44.entities.Customer.list('business_name', 200),
+    queryFn: () => db.Customer.list('business_name', 200),
   });
 
   const createMutation = useMutation({
-    mutationFn: () => base44.entities.Customer.create(form),
+    mutationFn: () => db.Customer.create(form),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setShowForm(false);
@@ -48,8 +48,7 @@ export default function Customers() {
   });
 
   const editMutation = useMutation({
-    mutationFn: () => base44.functions.invoke('updateCustomerInSheet', {
-      id: editingCustomer.id,
+    mutationFn: () => db.Customer.update(editingCustomer.id, {
       business_name: editForm.business_name,
       delivery_address: editForm.delivery_address,
     }),
@@ -61,7 +60,7 @@ export default function Customers() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.Customer.delete(id),
+    mutationFn: (id) => db.Customer.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setDeletingCustomer(null);
