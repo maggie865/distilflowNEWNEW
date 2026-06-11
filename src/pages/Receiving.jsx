@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -37,19 +37,19 @@ export default function Receiving() {
   const queryClient = useQueryClient();
   const { refetch } = useQuery({
     queryKey: ['receivings'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 50),
+    queryFn: () => db.Receiving.list('-date_received', 50),
   });
 
   const isRefreshing = usePullToRefresh(() => refetch());
 
   const receivingsQuery = useQuery({
     queryKey: ['receivings'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 50),
+    queryFn: () => db.Receiving.list('-date_received', 50),
   });
 
   const suppliersQuery = useQuery({
     queryKey: ['suppliers'],
-    queryFn: () => base44.entities.Supplier.list('business_name', 100),
+    queryFn: () => db.Supplier.list('business_name', 100),
   });
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
@@ -221,22 +221,22 @@ export default function Receiving() {
   const createMutation = useMutation({
     mutationFn: async (data) => {
       const payload = buildPayload(data);
-      await base44.entities.Receiving.create(payload);
+      await db.Receiving.create(payload);
 
       // Also update/create raw material inventory
-      const existing = await base44.entities.RawMaterial.filter({ name: data.material_name });
+      const existing = await db.RawMaterial.filter({ name: data.material_name });
       if (existing.length > 0) {
         const mat = existing[0];
         const newQty = (mat.quantity || 0) + parseFloat(data.quantity);
         const newLals = data.material_type === 'Ethanol'
           ? (mat.lals || 0) + (payload.lals || 0) : mat.lals;
-        await base44.entities.RawMaterial.update(mat.id, {
+        await db.RawMaterial.update(mat.id, {
           quantity: newQty,
           lals: newLals,
           abv_percent: data.abv_percent ? parseFloat(data.abv_percent) : mat.abv_percent,
         });
       } else {
-        await base44.entities.RawMaterial.create({
+        await db.RawMaterial.create({
           name: data.material_name,
           type: data.material_type?.toLowerCase(),
           quantity: parseFloat(data.quantity),
@@ -261,7 +261,7 @@ export default function Receiving() {
   const updateMutation = useMutation({
     mutationFn: async (data) => {
       const payload = buildPayload(data);
-      await base44.entities.Receiving.update(editingId, payload);
+      await db.Receiving.update(editingId, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
@@ -284,16 +284,16 @@ export default function Receiving() {
   const deleteMutation = useMutation({
     mutationFn: async (record) => {
       // Deduct stock from raw material inventory
-      const existing = await base44.entities.RawMaterial.filter({ name: record.material_name });
+      const existing = await db.RawMaterial.filter({ name: record.material_name });
       if (existing.length > 0) {
         const mat = existing[0];
         const newQty = Math.max(0, (mat.quantity || 0) - (record.quantity || 0));
         const newLals = record.material_type === 'ethanol'
           ? Math.max(0, (mat.lals || 0) - (record.lals || 0))
           : mat.lals;
-        await base44.entities.RawMaterial.update(mat.id, { quantity: newQty, lals: newLals });
+        await db.RawMaterial.update(mat.id, { quantity: newQty, lals: newLals });
       }
-      await base44.entities.Receiving.delete(record.id);
+      await db.Receiving.delete(record.id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
@@ -308,7 +308,7 @@ export default function Receiving() {
     if (!confirm('This will import all rows from the Google Sheet as Receiving records, skipping any that already exist (matched by batch number + material name). Continue?')) return;
     setSyncing(true);
     try {
-      const res = await base44.functions.invoke('readSheetReceiving', {});
+      toast.info('Sheet sync removed — data now in Supabase'); return;
       const sheetRecords = res.data?.records || [];
       if (sheetRecords.length === 0) {
         toast.error('No records found in sheet');
@@ -316,7 +316,7 @@ export default function Receiving() {
       }
 
       // Get existing receivings to avoid duplicates
-      const existing = await base44.entities.Receiving.list('-date_received', 500);
+      const existing = await db.Receiving.list('-date_received', 500);
       const existingKeys = new Set(existing.map(r => `${r.batch_number}__${r.material_name}`));
 
       let created = 0;
@@ -367,18 +367,18 @@ export default function Receiving() {
           notes: r.notes || undefined,
         };
 
-        await base44.entities.Receiving.create(payload);
+        await db.Receiving.create(payload);
 
         // Update or create RawMaterial inventory
-        const mats = await base44.entities.RawMaterial.filter({ name: r.material_name });
+        const mats = await db.RawMaterial.filter({ name: r.material_name });
         if (mats.length > 0) {
           const mat = mats[0];
-          await base44.entities.RawMaterial.update(mat.id, {
+          await db.RawMaterial.update(mat.id, {
             quantity: (mat.quantity || 0) + r.quantity,
             lals: matchedType === 'Ethanol' ? (mat.lals || 0) + (lals || 0) : mat.lals,
           });
         } else {
-          await base44.entities.RawMaterial.create({
+          await db.RawMaterial.create({
             name: r.material_name,
             type: matchedType.toLowerCase(),
             quantity: r.quantity,
@@ -409,7 +409,7 @@ export default function Receiving() {
     if (!confirm('This will update all receiving records with distances from supplier addresses and estimate CO2e from quantity. Continue?')) return;
     setBackfilling(true);
     try {
-      const res = await base44.functions.invoke('backfillReceivingCo2e', {});
+      toast.info('Backfill function removed'); return;
       toast.success(`Updated ${res.data.updated} records (${res.data.skipped} skipped — no supplier/address match)`);
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
     } catch (err) {
