@@ -1,4 +1,5 @@
 import { useState } from 'react';
+// Net stock is computed dynamically from production records — no static deductions needed
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
@@ -274,6 +275,16 @@ export default function Inventory() {
     queryFn: () => base44.entities.RawMaterial.list('name', 100),
   });
 
+  const { data: distillationRuns = [] } = useQuery({
+    queryKey: ['distillationRuns'],
+    queryFn: () => base44.entities.DistillationRun.list('date', 200),
+  });
+
+  const { data: bottlingRuns = [] } = useQuery({
+    queryKey: ['bottlingRuns'],
+    queryFn: () => base44.entities.BottlingRun.list('date', 200),
+  });
+
   const { data: finishedGoods = [], isLoading: loadingFinished } = useQuery({
     queryKey: ['finishedGoods'],
     queryFn: () => base44.entities.FinishedGood.list('product_name', 100),
@@ -320,9 +331,46 @@ export default function Inventory() {
     };
   });
 
-  const packagingItems = rawMaterials.filter(m => m.type?.toLowerCase() === 'packaging');
-  const nonPackagingRaw = rawMaterials.filter(m => m.type?.toLowerCase() !== 'packaging');
-  const totalEthanolLALs = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
+  // Total ethanol (litres) consumed in all distillation runs
+  // Each run's input_lals / (abv% / 100) = litres of ethanol used at that ABV
+  // We use input_lals / 0.96 to express as equivalent 96% ethanol litres consumed
+  const totalEthanolConsumedLitres = distillationRuns
+    .filter(r => r.status === 'completed' || r.input_lals)
+    .reduce((s, r) => s + ((r.input_lals || 0) / 0.96), 0);
+
+  // Total bottles produced (packaging consumed 1:1 per bottle for 700ml items)
+  const totalBottlesBottled = bottlingRuns
+    .filter(r => r.bottle_size_ml === 700)
+    .reduce((s, r) => s + (r.bottles_produced || 0), 0);
+
+  // Apply net-stock to raw materials
+  const rawMaterialsWithNetStock = rawMaterials.map(m => {
+    let netQty = m.quantity || 0;
+
+    // Deduct ethanol consumed in distillation runs (expressed as 96% ethanol equivalent)
+    if (m.type === 'ethanol' && m.name?.toLowerCase().includes('lactonol')) {
+      netQty = Math.max(0, netQty - totalEthanolConsumedLitres);
+    }
+
+    // Deduct packaging consumed in bottling runs (1 unit per 700ml bottle)
+    if (m.type === 'packaging') {
+      const name = m.name?.toLowerCase() || '';
+      const is700ml = name.includes('700ml') || name.includes('700 ml');
+      if (is700ml) {
+        netQty = Math.max(0, netQty - totalBottlesBottled);
+      }
+    }
+
+    const netLals = m.abv_percent && m.type === 'ethanol'
+      ? parseFloat((netQty * m.abv_percent / 100).toFixed(3))
+      : m.lals;
+
+    return { ...m, quantity: parseFloat(netQty.toFixed(2)), lals: netLals };
+  });
+
+  const packagingItems = rawMaterialsWithNetStock.filter(m => m.type?.toLowerCase() === 'packaging');
+  const nonPackagingRaw = rawMaterialsWithNetStock.filter(m => m.type?.toLowerCase() !== 'packaging');
+  const totalEthanolLALs = rawMaterialsWithNetStock.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
   const totalBottles = finishedGoodsWithStock.reduce((s, g) => s + (g.quantity_bottles || 0), 0);
   const totalFinishedLALs = finishedGoodsWithStock.reduce((s, g) => s + (g.total_lals || 0), 0);
 

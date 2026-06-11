@@ -54,6 +54,7 @@ export default function Reports() {
   const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => base44.entities.FinishedGood.list('product_name', 200) });
   const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => base44.entities.WarehouseStock.list('-date_transferred_in', 200) });
   const { data: distillationRuns = [] } = useQuery({ queryKey: ['distillationRuns'], queryFn: () => base44.entities.DistillationRun.list('-date', 500) });
+  const { data: bottlingRuns = [] } = useQuery({ queryKey: ['bottlingRuns'], queryFn: () => base44.entities.BottlingRun.list('-date', 200) });
   const { data: tankMovements = [] } = useQuery({ queryKey: ['tankMovements'], queryFn: () => base44.entities.TankMovement.list('-date', 500) });
 
   // Date range
@@ -72,6 +73,29 @@ export default function Reports() {
   const warehouseDispatches = monthDispatches.filter(d => d.notes?.startsWith('[3PL]'));
   const distilleryDispatches = monthDispatches.filter(d => !d.notes?.startsWith('[3PL]'));
   const monthTankMovements = tankMovements.filter(tm => inRange(tm.date) && tm.counterpart_tank === 'Auckland 3PL');
+
+  // Net raw material stock — deduct ethanol consumed in distillation & packaging consumed in bottling
+  const totalEthanolConsumedLitres = distillationRuns
+    .filter(r => r.input_lals)
+    .reduce((s, r) => s + ((r.input_lals || 0) / 0.96), 0);
+  const totalBottlesBottled700 = bottlingRuns
+    .filter(r => r.bottle_size_ml === 700)
+    .reduce((s, r) => s + (r.bottles_produced || 0), 0);
+  const rawMaterialsNetStock = rawMaterials.map(m => {
+    let netQty = m.quantity || 0;
+    if (m.type === 'ethanol' && m.name?.toLowerCase().includes('lactonol')) {
+      netQty = Math.max(0, netQty - totalEthanolConsumedLitres);
+    }
+    if (m.type === 'packaging') {
+      const name = m.name?.toLowerCase() || '';
+      const is700ml = name.includes('700ml') || name.includes('700 ml');
+      if (is700ml) netQty = Math.max(0, netQty - totalBottlesBottled700);
+    }
+    const netLals = m.abv_percent && m.type === 'ethanol'
+      ? parseFloat((netQty * m.abv_percent / 100).toFixed(3))
+      : m.lals;
+    return { ...m, quantity: parseFloat(netQty.toFixed(2)), lals: netLals };
+  });
 
   // Net finished goods stock (deduct all dispatches from both sheets)
   const allDispatchedByBatch = dispatches.reduce((acc, d) => {
@@ -93,13 +117,13 @@ export default function Reports() {
   const totalDistilleryLals = finishedGoodsWithStock.reduce((s, g) => s + (g.total_lals || 0), 0);
   const totalWarehouseBottles = warehouseStock.reduce((s, w) => s + (w.quantity_bottles || 0), 0);
   const totalWarehouseLals = warehouseStock.reduce((s, w) => s + (w.total_lals || 0), 0);
-  const totalEthanolLals = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
+  const totalEthanolLals = rawMaterialsNetStock.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
 
   // Cost of Goods Breakdown — including finished goods, tanks, and packaging
-   const ethanolCostTotal = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + ((m.lals || 0) * (m.cost_per_unit || 0)), 0);
-   const botanicalsCostTotal = rawMaterials.filter(m => m.type === 'botanical').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
-   const rawPackagingCostTotal = rawMaterials.filter(m => m.type === 'packaging').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
-   const othersCostTotal = rawMaterials.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+   const ethanolCostTotal = rawMaterialsNetStock.filter(m => m.type === 'ethanol').reduce((s, m) => s + ((m.lals || 0) * (m.cost_per_unit || 0)), 0);
+   const botanicalsCostTotal = rawMaterialsNetStock.filter(m => m.type === 'botanical').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+   const rawPackagingCostTotal = rawMaterialsNetStock.filter(m => m.type === 'packaging').reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
+   const othersCostTotal = rawMaterialsNetStock.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).reduce((s, m) => s + ((m.quantity || 0) * (m.cost_per_unit || 0)), 0);
 
    // Estimate finished goods value (using avg ethanol cost per bottle)
    const avgEthanolCostPerLal = rawMaterials.filter(m => m.type === 'ethanol' && m.cost_per_unit)
@@ -115,9 +139,9 @@ export default function Reports() {
    const packagingCostTotal = rawPackagingCostTotal;
 
    const cogBreakdown = [
-     { name: 'Ethanol (Raw)', value: parseFloat(ethanolCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'ethanol').length },
-     { name: 'Botanicals', value: parseFloat(botanicalsCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'botanical').length },
-     { name: 'Packaging', value: parseFloat(packagingCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'packaging').length },
+     { name: 'Ethanol (Raw)', value: parseFloat(ethanolCostTotal.toFixed(2)), items: rawMaterialsNetStock.filter(m => m.type === 'ethanol').length },
+     { name: 'Botanicals', value: parseFloat(botanicalsCostTotal.toFixed(2)), items: rawMaterialsNetStock.filter(m => m.type === 'botanical').length },
+     { name: 'Packaging', value: parseFloat(packagingCostTotal.toFixed(2)), items: rawMaterialsNetStock.filter(m => m.type === 'packaging').length },
      { name: 'Finished Goods', value: parseFloat(finishedGoodsCost.toFixed(2)), items: finishedGoodsWithStock.filter(fg => fg.total_lals > 0).length },
      { name: 'Tank Stock', value: parseFloat(tankStockCost.toFixed(2)), items: distillationRuns.filter(r => r.status !== 'completed' && r.output_lals).length },
      { name: 'Other', value: parseFloat(othersCostTotal.toFixed(2)), items: rawMaterials.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).length },
@@ -280,9 +304,9 @@ export default function Reports() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rawMaterials.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No raw materials</TableCell></TableRow>
-                ) : rawMaterials.map(m => (
+                {rawMaterialsNetStock.length === 0 ? (
+                 <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No raw materials</TableCell></TableRow>
+                ) : rawMaterialsNetStock.map(m => (
                   <TableRow key={m.id}>
                     <TableCell className="font-medium text-sm">{m.name}</TableCell>
                     <TableCell className="text-sm capitalize">{m.type}</TableCell>
@@ -379,9 +403,9 @@ export default function Reports() {
                    </TableRow>
                  </TableHeader>
                  <TableBody>
-                   {rawMaterials.filter(m => m.cost_per_unit && m.quantity).length === 0 ? (
+                   {rawMaterialsNetStock.filter(m => m.cost_per_unit && m.quantity).length === 0 ? (
                      <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No cost data recorded</TableCell></TableRow>
-                   ) : rawMaterials.filter(m => m.cost_per_unit && m.quantity).map(m => (
+                   ) : rawMaterialsNetStock.filter(m => m.cost_per_unit && m.quantity).map(m => (
                      <TableRow key={m.id}>
                        <TableCell className="font-medium text-sm">{m.name}</TableCell>
                        <TableCell className="text-sm capitalize">{m.type}</TableCell>
