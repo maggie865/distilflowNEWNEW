@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,7 +52,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
       const isCleaning = f.action === 'cleaning';
 
       // Log movement for this tank
-      await base44.entities.TankMovement.create({
+      await db.TankMovement.create({
         date: f.date,
         action: f.action,
         tank_name: tank.name,
@@ -82,7 +82,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
         newStatus = 'cleaning';
       }
 
-      await base44.entities.StorageTank.update(tank.id, {
+      await db.StorageTank.update(tank.id, {
         current_volume: newVol,
         status: newStatus,
         current_product: isFill && f.product ? f.product : tank.current_product,
@@ -94,7 +94,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
       if (isTransferOut && f.counterpart_tank) {
         const dest = allTanks.find((t) => t.name === f.counterpart_tank);
         if (dest) {
-          await base44.entities.TankMovement.create({
+          await db.TankMovement.create({
             date: f.date,
             action: 'transfer_in',
             tank_name: dest.name,
@@ -111,7 +111,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
           });
 
           const destNewVol = Math.min((dest.current_volume || 0) + vol, dest.capacity_litres);
-          await base44.entities.StorageTank.update(dest.id, {
+          await db.StorageTank.update(dest.id, {
             current_volume: destNewVol,
             status: 'in_use',
             current_product: f.product || tank.current_product,
