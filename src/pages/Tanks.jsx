@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card } from '@/components/ui/card';
@@ -73,11 +73,11 @@ export default function Tanks() {
 
   const { data: tanks = [], isLoading: tanksLoading } = useQuery({
     queryKey: ['storageTanks'],
-    queryFn: () => base44.entities.StorageTank.list('name', 50),
+    queryFn: () => db.StorageTank.list('name', 50),
   });
 
   const addMutation = useMutation({
-    mutationFn: (data) => base44.entities.StorageTank.create({
+    mutationFn: (data) => db.StorageTank.create({
       name: data.name.toUpperCase(),
       capacity_litres: parseFloat(data.capacity_litres),
       purpose: data.purpose,
@@ -94,7 +94,7 @@ export default function Tanks() {
   });
 
   const editMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.StorageTank.update(id, {
+    mutationFn: ({ id, data }) => db.StorageTank.update(id, {
       name: data.name.toUpperCase(),
       capacity_litres: parseFloat(data.capacity_litres),
       purpose: data.purpose,
@@ -110,7 +110,7 @@ export default function Tanks() {
 
   const { data: movements = [], isLoading: movLoading } = useQuery({
     queryKey: ['tankMovements'],
-    queryFn: () => base44.entities.TankMovement.list('-date', 100),
+    queryFn: () => db.TankMovement.list('-date', 100),
   });
 
   const handleTransfer = (tank) => {
