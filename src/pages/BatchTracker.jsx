@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -223,17 +223,17 @@ export default function BatchTracker() {
 
   const { data: distillations = [], isLoading: loadingD } = useQuery({
     queryKey: ['distillationRuns'],
-    queryFn: () => base44.entities.DistillationRun.list('-date', 200),
+    queryFn: () => db.DistillationRun.list('-date', 200),
   });
 
   const { data: bottlings = [], isLoading: loadingB } = useQuery({
     queryKey: ['bottlingRuns'],
-    queryFn: () => base44.entities.BottlingRun.list('-date', 200),
+    queryFn: () => db.BottlingRun.list('-date', 200),
   });
 
   const { data: subBatches = [] } = useQuery({
     queryKey: ['subBatches'],
-    queryFn: () => base44.entities.SubBatch.list('-date', 500),
+    queryFn: () => db.SubBatch.list('-date', 500),
   });
 
   const isLoading = loadingD || loadingB;
