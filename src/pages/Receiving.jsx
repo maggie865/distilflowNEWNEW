@@ -238,7 +238,7 @@ export default function Receiving() {
       } else {
         await base44.entities.RawMaterial.create({
           name: data.material_name,
-          type: data.material_type,
+          type: data.material_type?.toLowerCase(),
           quantity: parseFloat(data.quantity),
           unit: data.unit,
           abv_percent: data.abv_percent ? parseFloat(data.abv_percent) : undefined,

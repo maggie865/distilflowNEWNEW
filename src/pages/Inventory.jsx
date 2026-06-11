@@ -195,8 +195,8 @@ export default function Inventory() {
     queryFn: () => base44.entities.FinishedGood.list('product_name', 100),
   });
 
-  const packagingItems = rawMaterials.filter(m => m.type === 'packaging');
-  const nonPackagingRaw = rawMaterials.filter(m => m.type !== 'packaging');
+  const packagingItems = rawMaterials.filter(m => m.type?.toLowerCase() === 'packaging');
+  const nonPackagingRaw = rawMaterials.filter(m => m.type?.toLowerCase() !== 'packaging');
   const totalEthanolLALs = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
   const totalBottles = finishedGoods.reduce((s, g) => s + (g.quantity_bottles || 0), 0);
   const totalFinishedLALs = finishedGoods.reduce((s, g) => s + (g.total_lals || 0), 0);
