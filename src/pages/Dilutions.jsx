@@ -53,9 +53,26 @@ export default function Dilutions() {
   const setE = (f, v) => setEthanolForm(p => ({ ...p, [f]: v }));
   const setH = (f, v) => setHeartsForm(p => ({ ...p, [f]: v }));
 
-  const { data: dilutions = [], isLoading } = useQuery({
+  const { data: entityDilutions = [], isLoading } = useQuery({
     queryKey: ['dilutions'],
     queryFn: () => base44.entities.Dilution.list('-date', 50),
+  });
+
+  const { data: sheetData } = useQuery({
+    queryKey: ['dilutions-sheet'],
+    queryFn: async () => {
+      const res = await base44.functions.invoke('readSheetDilutions', {});
+      return res.data?.dilutions || [];
+    },
+    staleTime: 60000,
+  });
+
+  // Merge: sheet records first (oldest history), then entity records on top
+  const entityIds = new Set(entityDilutions.map(d => d.id));
+  const sheetDilutions = (sheetData || []).filter(d => !d.id || !entityIds.has(d.id));
+  const dilutions = [...entityDilutions, ...sheetDilutions].sort((a, b) => {
+    const da = new Date(a.date || 0), db = new Date(b.date || 0);
+    return db - da;
   });
 
   const { data: receivings = [] } = useQuery({
@@ -135,7 +152,7 @@ export default function Dilutions() {
       const lotCode = sourceRec?.batch_number || '';
       const materialName = sourceRec?.material_name || 'Ethanol';
 
-      await base44.entities.Dilution.create({
+      const created = await base44.entities.Dilution.create({
         batch_number: lotCode || 'Ethanol Dilution',
         date: data.date,
         input_ethanol_volume: parseFloat(data.input_ethanol_volume),
@@ -148,6 +165,7 @@ export default function Dilutions() {
         status: data.status,
         notes: `[Ethanol Dilution] Lot code: ${lotCode}. Material: ${materialName}. ${data.notes}`,
       });
+      return created;
 
       if (data.tank_id && eSelectedTank) {
         const newVol = Math.min((eSelectedTank.current_volume || 0) + eOutputVol, eSelectedTank.capacity_litres);
@@ -174,8 +192,15 @@ export default function Dilutions() {
         queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
       }
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['dilutions'] });
+      queryClient.invalidateQueries({ queryKey: ['dilutions-sheet'] });
+      // Append to sheet
+      if (created) {
+        base44.functions.invoke('appendDilutionToSheet', {
+          dilution: { ...created, type: 'Ethanol', input_volume: created.input_ethanol_volume },
+        }).catch(() => {});
+      }
       setOpenType(null);
       setEthanolForm(BLANK_ETHANOL);
       toast.success('Ethanol dilution recorded');
@@ -188,7 +213,7 @@ export default function Dilutions() {
       const destTank = isTransfer ? tanks.find(t => t.id === data.transfer_tank_id) : null;
       const finalStatus = isTransfer ? 'completed' : 'in_progress';
 
-      await base44.entities.Dilution.create({
+      const created = await base44.entities.Dilution.create({
         batch_number: data.batch_number,
         date: data.date,
         input_ethanol_volume: parseFloat(data.input_ethanol_volume),
@@ -201,6 +226,7 @@ export default function Dilutions() {
         status: finalStatus,
         notes: `[Heads Dilution] Source tank: ${hSourceTank?.name || ''}${isTransfer ? `. Transferred to Tank ${destTank?.name}` : ' (saved in-place)'}. ${data.notes}`,
       });
+      return created;
 
       if (hSourceTank && hWater > 0) {
         await base44.entities.TankMovement.create({
@@ -270,8 +296,15 @@ export default function Dilutions() {
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
       queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
     },
-    onSuccess: (_, { action }) => {
+    onSuccess: (created, { action }) => {
       queryClient.invalidateQueries({ queryKey: ['dilutions'] });
+      queryClient.invalidateQueries({ queryKey: ['dilutions-sheet'] });
+      // Append to sheet
+      if (created) {
+        base44.functions.invoke('appendDilutionToSheet', {
+          dilution: { ...created, type: 'Hearts', input_volume: created.input_ethanol_volume },
+        }).catch(() => {});
+      }
       setOpenType(null);
       setHeartsForm(BLANK_HEARTS);
       toast.success(action === 'transfer' ? 'Hearts dilution complete — product transferred' : 'Progress saved — product remains in source tank');
@@ -624,7 +657,7 @@ export default function Dilutions() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isLoading && !sheetData ? (
                 <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
               ) : dilutions.length === 0 ? (
                 <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No dilutions recorded</TableCell></TableRow>
