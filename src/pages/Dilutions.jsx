@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,13 +55,14 @@ export default function Dilutions() {
 
   const { data: entityDilutions = [], isLoading } = useQuery({
     queryKey: ['dilutions'],
-    queryFn: () => base44.entities.Dilution.list('-date', 50),
+    queryFn: () => db.Dilution.list('-date', 50),
   });
 
   const { data: sheetData } = useQuery({
     queryKey: ['dilutions-sheet'],
     queryFn: async () => {
-      const res = await base44.functions.invoke('readSheetDilutions', {});
+      return { dilutions: [] }; // Sheet sync removed — data in Supabase
+      const res = { data: { dilutions: [] } };
       return res.data?.dilutions || [];
     },
     staleTime: 60000,
@@ -77,12 +78,12 @@ export default function Dilutions() {
 
   const { data: receivings = [] } = useQuery({
     queryKey: ['receivings-ethanol'],
-    queryFn: () => base44.entities.Receiving.filter({ material_type: 'ethanol' }, '-date_received', 50),
+    queryFn: () => db.Receiving.filter({ material_type: 'ethanol' }),
   });
 
   const { data: tanks = [] } = useQuery({
     queryKey: ['storageTanks'],
-    queryFn: () => base44.entities.StorageTank.list('name', 50),
+    queryFn: () => db.StorageTank.list('name', 50),
   });
 
   const ethanolDestTanks = tanks.filter(t => t.purpose === 'diluted_ethanol');
@@ -152,7 +153,7 @@ export default function Dilutions() {
       const lotCode = sourceRec?.batch_number || '';
       const materialName = sourceRec?.material_name || 'Ethanol';
 
-      const created = await base44.entities.Dilution.create({
+      const created = await db.Dilution.create({
         batch_number: lotCode || 'Ethanol Dilution',
         date: data.date,
         input_ethanol_volume: parseFloat(data.input_ethanol_volume),
@@ -169,7 +170,7 @@ export default function Dilutions() {
 
       if (data.tank_id && eSelectedTank) {
         const newVol = Math.min((eSelectedTank.current_volume || 0) + eOutputVol, eSelectedTank.capacity_litres);
-        await base44.entities.TankMovement.create({
+        await db.TankMovement.create({
           date: data.date,
           action: 'fill',
           tank_name: eSelectedTank.name,
@@ -181,7 +182,7 @@ export default function Dilutions() {
           ethanol_lot: lotCode,
           notes: `Ethanol dilution to proofing strength — lot code: ${lotCode}`,
         });
-        await base44.entities.StorageTank.update(data.tank_id, {
+        await db.StorageTank.update(data.tank_id, {
           current_volume: newVol,
           current_abv: parseFloat(eOutputABV.toFixed(2)),
           current_product: materialName,
@@ -197,7 +198,7 @@ export default function Dilutions() {
       queryClient.invalidateQueries({ queryKey: ['dilutions-sheet'] });
       // Append to sheet
       if (created) {
-        base44.functions.invoke('appendDilutionToSheet', {
+        Promise.resolve(); // base44.functions.invoke('appendDilutionToSheet', {
           dilution: { ...created, type: 'Ethanol', input_volume: created.input_ethanol_volume },
         }).catch(() => {});
       }
@@ -213,7 +214,7 @@ export default function Dilutions() {
       const destTank = isTransfer ? tanks.find(t => t.id === data.transfer_tank_id) : null;
       const finalStatus = isTransfer ? 'completed' : 'in_progress';
 
-      const created = await base44.entities.Dilution.create({
+      const created = await db.Dilution.create({
         batch_number: data.batch_number,
         date: data.date,
         input_ethanol_volume: parseFloat(data.input_ethanol_volume),
@@ -229,7 +230,7 @@ export default function Dilutions() {
       return created;
 
       if (hSourceTank && hWater > 0) {
-        await base44.entities.TankMovement.create({
+        await db.TankMovement.create({
           date: data.date,
           action: 'fill',
           tank_name: hSourceTank.name,
@@ -243,7 +244,7 @@ export default function Dilutions() {
       }
 
       if (isTransfer && destTank && hOutputVol > 0) {
-        await base44.entities.TankMovement.create({
+        await db.TankMovement.create({
           date: data.date,
           action: 'transfer_out',
           tank_name: hSourceTank.name,
@@ -256,7 +257,7 @@ export default function Dilutions() {
           notes: `Transfer to Tank ${destTank.name} after hearts dilution`,
         });
         const newDestVol = Math.min((destTank.current_volume || 0) + hOutputVol, destTank.capacity_litres);
-        await base44.entities.TankMovement.create({
+        await db.TankMovement.create({
           date: data.date,
           action: 'transfer_in',
           tank_name: destTank.name,
@@ -269,14 +270,14 @@ export default function Dilutions() {
           notes: `Received from Tank ${hSourceTank.name} after hearts dilution`,
         });
         await Promise.all([
-          base44.entities.StorageTank.update(data.source_tank_id, {
+          db.StorageTank.update(data.source_tank_id, {
             current_volume: 0,
             current_abv: 0,
             current_product: '',
             current_batch: '',
             status: 'empty',
           }),
-          base44.entities.StorageTank.update(data.transfer_tank_id, {
+          db.StorageTank.update(data.transfer_tank_id, {
             current_volume: newDestVol,
             current_abv: parseFloat(hOutputABV.toFixed(2)),
             current_product: data.batch_number || 'Diluted Gin',
@@ -286,7 +287,7 @@ export default function Dilutions() {
         ]);
       } else if (!isTransfer && hSourceTank && hOutputVol > 0) {
         const newVol = Math.min(hOutputVol, hSourceTank.capacity_litres);
-        await base44.entities.StorageTank.update(data.source_tank_id, {
+        await db.StorageTank.update(data.source_tank_id, {
           current_volume: newVol,
           current_abv: parseFloat(hOutputABV.toFixed(2)),
           status: 'in_use',
@@ -301,7 +302,7 @@ export default function Dilutions() {
       queryClient.invalidateQueries({ queryKey: ['dilutions-sheet'] });
       // Append to sheet
       if (created) {
-        base44.functions.invoke('appendDilutionToSheet', {
+        Promise.resolve(); // base44.functions.invoke('appendDilutionToSheet', {
           dilution: { ...created, type: 'Hearts', input_volume: created.input_ethanol_volume },
         }).catch(() => {});
       }
@@ -313,7 +314,7 @@ export default function Dilutions() {
 
   const editMutation = useMutation({
     mutationFn: async (data) => {
-      await base44.entities.Dilution.update(data.id, {
+      await db.Dilution.update(data.id, {
         batch_number: data.batch_number,
         date: data.date,
         input_ethanol_volume: parseFloat(data.input_ethanol_volume),
