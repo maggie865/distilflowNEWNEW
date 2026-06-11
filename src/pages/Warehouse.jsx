@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -64,23 +64,23 @@ export default function Warehouse() {
 
   const { data: finishedGoods = [] } = useQuery({
     queryKey: ['finishedGoods'],
-    queryFn: () => base44.entities.FinishedGood.list('-created_date', 200),
+    queryFn: () => db.FinishedGood.list('-created_date', 200),
   });
 
   const { data: warehouseStock = [] } = useQuery({
     queryKey: ['warehouseStock'],
-    queryFn: () => base44.entities.WarehouseStock.list('-date_transferred_in', 200),
+    queryFn: () => db.WarehouseStock.list('-date_transferred_in', 200),
   });
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
-    queryFn: () => base44.entities.Customer.list('business_name', 200),
+    queryFn: () => db.Customer.list('business_name', 200),
   });
 
   const { data: sheetData = { dispatches: [] } } = useQuery({
     queryKey: ['3plSheetDispatches'],
     queryFn: async () => {
-      const res = await base44.functions.invoke('read3PLSheetDispatches', {});
+      // Sheet 3PL dispatch reading removed — data now in Supabase
       return res.data;
     },
     staleTime: 60_000,
@@ -104,7 +104,7 @@ export default function Warehouse() {
       const lals = ((transferQty * (fg.bottle_size_ml || 700)) / 1000) * (fg.abv_percent || 0) / 100;
 
       // Create or update WarehouseStock record for this product+batch
-      const existing = await base44.entities.WarehouseStock.filter({
+      const existing = await db.WarehouseStock.filter({
         product_name: fg.product_name,
         batch_number: fg.batch_number,
       });
@@ -114,12 +114,12 @@ export default function Warehouse() {
 
       if (existing.length > 0) {
         const ws = existing[0];
-        await base44.entities.WarehouseStock.update(ws.id, {
+        await db.WarehouseStock.update(ws.id, {
           quantity_bottles: ws.quantity_bottles + transferQty,
           total_lals: parseFloat(((ws.total_lals || 0) + lals).toFixed(4)),
         });
       } else {
-        await base44.entities.WarehouseStock.create({
+        await db.WarehouseStock.create({
           product_name: fg.product_name,
           batch_number: fg.batch_number,
           bottle_size_ml: fg.bottle_size_ml,
@@ -133,7 +133,7 @@ export default function Warehouse() {
       }
 
       // Also create a TankMovement record for tracking
-      await base44.entities.TankMovement.create({
+      await db.TankMovement.create({
         date: transferForm.date_transferred_in,
         action: 'transfer_out',
         tank_name: 'Distillery Stock',
@@ -150,10 +150,10 @@ export default function Warehouse() {
       // Deduct from FinishedGood
       const newQty = fg.quantity_bottles - transferQty;
       if (newQty <= 0) {
-        await base44.entities.FinishedGood.delete(fg.id);
+        await db.FinishedGood.delete(fg.id);
       } else {
         const newLals = Math.max(0, (fg.total_lals || 0) - lals);
-        await base44.entities.FinishedGood.update(fg.id, {
+        await db.FinishedGood.update(fg.id, {
           quantity_bottles: newQty,
           total_lals: parseFloat(newLals.toFixed(4)),
         });
@@ -190,7 +190,7 @@ export default function Warehouse() {
         co2e = (distance * weight / 1000) * 0.008;
       }
 
-      await base44.functions.invoke('append3PLDispatchToSheet', {
+      // base44.functions.invoke('append3PLDispatchToSheet', {
         dispatch: {
           ...dispatchForm,
           product_name: ws.product_name,
@@ -210,10 +210,10 @@ export default function Warehouse() {
       // Deduct from WarehouseStock
       const newQty = ws.quantity_bottles - dispatchQty;
       if (newQty <= 0) {
-        await base44.entities.WarehouseStock.delete(ws.id);
+        await db.WarehouseStock.delete(ws.id);
       } else {
         const newLals = Math.max(0, (ws.total_lals || 0) - lals);
-        await base44.entities.WarehouseStock.update(ws.id, {
+        await db.WarehouseStock.update(ws.id, {
           quantity_bottles: newQty,
           total_lals: parseFloat(newLals.toFixed(4)),
         });
@@ -246,18 +246,18 @@ export default function Warehouse() {
   const deleteWSMutation = useMutation({
     mutationFn: async (ws) => {
       // Restore back to FinishedGoods
-      const existing = await base44.entities.FinishedGood.filter({
+      const existing = await db.FinishedGood.filter({
         product_name: ws.product_name,
         batch_number: ws.batch_number,
       });
       if (existing.length > 0) {
         const fg = existing[0];
-        await base44.entities.FinishedGood.update(fg.id, {
+        await db.FinishedGood.update(fg.id, {
           quantity_bottles: (fg.quantity_bottles || 0) + ws.quantity_bottles,
           total_lals: parseFloat(((fg.total_lals || 0) + (ws.total_lals || 0)).toFixed(4)),
         });
       } else {
-        await base44.entities.FinishedGood.create({
+        await db.FinishedGood.create({
           product_name: ws.product_name,
           batch_number: ws.batch_number,
           bottle_size_ml: ws.bottle_size_ml,
@@ -266,7 +266,7 @@ export default function Warehouse() {
           total_lals: ws.total_lals,
         });
       }
-      await base44.entities.WarehouseStock.delete(ws.id);
+      await db.WarehouseStock.delete(ws.id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['warehouseStock'] });
