@@ -78,18 +78,15 @@ export default function Warehouse() {
   });
 
   const { data: sheetData = { dispatches: [] } } = useQuery({
-    queryKey: ['sheetDispatches'],
+    queryKey: ['3plSheetDispatches'],
     queryFn: async () => {
-      const res = await base44.functions.invoke('readSheetDispatches', {});
+      const res = await base44.functions.invoke('read3PLSheetDispatches', {});
       return res.data;
     },
     staleTime: 60_000,
   });
 
-  // Only dispatches that originated from the warehouse (flagged via dispatched_from or notes prefix)
-  const warehouseDispatches = (sheetData.dispatches || []).filter(d =>
-    d.dispatched_from === 'Auckland 3PL' || d.notes?.startsWith('[3PL]')
-  );
+  const warehouseDispatches = sheetData.dispatches || [];
 
   const sellableGoods = finishedGoods.filter(fg => !fg.product_name?.includes('Tasting'));
   const selectedFG = finishedGoods.find(fg => fg.id === selectedFGId);
@@ -193,7 +190,7 @@ export default function Warehouse() {
         co2e = (distance * weight / 1000) * 0.008;
       }
 
-      await base44.functions.invoke('appendDispatchToSheet', {
+      await base44.functions.invoke('append3PLDispatchToSheet', {
         dispatch: {
           ...dispatchForm,
           product_name: ws.product_name,
@@ -205,7 +202,7 @@ export default function Warehouse() {
           transport_distance_km: distance,
           co2e_kg: parseFloat(co2e.toFixed(3)),
           dispatched_from: 'Auckland 3PL',
-          notes: `[3PL] ${dispatchForm.notes}`.trim(),
+          notes: dispatchForm.notes || '',
           is_sample: 'FALSE',
         },
       });
@@ -224,7 +221,7 @@ export default function Warehouse() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['warehouseStock'] });
-      queryClient.invalidateQueries({ queryKey: ['sheetDispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['3plSheetDispatches'] });
       setShowDispatch(false);
       setDispatchForm(EMPTY_DISPATCH);
       setSelectedWSId('');
