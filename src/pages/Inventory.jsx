@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Warehouse, Wine, Package, Pencil, Trash2, SlidersHorizontal } from 'lucide-react';
+import { Warehouse, Wine, Package, Pencil, Trash2, SlidersHorizontal, ChevronDown, ChevronRight } from 'lucide-react';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 
@@ -181,6 +181,90 @@ function Actions({ onAdjust, onEdit, onDelete }) {
   );
 }
 
+// ── Finished Goods Table (consolidated by product + bottle size) ─────────────
+function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
+  const [expanded, setExpanded] = useState({});
+
+  // Group by product_name + bottle_size_ml
+  const groups = finishedGoods.reduce((acc, g) => {
+    const key = `${g.product_name}||${g.bottle_size_ml}`;
+    if (!acc[key]) acc[key] = { product_name: g.product_name, bottle_size_ml: g.bottle_size_ml, abv_percent: g.abv_percent, batches: [] };
+    if ((g.quantity_bottles || 0) > 0) acc[key].batches.push(g);
+    return acc;
+  }, {});
+
+  const groupList = Object.entries(groups).map(([key, g]) => ({
+    key,
+    ...g,
+    total_bottles: g.batches.reduce((s, b) => s + (b.quantity_bottles || 0), 0),
+    total_lals: g.batches.reduce((s, b) => s + (b.total_lals || 0), 0),
+  })).filter(g => g.total_bottles > 0);
+
+  const toggle = key => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-6"></TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Bottle Size</TableHead>
+              <TableHead>ABV</TableHead>
+              <TableHead>Total Bottles</TableHead>
+              <TableHead>Total LALs</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+            ) : groupList.length === 0 ? (
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No finished goods in stock</TableCell></TableRow>
+            ) : groupList.map(g => (
+              <>
+                <TableRow
+                  key={g.key}
+                  className="cursor-pointer hover:bg-muted/50 font-medium"
+                  onClick={() => toggle(g.key)}
+                >
+                  <TableCell className="w-6 pr-0">
+                    {g.batches.length > 0
+                      ? (expanded[g.key] ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />)
+                      : null}
+                  </TableCell>
+                  <TableCell className="font-semibold text-sm">{g.product_name}</TableCell>
+                  <TableCell className="text-sm">{g.bottle_size_ml ? `${g.bottle_size_ml}ml` : '—'}</TableCell>
+                  <TableCell className="text-sm">{g.abv_percent ? `${g.abv_percent}%` : '—'}</TableCell>
+                  <TableCell className="text-sm font-bold text-primary">{g.total_bottles}</TableCell>
+                  <TableCell className="text-sm font-semibold">{g.total_lals.toFixed(3)}</TableCell>
+                </TableRow>
+                {expanded[g.key] && g.batches.map(b => (
+                  <TableRow key={b.id} className="bg-muted/30">
+                    <TableCell />
+                    <TableCell className="text-sm text-muted-foreground pl-6">↳ {b.batch_number}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{b.bottle_size_ml ? `${b.bottle_size_ml}ml` : '—'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{b.abv_percent ? `${b.abv_percent}%` : '—'}</TableCell>
+                    <TableCell className="text-sm">{b.quantity_bottles}</TableCell>
+                    <TableCell className="text-sm">{b.total_lals?.toFixed(3) || '—'}</TableCell>
+                    <TableCell>
+                      <Actions
+                        onAdjust={() => onOpen('adjust', b, 'FinishedGood', 'finishedGoods')}
+                        onEdit={() => onOpen('edit', b, 'FinishedGood', 'finishedGoods')}
+                        onDelete={() => onOpen('delete', b, 'FinishedGood', 'finishedGoods')}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </Card>
+  );
+}
+
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function Inventory() {
   const [dialog, setDialog] = useState(null); // { type: 'adjust'|'edit'|'delete', item, entity, queryKey }
@@ -338,46 +422,11 @@ export default function Inventory() {
 
         {/* Finished Goods */}
         <TabsContent value="finished">
-          <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Batch #</TableHead>
-                    <TableHead>Bottle Size</TableHead>
-                    <TableHead>ABV</TableHead>
-                    <TableHead>Bottles</TableHead>
-                    <TableHead>Total LALs</TableHead>
-                    <TableHead className="w-24">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loadingFinished ? (
-                    <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-                  ) : finishedGoods.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No finished goods in stock</TableCell></TableRow>
-                  ) : finishedGoods.map(g => (
-                    <TableRow key={g.id}>
-                      <TableCell className="font-medium text-sm">{g.product_name}</TableCell>
-                      <TableCell className="text-sm">{g.batch_number}</TableCell>
-                      <TableCell className="text-sm">{g.bottle_size_ml ? `${g.bottle_size_ml}ml` : '—'}</TableCell>
-                      <TableCell className="text-sm">{g.abv_percent ? `${g.abv_percent}%` : '—'}</TableCell>
-                      <TableCell className="text-sm font-semibold">{g.quantity_bottles}</TableCell>
-                      <TableCell className="text-sm font-medium">{g.total_lals?.toFixed(3) || '—'}</TableCell>
-                      <TableCell>
-                        <Actions
-                          onAdjust={() => open('adjust', g, 'FinishedGood', 'finishedGoods')}
-                          onEdit={() => open('edit', g, 'FinishedGood', 'finishedGoods')}
-                          onDelete={() => open('delete', g, 'FinishedGood', 'finishedGoods')}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </Card>
+          <FinishedGoodsTable
+            finishedGoods={finishedGoods}
+            loading={loadingFinished}
+            onOpen={open}
+          />
         </TabsContent>
       </Tabs>
 
