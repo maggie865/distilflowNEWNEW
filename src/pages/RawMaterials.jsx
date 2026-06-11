@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -138,11 +138,11 @@ export default function RawMaterials() {
 
   const { data: materials = [], isLoading } = useQuery({
     queryKey: ['rawMaterials'],
-    queryFn: () => base44.entities.RawMaterial.list('name', 200),
+    queryFn: () => db.RawMaterial.list('name', 200),
   });
 
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.RawMaterial.create(data),
+    mutationFn: (data) => db.RawMaterial.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       setAddOpen(false);
@@ -151,7 +151,7 @@ export default function RawMaterials() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.RawMaterial.update(id, data),
+    mutationFn: ({ id, data }) => db.RawMaterial.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       setEditItem(null);
@@ -160,7 +160,7 @@ export default function RawMaterials() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.RawMaterial.delete(id),
+    mutationFn: (id) => db.RawMaterial.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       setDeleteItem(null);
