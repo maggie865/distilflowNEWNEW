@@ -288,7 +288,16 @@ export default function Inventory() {
     staleTime: 60_000,
   });
 
-  const allDispatches = sheetData.dispatches || [];
+  const { data: sheet3PLData = { dispatches: [] }, isLoading: loading3PLDispatches } = useQuery({
+    queryKey: ['sheet3PLDispatches'],
+    queryFn: async () => {
+      const res = await base44.functions.invoke('read3PLSheetDispatches', {});
+      return res.data;
+    },
+    staleTime: 60_000,
+  });
+
+  const allDispatches = [...(sheetData.dispatches || []), ...(sheet3PLData.dispatches || [])];
 
   // Build dispatch totals per batch+product key
   const dispatchedByBatch = allDispatches.reduce((acc, d) => {
@@ -456,7 +465,7 @@ export default function Inventory() {
         <TabsContent value="finished">
           <FinishedGoodsTable
             finishedGoods={finishedGoodsWithStock}
-            loading={loadingFinished || loadingDispatches}
+            loading={loadingFinished || loadingDispatches || loading3PLDispatches}
             onOpen={open}
           />
         </TabsContent>

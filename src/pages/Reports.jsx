@@ -41,7 +41,15 @@ export default function Reports() {
     },
     staleTime: 60_000,
   });
-  const dispatches = sheetData.dispatches || [];
+  const { data: sheet3PLData = { dispatches: [] } } = useQuery({
+    queryKey: ['sheet3PLDispatches'],
+    queryFn: async () => {
+      const res = await base44.functions.invoke('read3PLSheetDispatches', {});
+      return res.data;
+    },
+    staleTime: 60_000,
+  });
+  const dispatches = [...(sheetData.dispatches || []), ...(sheet3PLData.dispatches || [])];
   const { data: rawMaterials = [] } = useQuery({ queryKey: ['rawMaterials'], queryFn: () => base44.entities.RawMaterial.list('name', 200) });
   const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => base44.entities.FinishedGood.list('product_name', 200) });
   const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => base44.entities.WarehouseStock.list('-date_transferred_in', 200) });
@@ -65,9 +73,24 @@ export default function Reports() {
   const distilleryDispatches = monthDispatches.filter(d => !d.notes?.startsWith('[3PL]'));
   const monthTankMovements = tankMovements.filter(tm => inRange(tm.date) && tm.counterpart_tank === 'Auckland 3PL');
 
+  // Net finished goods stock (deduct all dispatches from both sheets)
+  const allDispatchedByBatch = dispatches.reduce((acc, d) => {
+    const key = `${d.batch_number}||${d.product_name}`;
+    acc[key] = (acc[key] || 0) + (d.quantity_bottles || 0);
+    return acc;
+  }, {});
+  const finishedGoodsWithStock = finishedGoods.map(g => {
+    const key = `${g.batch_number}||${g.product_name}`;
+    const dispatched = allDispatchedByBatch[key] || 0;
+    const bottled = g.quantity_bottles || 0;
+    const remaining = Math.max(0, bottled - dispatched);
+    const lalsPerBottle = bottled > 0 && g.total_lals ? g.total_lals / bottled : 0;
+    return { ...g, quantity_bottles: remaining, total_lals: parseFloat((remaining * lalsPerBottle).toFixed(3)) };
+  });
+
   // Inventory snapshot totals
-  const totalDistilleryBottles = finishedGoods.reduce((s, g) => s + (g.quantity_bottles || 0), 0);
-  const totalDistilleryLals = finishedGoods.reduce((s, g) => s + (g.total_lals || 0), 0);
+  const totalDistilleryBottles = finishedGoodsWithStock.reduce((s, g) => s + (g.quantity_bottles || 0), 0);
+  const totalDistilleryLals = finishedGoodsWithStock.reduce((s, g) => s + (g.total_lals || 0), 0);
   const totalWarehouseBottles = warehouseStock.reduce((s, w) => s + (w.quantity_bottles || 0), 0);
   const totalWarehouseLals = warehouseStock.reduce((s, w) => s + (w.total_lals || 0), 0);
   const totalEthanolLals = rawMaterials.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
@@ -81,7 +104,7 @@ export default function Reports() {
    // Estimate finished goods value (using avg ethanol cost per bottle)
    const avgEthanolCostPerLal = rawMaterials.filter(m => m.type === 'ethanol' && m.cost_per_unit)
      .reduce((avg, m, _, arr) => avg + m.cost_per_unit / arr.length, 0) || 3.5;
-   const finishedGoodsCost = finishedGoods.reduce((s, fg) => s + ((fg.total_lals || 0) * avgEthanolCostPerLal), 0);
+   const finishedGoodsCost = finishedGoodsWithStock.reduce((s, fg) => s + ((fg.total_lals || 0) * avgEthanolCostPerLal), 0);
 
    // Tank stock value
    const tankStockCost = distillationRuns
@@ -95,7 +118,7 @@ export default function Reports() {
      { name: 'Ethanol (Raw)', value: parseFloat(ethanolCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'ethanol').length },
      { name: 'Botanicals', value: parseFloat(botanicalsCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'botanical').length },
      { name: 'Packaging', value: parseFloat(packagingCostTotal.toFixed(2)), items: rawMaterials.filter(m => m.type === 'packaging').length },
-     { name: 'Finished Goods', value: parseFloat(finishedGoodsCost.toFixed(2)), items: finishedGoods.filter(fg => fg.total_lals > 0).length },
+     { name: 'Finished Goods', value: parseFloat(finishedGoodsCost.toFixed(2)), items: finishedGoodsWithStock.filter(fg => fg.total_lals > 0).length },
      { name: 'Tank Stock', value: parseFloat(tankStockCost.toFixed(2)), items: distillationRuns.filter(r => r.status !== 'completed' && r.output_lals).length },
      { name: 'Other', value: parseFloat(othersCostTotal.toFixed(2)), items: rawMaterials.filter(m => !['ethanol', 'botanical', 'packaging'].includes(m.type)).length },
    ].filter(c => c.value > 0);
@@ -388,9 +411,9 @@ export default function Reports() {
                    </TableRow>
                  </TableHeader>
                  <TableBody>
-                   {finishedGoods.filter(fg => fg.total_lals > 0).length === 0 ? (
+                   {finishedGoodsWithStock.filter(fg => fg.total_lals > 0).length === 0 ? (
                      <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No finished goods in inventory</TableCell></TableRow>
-                   ) : finishedGoods.filter(fg => fg.total_lals > 0).map(fg => (
+                   ) : finishedGoodsWithStock.filter(fg => fg.total_lals > 0).map(fg => (
                      <TableRow key={fg.id}>
                        <TableCell className="font-medium text-sm">{fg.product_name}</TableCell>
                        <TableCell className="font-mono text-xs">{fg.batch_number}</TableCell>
