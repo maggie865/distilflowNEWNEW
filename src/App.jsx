@@ -28,7 +28,7 @@ import Warehouse from '@/pages/Warehouse';
 import Reports from '@/pages/Reports';
 import Settings from '@/pages/Settings';
 import SNSDistillation from '@/pages/SNSDistillation';
-import StockTakes from '@/pages/StockTakes';
+import StockTakes from '@/pages/StockTakes.jsx';
 import Suppliers from '@/pages/Suppliers';
 
 const AuthenticatedApp = () => {
