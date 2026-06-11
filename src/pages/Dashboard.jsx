@@ -1,16 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
 import { db } from '@/api/supabaseClient';
-import { PackagePlus, Droplets, Flame, Wine, Warehouse, TrendingUp } from 'lucide-react';
+import { Droplets, Flame, Wine, Warehouse, TrendingUp, AlertTriangle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { format } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 import StatusBadge from '@/components/shared/StatusBadge';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+
   const { data: rawMaterials = [] } = useQuery({
     queryKey: ['rawMaterials'],
-    queryFn: () => db.RawMaterial.list('-created_date', 100),
+    queryFn: () => db.RawMaterial.list('-created_at', 100),
   });
   const { data: dilutions = [] } = useQuery({
     queryKey: ['dilutions'],
@@ -26,7 +29,11 @@ export default function Dashboard() {
   });
   const { data: finishedGoods = [] } = useQuery({
     queryKey: ['finishedGoods'],
-    queryFn: () => db.FinishedGood.list('-created_date', 100),
+    queryFn: () => db.FinishedGood.list('-created_at', 100),
+  });
+  const { data: thresholds = [] } = useQuery({
+    queryKey: ['stockThresholds'],
+    queryFn: () => db.StockThreshold.list('material_name', 200),
   });
 
   const totalEthanolLitres = rawMaterials
@@ -38,6 +45,19 @@ export default function Dashboard() {
   const totalBottles = finishedGoods.reduce((sum, g) => sum + (g.quantity_bottles || 0), 0);
   const totalFinishedLALs = finishedGoods.reduce((sum, g) => sum + (g.total_lals || 0), 0);
 
+  // Compute low stock alerts
+  const lowStockAlerts = thresholds
+    .map(t => {
+      const material = rawMaterials.find(m => m.id === t.raw_material_id);
+      if (!material) return null;
+      const qty = material.quantity || 0;
+      if (qty <= t.threshold) {
+        return { name: material.name, qty, threshold: t.threshold, unit: t.unit, type: material.type };
+      }
+      return null;
+    })
+    .filter(Boolean);
+
   const recentActivity = [
     ...dilutions.map(d => ({ ...d, _type: 'Dilution', _date: d.date })),
     ...distillations.map(d => ({ ...d, _type: 'Distillation', _date: d.date })),
@@ -47,6 +67,30 @@ export default function Dashboard() {
   return (
     <div className="pb-20 md:pb-0">
       <PageHeader title="Dashboard" subtitle="Overview of your distillery operations" />
+
+      {/* Low stock alerts banner */}
+      {lowStockAlerts.length > 0 && (
+        <div
+          className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 cursor-pointer hover:bg-amber-100 transition-colors"
+          onClick={() => navigate('/inventory')}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <p className="text-sm font-semibold text-amber-800">
+              {lowStockAlerts.length} item{lowStockAlerts.length !== 1 ? 's' : ''} below minimum stock level
+            </p>
+            <span className="ml-auto text-xs text-amber-600 underline">View inventory →</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {lowStockAlerts.map((a, i) => (
+              <div key={i} className="flex items-center gap-1.5 bg-white border border-amber-200 rounded-lg px-3 py-1.5">
+                <span className="text-xs font-medium text-amber-900">{a.name}</span>
+                <span className="text-xs text-amber-600">{a.qty.toFixed(2)} / {a.threshold} {a.unit}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
