@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Warehouse, Wine, Package, Pencil, Trash2, SlidersHorizontal, ChevronDown, ChevronRight } from 'lucide-react';
+import { Warehouse, Wine, Package, Pencil, Trash2, SlidersHorizontal, ChevronDown, ChevronRight, Bell, AlertTriangle } from 'lucide-react';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 
@@ -266,6 +266,155 @@ function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
   );
 }
 
+
+// ── Low Stock Alerts Component ───────────────────────────────────────────────
+function LowStockAlerts({ rawMaterials, thresholds }) {
+  const qc = useQueryClient();
+
+  const setMutation = useMutation({
+    mutationFn: async ({ materialId, materialName, unit, threshold }) => {
+      const existing = thresholds.find(t => t.raw_material_id === materialId);
+      if (threshold === '' || parseFloat(threshold) <= 0) {
+        if (existing) await db.StockThreshold.delete(existing.id);
+        return;
+      }
+      if (existing) {
+        await db.StockThreshold.update(existing.id, { threshold: parseFloat(threshold) });
+      } else {
+        await db.StockThreshold.create({
+          raw_material_id: materialId,
+          material_name: materialName,
+          threshold: parseFloat(threshold),
+          unit,
+        });
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['stockThresholds'] }),
+  });
+
+  const alertItems = rawMaterials
+    .map(m => {
+      const t = thresholds.find(th => th.raw_material_id === m.id);
+      const isLow = t && (m.quantity || 0) <= t.threshold;
+      return { ...m, threshold: t?.threshold, isLow };
+    })
+    .filter(m => m.isLow);
+
+  const allItems = rawMaterials.filter(m => m.type !== 'packaging');
+
+  return (
+    <div className="space-y-6">
+      {/* Current alerts */}
+      {alertItems.length > 0 && (
+        <Card className="border-amber-200 overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-3 bg-amber-50 border-b border-amber-200">
+            <AlertTriangle className="w-4 h-4 text-amber-600" />
+            <p className="text-sm font-semibold text-amber-800">{alertItems.length} item{alertItems.length !== 1 ? 's' : ''} below minimum stock level</p>
+          </div>
+          <div className="divide-y divide-border">
+            {alertItems.map(m => (
+              <div key={m.id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-sm font-medium">{m.name}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{m.type}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-destructive">{m.quantity?.toFixed(2)} {m.unit}</p>
+                  <p className="text-xs text-muted-foreground">min: {m.threshold} {m.unit}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {alertItems.length === 0 && thresholds.length > 0 && (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+          <Bell className="w-4 h-4 text-emerald-600" />
+          <p className="text-sm font-medium text-emerald-800">All items are above their minimum stock levels</p>
+        </div>
+      )}
+
+      {/* Set thresholds table */}
+      <Card className="overflow-hidden">
+        <div className="px-5 py-3 border-b border-border">
+          <p className="text-sm font-semibold">Set minimum stock levels</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Leave blank to disable alerts for that item</p>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Material</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Current stock</TableHead>
+                <TableHead>Minimum level</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {allItems.map(m => {
+                const t = thresholds.find(th => th.raw_material_id === m.id);
+                const isLow = t && (m.quantity || 0) <= t.threshold;
+                return (
+                  <TableRow key={m.id} className={isLow ? 'bg-amber-50/50' : ''}>
+                    <TableCell className="font-medium text-sm">{m.name}</TableCell>
+                    <TableCell>
+                      <span className="text-xs capitalize text-muted-foreground">{m.type}</span>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      <span className={isLow ? 'text-destructive font-semibold' : ''}>
+                        {m.quantity?.toFixed(2)} {m.unit}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          defaultValue={t?.threshold ?? ''}
+                          placeholder="e.g. 50"
+                          className="h-8 w-28 text-sm"
+                          onBlur={e => {
+                            const val = e.target.value;
+                            if (val !== String(t?.threshold ?? '')) {
+                              setMutation.mutate({
+                                materialId: m.id,
+                                materialName: m.name,
+                                unit: m.unit,
+                                threshold: val,
+                              });
+                            }
+                          }}
+                        />
+                        <span className="text-xs text-muted-foreground">{m.unit}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {!t ? (
+                        <span className="text-xs text-muted-foreground">No alert set</span>
+                      ) : isLow ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                          <AlertTriangle className="w-3 h-3" /> Low stock
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          ✓ OK
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function Inventory() {
   const [dialog, setDialog] = useState(null); // { type: 'adjust'|'edit'|'delete', item, entity, queryKey }
@@ -293,6 +442,11 @@ export default function Inventory() {
   const { data: finishedGoods = [], isLoading: loadingFinished } = useQuery({
     queryKey: ['finishedGoods'],
     queryFn: () => db.FinishedGood.list('product_name', 100),
+  });
+
+  const { data: thresholds = [] } = useQuery({
+    queryKey: ['stockThresholds'],
+    queryFn: () => db.StockThreshold.list('material_name', 200),
   });
 
   const { data: allDispatches = [], isLoading: loadingDispatches } = useQuery({
@@ -477,6 +631,10 @@ export default function Inventory() {
           <TabsTrigger value="raw">Raw Materials</TabsTrigger>
           <TabsTrigger value="packaging">Packaging</TabsTrigger>
           <TabsTrigger value="finished">Finished Goods</TabsTrigger>
+          <TabsTrigger value="alerts" className="flex items-center gap-1.5">
+            <Bell className="w-3.5 h-3.5" />
+            Low Stock Alerts
+          </TabsTrigger>
         </TabsList>
 
         {/* Raw Materials */}
@@ -576,6 +734,10 @@ export default function Inventory() {
             loading={loadingFinished || loadingDispatches || loading3PLDispatches}
             onOpen={open}
           />
+        </TabsContent>
+        {/* Low Stock Alerts */}
+        <TabsContent value="alerts">
+          <LowStockAlerts rawMaterials={rawMaterialsWithNetStock} thresholds={thresholds} />
         </TabsContent>
       </Tabs>
 
