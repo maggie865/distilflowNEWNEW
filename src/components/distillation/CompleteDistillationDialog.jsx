@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -15,7 +15,7 @@ export default function CompleteDistillationDialog({ run, open, onOpenChange, on
 
   const { data: tanks = [] } = useQuery({
     queryKey: ['storageTanks'],
-    queryFn: () => base44.entities.StorageTank.list('name', 50),
+    queryFn: () => db.StorageTank.list('name', 50),
   });
 
   // Hearts go to maceration/dilution tanks only
@@ -44,20 +44,20 @@ export default function CompleteDistillationDialog({ run, open, onOpenChange, on
       const today = format(new Date(), 'yyyy-MM-dd');
 
       // 1. Update the distillation run to completed
-      await base44.entities.DistillationRun.update(run.id, { status: 'completed' });
+      await db.DistillationRun.update(run.id, { status: 'completed' });
 
       // 2. Add hearts to selected tank
       if (heartsTankId && heartsVolume > 0) {
         const heartsTank = tanks.find(t => t.id === heartsTankId);
         const newVolume = parseFloat(((heartsTank.current_volume || 0) + heartsVolume).toFixed(2));
-        await base44.entities.StorageTank.update(heartsTankId, {
+        await db.StorageTank.update(heartsTankId, {
           current_volume: newVolume,
           current_abv: heartsAbv || heartsTank.current_abv,
           current_product: run.product_name,
           current_batch: run.batch_number,
           status: 'in_use',
         });
-        await base44.entities.TankMovement.create({
+        await db.TankMovement.create({
           date: today,
           action: 'transfer_in',
           tank_name: heartsTank.name,
@@ -74,13 +74,13 @@ export default function CompleteDistillationDialog({ run, open, onOpenChange, on
       if (ibc && ibcVolume > 0) {
         const newIbcVolume = parseFloat(((ibc.current_volume || 0) + ibcVolume).toFixed(2));
         const ibcLALs = ibcVolume && ibcAvgAbv ? parseFloat((ibcVolume * ibcAvgAbv / 100).toFixed(4)) : 0;
-        await base44.entities.StorageTank.update(ibc.id, {
+        await db.StorageTank.update(ibc.id, {
           current_volume: newIbcVolume,
           current_abv: ibcAvgAbv,
           status: newIbcVolume > 0 ? 'in_use' : 'empty',
           notes: `Contains heads/tails from various runs`,
         });
-        await base44.entities.TankMovement.create({
+        await db.TankMovement.create({
           date: today,
           action: 'transfer_in',
           tank_name: ibc.name,
