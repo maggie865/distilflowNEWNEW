@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { db } from '@/api/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -72,18 +72,18 @@ export default function Sales() {
 
   const { data: finishedGoods = [] } = useQuery({
     queryKey: ['finishedGoods'],
-    queryFn: () => base44.entities.FinishedGood.list('-created_date', 200),
+    queryFn: () => db.FinishedGood.list('-created_date', 200),
   });
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
-    queryFn: () => base44.entities.Customer.list('business_name', 200),
+    queryFn: () => db.Customer.list('business_name', 200),
   });
 
   const { data: sheetData = { dispatches: [] } } = useQuery({
     queryKey: ['sheetDispatches'],
     queryFn: async () => {
-      const res = await base44.functions.invoke('readSheetDispatches', {});
+      // Sheet sync removed — dispatches now in Supabase
       return res.data;
     },
     staleTime: 60_000,
@@ -161,16 +161,16 @@ export default function Sales() {
       };
 
       // 1. Append to Google Sheet
-      await base44.functions.invoke('appendDispatchToSheet', { dispatch: dispatchData });
+      // Sheet append removed — dispatch already saved to Supabase above
 
       // 2. Deduct from finished goods stock
       if (selectedFG) {
         const newQty = (selectedFG.quantity_bottles || 0) - qty;
         const newLals = Math.max(0, (selectedFG.total_lals || 0) - parseFloat(lals.toFixed(4)));
         if (newQty <= 0) {
-          await base44.entities.FinishedGood.delete(selectedFG.id);
+          await db.FinishedGood.delete(selectedFG.id);
         } else {
-          await base44.entities.FinishedGood.update(selectedFG.id, {
+          await db.FinishedGood.update(selectedFG.id, {
             quantity_bottles: newQty,
             total_lals: parseFloat(newLals.toFixed(4)),
           });
@@ -188,7 +188,7 @@ export default function Sales() {
 
   const editMutation = useMutation({
     mutationFn: async () => {
-      await base44.entities.Dispatch.update(editingDispatch.id, {
+      await db.Dispatch.update(editingDispatch.id, {
         status: editForm.status,
         notes: editForm.notes,
         dispatch_date: editForm.dispatch_date,
@@ -204,18 +204,18 @@ export default function Sales() {
   const returnMutation = useMutation({
     mutationFn: async (dispatch) => {
       // Restore stock
-      const existing = await base44.entities.FinishedGood.filter({
+      const existing = await db.FinishedGood.filter({
         product_name: dispatch.product_name,
         batch_number: dispatch.batch_number,
       });
       if (existing.length > 0) {
         const fg = existing[0];
-        await base44.entities.FinishedGood.update(fg.id, {
+        await db.FinishedGood.update(fg.id, {
           quantity_bottles: (fg.quantity_bottles || 0) + (dispatch.quantity_bottles || 0),
           total_lals: parseFloat(((fg.total_lals || 0) + (dispatch.total_lals || 0)).toFixed(4)),
         });
       } else {
-        await base44.entities.FinishedGood.create({
+        await db.FinishedGood.create({
           product_name: dispatch.product_name,
           batch_number: dispatch.batch_number,
           bottle_size_ml: dispatch.bottle_size_ml,
@@ -224,7 +224,7 @@ export default function Sales() {
         });
       }
       // Mark dispatch as returned (keep the record)
-      await base44.entities.Dispatch.update(dispatch.id, { status: 'pending', notes: (dispatch.notes ? dispatch.notes + ' [RETURNED]' : '[RETURNED]') });
+      await db.Dispatch.update(dispatch.id, { status: 'pending', notes: (dispatch.notes ? dispatch.notes + ' [RETURNED]' : '[RETURNED]') });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sheetDispatches'] });
@@ -237,18 +237,18 @@ export default function Sales() {
   const deleteMutation = useMutation({
     mutationFn: async (dispatch) => {
       // Restore stock to the finished good
-      const existing = await base44.entities.FinishedGood.filter({
+      const existing = await db.FinishedGood.filter({
         product_name: dispatch.product_name,
         batch_number: dispatch.batch_number,
       });
       if (existing.length > 0) {
         const fg = existing[0];
-        await base44.entities.FinishedGood.update(fg.id, {
+        await db.FinishedGood.update(fg.id, {
           quantity_bottles: (fg.quantity_bottles || 0) + (dispatch.quantity_bottles || 0),
           total_lals: parseFloat(((fg.total_lals || 0) + (dispatch.total_lals || 0)).toFixed(4)),
         });
       } else {
-        await base44.entities.FinishedGood.create({
+        await db.FinishedGood.create({
           product_name: dispatch.product_name,
           batch_number: dispatch.batch_number,
           bottle_size_ml: dispatch.bottle_size_ml,
@@ -256,7 +256,7 @@ export default function Sales() {
           total_lals: dispatch.total_lals,
         });
       }
-      await base44.entities.Dispatch.delete(dispatch.id);
+      await db.Dispatch.delete(dispatch.id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sheetDispatches'] });
