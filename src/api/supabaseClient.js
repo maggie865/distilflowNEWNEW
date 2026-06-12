@@ -2,7 +2,13 @@
  * db — Base44 entity wrapper that mirrors the old Supabase `db` interface.
  * All pages import { db } from '@/api/supabaseClient' and call the same methods.
  */
+import { createClient } from '@supabase/supabase-js';
 import { base44 } from '@/api/base44Client';
+
+export const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL || 'https://your-project.supabase.co',
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-anon-key'
+);
 
 const e = base44.entities;
 
