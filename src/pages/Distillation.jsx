@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { db } from '@/api/supabaseClient';
+import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,9 +15,6 @@ import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
-import Pagination from '@/components/shared/Pagination';
-
-const PAGE_SIZE = 50;
 import CompleteDistillationDialog from '@/components/distillation/CompleteDistillationDialog';
 import CreateBatchDialog from '@/components/distillation/CreateBatchDialog';
 import BatchManagement from '@/components/distillation/BatchManagement';
@@ -41,7 +38,6 @@ const EMPTY_FORM = {
 export default function Distillation() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [currentPage, setCurrentPage] = useState(0);
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [runToComplete, setRunToComplete] = useState(null);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
@@ -53,7 +49,7 @@ export default function Distillation() {
 
   const { data: masterBatches = [] } = useQuery({
     queryKey: ['masterBatches'],
-    queryFn: () => db.MasterBatch.list('-date_started', 100),
+    queryFn: () => base44.entities.MasterBatch.list('-date_started', 100),
   });
 
   // Only show batches that are not yet completed/bottling-done
@@ -62,7 +58,7 @@ export default function Distillation() {
   const { data: recipes = [] } = useQuery({
     queryKey: ['recipes'],
     queryFn: async () => {
-      const all = await db.Recipe.list('name', 50);
+      const all = await base44.entities.Recipe.list('name', 50);
       // Include spirit recipes and any older records without recipe_type set (pre-dates the field)
       return all.filter(r => !r.recipe_type || r.recipe_type === 'spirit');
     },
@@ -70,24 +66,22 @@ export default function Distillation() {
 
   const { data: rawMaterials = [] } = useQuery({
     queryKey: ['rawMaterials'],
-    queryFn: () => db.RawMaterial.list('created_date', 500),
+    queryFn: () => base44.entities.RawMaterial.list('created_at', 500),
   });
 
-  const { data: runsPage = { data: [], count: 0 }, isLoading } = useQuery({
-    queryKey: ['distillationRuns', currentPage],
-    queryFn: () => db.DistillationRun.listPage('-date', PAGE_SIZE, currentPage * PAGE_SIZE),
+  const { data: runs = [], isLoading } = useQuery({
+    queryKey: ['distillationRuns'],
+    queryFn: () => base44.entities.DistillationRun.list('-date', 50),
   });
-  const runs = runsPage.data ?? [];
-  const runsTotal = runsPage.count ?? 0;
 
   const { data: ethanolMaterials = [] } = useQuery({
     queryKey: ['rawMaterials-ethanol'],
-    queryFn: () => db.RawMaterial.filter({ type: 'ethanol' }),
+    queryFn: () => base44.entities.RawMaterial.filter({ type: 'ethanol' }),
   });
 
   const { data: allTanks = [] } = useQuery({
     queryKey: ['storageTanks'],
-    queryFn: () => db.StorageTank.list('name', 50),
+    queryFn: () => base44.entities.StorageTank.list('name', 50),
   });
 
   // Only ethanol-holding tanks (diluted_ethanol, maceration_dilution, or sns purposes, in_use)
@@ -163,7 +157,7 @@ export default function Distillation() {
       const needed = parseFloat((ing.quantity * ratio).toFixed(2));
       const lots = rawMaterials
         .filter(m => m.name?.toLowerCase() === ing.name?.toLowerCase())
-        .sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       const totalStock = lots.reduce((sum, lot) => sum + (lot.quantity || 0), 0);
       return { ...ing, scaledQuantity: needed, totalStock, lots, sufficient: totalStock >= needed };
     }));
@@ -219,13 +213,13 @@ export default function Distillation() {
   const createMutation = useMutation({
     mutationFn: async (data) => {
       const payload = buildPayload(data);
-      await db.DistillationRun.create(payload);
+      await base44.entities.DistillationRun.create(payload);
 
       // Create SubBatch record if a master batch and sub-batch code are set
       if (data.batch_number && data.sub_batch_code) {
         const master = masterBatches.find(b => b.batch_code === data.batch_number);
         if (master) {
-          await db.SubBatch.create({
+          await base44.entities.SubBatch.create({
             master_batch_id: master.id,
             master_batch_code: master.batch_code,
             sub_batch_code: data.sub_batch_code,
@@ -250,7 +244,7 @@ export default function Distillation() {
           const deductVol = Math.min(tank.current_volume || 0, remainingVolume);
           if (deductVol > 0) {
             const newTankVolume = parseFloat(Math.max(0, (tank.current_volume || 0) - deductVol).toFixed(3));
-            await db.StorageTank.update(tank.id, { current_volume: newTankVolume });
+            await base44.entities.StorageTank.update(tank.id, { current_volume: newTankVolume });
             remainingVolume -= deductVol;
           }
         }
@@ -264,7 +258,7 @@ export default function Distillation() {
         if (lotCode) {
           const matchingLots = ethanolMaterials
             .filter(m => m.batch_number === lotCode)
-            .sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
+            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
           let remainingVol = volEquivAt96;
           let remainingLals = lalsUsed;
           for (const lot of matchingLots) {
@@ -272,7 +266,7 @@ export default function Distillation() {
             const deductVol = Math.min(lot.quantity || 0, remainingVol);
             const deductLals = Math.min(lot.lals || 0, remainingLals);
             if (deductVol > 0 || deductLals > 0) {
-              await db.RawMaterial.update(lot.id, {
+              await base44.entities.RawMaterial.update(lot.id, {
                 quantity: parseFloat(Math.max(0, (lot.quantity || 0) - deductVol).toFixed(3)),
                 lals: parseFloat(Math.max(0, (lot.lals || 0) - deductLals).toFixed(4)),
               });
@@ -292,7 +286,7 @@ export default function Distillation() {
           if (remaining <= 0) break;
           const deduct = Math.min(lot.quantity || 0, remaining);
           if (deduct > 0) {
-            await db.RawMaterial.update(lot.id, { quantity: parseFloat((lot.quantity - deduct).toFixed(4)) });
+            await base44.entities.RawMaterial.update(lot.id, { quantity: parseFloat((lot.quantity - deduct).toFixed(4)) });
             const lotLabel = lot.batch_number ? `${ing.name} (${lot.batch_number})` : ing.name;
             usedBotanicalLots.add(lotLabel);
           }
@@ -302,9 +296,9 @@ export default function Distillation() {
 
       // Patch the SubBatch with captured botanical lot codes so BatchTracker can display them
       if (usedBotanicalLots.size > 0 && data.batch_number && data.sub_batch_code) {
-        const subBatchList = await db.SubBatch.filter({ sub_batch_code: data.sub_batch_code });
+        const subBatchList = await base44.entities.SubBatch.filter({ sub_batch_code: data.sub_batch_code });
         if (subBatchList.length > 0) {
-          await db.SubBatch.update(subBatchList[0].id, {
+          await base44.entities.SubBatch.update(subBatchList[0].id, {
             botanical_lots: [...usedBotanicalLots].join(', '),
           });
         }
@@ -322,7 +316,7 @@ export default function Distillation() {
 
   const updateMutation = useMutation({
     mutationFn: async (data) => {
-      await db.DistillationRun.update(editing.id, buildPayload(data));
+      await base44.entities.DistillationRun.update(editing.id, buildPayload(data));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['distillationRuns'] });
@@ -885,8 +879,6 @@ export default function Distillation() {
           </Table>
         </div>
       </Card>
-
-      <Pagination currentPage={currentPage} totalCount={runsTotal} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
 
       <CompleteDistillationDialog
         run={runToComplete}
