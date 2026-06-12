@@ -449,6 +449,11 @@ export default function Inventory() {
     queryFn: () => base44.entities.StockThreshold.list('material_name', 200),
   });
 
+  const { data: allReceivings = [] } = useQuery({
+    queryKey: ['receivings'],
+    queryFn: () => base44.entities.Receiving.list('-date_received', 2000),
+  });
+
   const { data: allDispatches = [], isLoading: loadingDispatches } = useQuery({
     queryKey: ['dispatches'],
     queryFn: () => base44.entities.Dispatch.list('-dispatch_date', 2000),
@@ -525,9 +530,45 @@ export default function Inventory() {
     'box for 6x 700ml bottles', // 1 per 6 bottles → handled below
   ];
 
+  // Build received quantities per material name from Receiving records
+  const receivedByName = allReceivings.reduce((acc, r) => {
+    const key = (r.material_name || '').toLowerCase().trim();
+    if (!acc[key]) acc[key] = { quantity: 0, lals: 0, unit: r.unit };
+    acc[key].quantity += r.quantity || 0;
+    acc[key].lals += r.lals || 0;
+    return acc;
+  }, {});
+
+  // Build a merged list: start from Receiving records for materials not in RawMaterial
+  const receivingMaterialNames = Object.keys(receivedByName);
+  const rawMaterialNames = rawMaterials.map(m => (m.name || '').toLowerCase().trim());
+  const receivingOnlyMaterials = receivingMaterialNames
+    .filter(k => !rawMaterialNames.includes(k))
+    .map(k => {
+      const sample = allReceivings.find(r => (r.material_name || '').toLowerCase().trim() === k);
+      return {
+        id: 'recv-' + k,
+        name: sample?.material_name || k,
+        type: (sample?.material_type || 'other').toLowerCase(),
+        quantity: receivedByName[k].quantity,
+        lals: receivedByName[k].lals,
+        unit: receivedByName[k].unit || 'units',
+        _fromReceiving: true,
+      };
+    });
+
+  const allRawMaterials = [...rawMaterials, ...receivingOnlyMaterials];
+
   // Apply net-stock to raw materials
-  const rawMaterialsWithNetStock = rawMaterials.map(m => {
-    let netQty = m.quantity || 0;
+  const rawMaterialsWithNetStock = allRawMaterials.map(m => {
+    const nameKey = (m.name || '').toLowerCase().trim();
+    const received = receivedByName[nameKey];
+
+    // For materials that only exist in RawMaterial (manually added), keep their quantity
+    // For materials that exist in Receiving, use received total as the base
+    let netQty = received ? received.quantity : (m.quantity || 0);
+    let netLals = received ? received.lals : (m.lals || 0);
+
     const nameLower = m.name?.toLowerCase() || '';
 
     if (m.type === 'ethanol') {
@@ -545,6 +586,7 @@ export default function Inventory() {
           .filter(([k]) => !matched.includes(k))
           .reduce((s, [, v]) => s + v, 0);
       }
+      netLals = Math.max(0, netLals - (consumed * (m.abv_percent || 0) / 100));
       netQty = Math.max(0, netQty - consumed);
     }
 
@@ -553,7 +595,8 @@ export default function Inventory() {
       const matchedKey = Object.keys(LDG_BOTANICALS).find(k => nameLower.includes(k));
       if (matchedKey) {
         const consumed = ldgDistillRuns * LDG_BOTANICALS[matchedKey];
-        netQty = Math.max(0, netQty - consumed);
+        netLals = Math.max(0, netLals - (consumed * (m.abv_percent || 0) / 100));
+      netQty = Math.max(0, netQty - consumed);
       }
     }
 
