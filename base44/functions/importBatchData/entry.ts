@@ -161,8 +161,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 7. Deduct ethanol from RawMaterial inventory
+    // 7. Create or update RawMaterial records for ethanol used
     if (batchData.masterBatch.ethanol_lot && batchData.distillationRuns && batchData.distillationRuns.length > 0) {
+      const totalEthanolVolume = batchData.distillationRuns.reduce((sum, run) => sum + (run.input_volume || 0), 0);
       const totalEthanolLals = batchData.distillationRuns.reduce((sum, run) => sum + (run.input_lals || 0), 0);
       
       // Find ethanol material and deduct
@@ -172,15 +173,19 @@ Deno.serve(async (req) => {
       
       if (ethanolMaterials && ethanolMaterials.length > 0) {
         const ethanol = ethanolMaterials[0];
-        const newQuantity = (ethanol.lals || 0) - totalEthanolLals;
+        const newQuantity = (ethanol.quantity || 0) - totalEthanolVolume;
+        const newLals = (ethanol.lals || 0) - totalEthanolLals;
         await base44.entities.RawMaterial.update(ethanol.id, {
-          lals: Math.max(0, newQuantity)
+          quantity: Math.max(0, newQuantity),
+          lals: Math.max(0, newLals)
         });
         results.inventoryUpdates.push({
           material: ethanol.name,
           type: 'ethanol deduction',
-          amount: totalEthanolLals,
-          remaining: Math.max(0, newQuantity)
+          volume: totalEthanolVolume,
+          lals: totalEthanolLals,
+          remaining_volume: Math.max(0, newQuantity),
+          remaining_lals: Math.max(0, newLals)
         });
       }
     }
