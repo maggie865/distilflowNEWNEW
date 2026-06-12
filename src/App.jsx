@@ -1,3 +1,5 @@
+console.log('APP_ID', import.meta.env.VITE_BASE44_APP_ID);
+console.log('BASE_URL', import.meta.env.VITE_BASE44_APP_BASE_URL);
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
