@@ -77,10 +77,17 @@ export default function Warehouse() {
     queryFn: () => db.Customer.list('business_name', 200),
   });
 
-  const { data: warehouseDispatches = [] } = useQuery({
-    queryKey: ['warehouseDispatches'],
-    queryFn: () => db.Dispatch.filter({ dispatched_from: 'Auckland 3PL' }),
+  const { data: allDispatches = [] } = useQuery({
+    queryKey: ['dispatches'],
+    queryFn: () => db.Dispatch.list('-dispatch_date', 1000),
   });
+
+  // 3PL dispatches: records with [Auckland 3PL] in notes, or dispatched_from set to Auckland 3PL
+  const warehouseDispatches = allDispatches.filter(d =>
+    (d.notes || '').includes('[Auckland 3PL]') ||
+    (d.dispatched_from || '').toLowerCase().includes('auckland') ||
+    (d.dispatched_from || '') === 'Auckland 3PL'
+  );
 
   const sellableGoods = finishedGoods.filter(fg => !fg.product_name?.includes('Tasting'));
   const selectedFG = finishedGoods.find(fg => fg.id === selectedFGId);
