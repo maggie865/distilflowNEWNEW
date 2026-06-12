@@ -265,38 +265,15 @@ export default function Receiving() {
     mutationFn: async (data) => {
       const payload = buildPayload(data);
       await base44.entities.Receiving.create(payload);
-
-      const existing = await base44.entities.RawMaterial.filter({ name: data.material_name });
-      if (existing.length > 0) {
-        const mat = existing[0];
-        const newQty = (mat.quantity || 0) + parseFloat(data.quantity);
-        const newLals = data.material_type === 'Ethanol'
-          ? (mat.lals || 0) + (payload.lals || 0) : mat.lals;
-        await base44.entities.RawMaterial.update(mat.id, {
-          quantity: newQty,
-          lals: newLals,
-          abv_percent: data.abv_percent ? parseFloat(data.abv_percent) : mat.abv_percent,
-        });
-      } else {
-        await base44.entities.RawMaterial.create({
-          name: data.material_name,
-          type: data.material_type?.toLowerCase(),
-          quantity: parseFloat(data.quantity),
-          unit: data.unit,
-          abv_percent: data.abv_percent ? parseFloat(data.abv_percent) : undefined,
-          lals: payload.lals,
-          supplier: data.supplier_name,
-          cost_per_unit: data.cost_per_unit ? parseFloat(data.cost_per_unit) : undefined,
-          batch_number: data.batch_number,
-        });
-      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
-      queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       setOpen(false);
       setForm(BLANK_FORM);
       toast.success('Material received successfully');
+    },
+    onError: (err) => {
+      toast.error('Failed to save: ' + (err?.message || 'Unknown error'));
     },
   });
 
@@ -325,16 +302,6 @@ export default function Receiving() {
 
   const deleteMutation = useMutation({
     mutationFn: async (record) => {
-      const existing = await base44.entities.RawMaterial.filter({ name: record.material_name });
-      if (existing.length > 0) {
-        const mat = existing[0];
-        const newQty = Math.max(0, (mat.quantity || 0) - (record.quantity || 0));
-        const newLals = record.material_type === 'Ethanol'
-          ? Math.max(0, (mat.lals || 0) - (record.lals || 0))
-          : mat.lals;
-        await base44.entities.RawMaterial.update(mat.id, { quantity: newQty, lals: newLals });
-      }
-      // Packing slip stored via Base44 — no manual deletion needed
       await base44.entities.Receiving.delete(record.id);
     },
     onSuccess: () => {
