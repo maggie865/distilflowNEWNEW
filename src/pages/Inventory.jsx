@@ -539,12 +539,30 @@ export default function Inventory() {
   });
 
   // packagingConsumedByName: { exact packaging name (lowercase) -> total units consumed }
+  // Match packaging recipes to bottling runs by bottle_size_ml extracted from recipe name
+  // e.g. "700ml London Dry Gin Bottle" matches bottling runs with bottle_size_ml === 700
   const packagingConsumedByName = {};
   packagingRecipes.forEach(recipe => {
     if (!recipe.packaging?.length) return;
-    const matchingBottles = bottlingRuns
-      .filter(r => (r.product_name || '').toLowerCase().trim() === (recipe.name || '').toLowerCase().trim())
-      .reduce((s, r) => s + (r.bottles_produced || 0), 0);
+    const recipeName = (recipe.name || '').toLowerCase();
+
+    // Extract bottle size from recipe name (looks for '700ml', '200ml' etc.)
+    const sizeMatch = recipeName.match(/(\d+)\s*ml/);
+    const recipeSizeMl = sizeMatch ? parseInt(sizeMatch[1]) : null;
+
+    let matchingBottles = 0;
+    if (recipeSizeMl) {
+      // Match by bottle size
+      matchingBottles = bottlingRuns
+        .filter(r => r.bottle_size_ml === recipeSizeMl)
+        .reduce((s, r) => s + (r.bottles_produced || 0), 0);
+    } else {
+      // Fallback: match by product name
+      matchingBottles = bottlingRuns
+        .filter(r => (r.product_name || '').toLowerCase().trim() === recipeName)
+        .reduce((s, r) => s + (r.bottles_produced || 0), 0);
+    }
+
     if (matchingBottles === 0) return;
     recipe.packaging.forEach(pkg => {
       const key = (pkg.name || '').toLowerCase().trim();
@@ -641,26 +659,33 @@ export default function Inventory() {
       netQty = Math.max(0, netQty - consumed);
     }
 
-    // Deduct botanicals using exact name match from recipe ingredients
+    // Deduct botanicals — case-insensitive exact then partial match
     const normType = (m.type || '').toLowerCase();
     if (normType === 'botanical') {
-      // Try exact match first, then partial
-      const exactKey = botanicalConsumedByName[nameLower];
-      const partialMatch = exactKey !== undefined ? nameLower :
-        Object.keys(botanicalConsumedByName).find(k => nameLower.includes(k) || k.includes(nameLower));
-      if (partialMatch !== undefined) {
-        const consumed = botanicalConsumedByName[partialMatch] || exactKey || 0;
-        netQty = Math.max(0, netQty - consumed);
+      // Both sides lowercased — recipe ingredients stored with capitals, received items lowercase
+      const exactConsumed = botanicalConsumedByName[nameLower];
+      if (exactConsumed !== undefined) {
+        netQty = Math.max(0, netQty - exactConsumed);
+      } else {
+        const partialKey = Object.keys(botanicalConsumedByName)
+          .find(k => nameLower.includes(k.toLowerCase()) || k.toLowerCase().includes(nameLower));
+        if (partialKey) {
+          netQty = Math.max(0, netQty - botanicalConsumedByName[partialKey]);
+        }
       }
     }
 
-    // Deduct packaging using exact name match from packaging recipes
+    // Deduct packaging — case-insensitive exact then partial match
     if (normType === 'packaging') {
       const exactConsumed = packagingConsumedByName[nameLower];
-      const partialKey = exactConsumed !== undefined ? nameLower :
-        Object.keys(packagingConsumedByName).find(k => nameLower.includes(k) || k.includes(nameLower));
-      if (partialKey !== undefined) {
-        netQty = Math.max(0, netQty - (packagingConsumedByName[partialKey] || exactConsumed || 0));
+      if (exactConsumed !== undefined) {
+        netQty = Math.max(0, netQty - exactConsumed);
+      } else {
+        const partialKey = Object.keys(packagingConsumedByName)
+          .find(k => nameLower.includes(k.toLowerCase()) || k.toLowerCase().includes(nameLower));
+        if (partialKey) {
+          netQty = Math.max(0, netQty - packagingConsumedByName[partialKey]);
+        }
       }
     }
 
@@ -720,7 +745,6 @@ export default function Inventory() {
           <TabsTrigger value="raw">Raw Materials</TabsTrigger>
           <TabsTrigger value="packaging">Packaging</TabsTrigger>
           <TabsTrigger value="finished">Finished Goods</TabsTrigger>
-          <TabsTrigger value="debug" className="text-amber-600">🔍 Debug</TabsTrigger>
           <TabsTrigger value="alerts" className="flex items-center gap-1.5">
             <Bell className="w-3.5 h-3.5" />
             Low Stock Alerts
@@ -829,91 +853,6 @@ export default function Inventory() {
         <TabsContent value="alerts">
           <LowStockAlerts rawMaterials={rawMaterialsWithNetStock} thresholds={thresholds} />
         </TabsContent>
-
-        {/* Debug Tab */}
-        <TabsContent value="debug">
-          <div className="space-y-4 text-xs font-mono">
-
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-              <p className="font-bold text-amber-800 mb-2">Recipes loaded</p>
-              <p className="text-amber-700">Spirit recipes: {spiritRecipes.length} | Packaging recipes: {packagingRecipes.length}</p>
-              {spiritRecipes.map(r => (
-                <div key={r.id} className="mt-2 border-t border-amber-200 pt-2">
-                  <p className="font-semibold">"{r.name}" — base: {r.base_ethanol_volume}L @ {r.base_ethanol_abv}% ABV</p>
-                  <p>Ingredients: {(r.ingredients || []).map(i => `${i.name} (${i.quantity}${i.unit})`).join(', ') || 'NONE'}</p>
-                </div>
-              ))}
-              {packagingRecipes.map(r => (
-                <div key={r.id} className="mt-2 border-t border-amber-200 pt-2">
-                  <p className="font-semibold">"{r.name}" (packaging)</p>
-                  <p>Items: {(r.packaging || []).map(p => `${p.name} (x${p.quantity})`).join(', ') || 'NONE'}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-              <p className="font-bold text-blue-800 mb-2">Distillation runs matched to recipes</p>
-              {spiritRecipes.map(recipe => {
-                const matched = distillationRuns.filter(r =>
-                  r.input_volume &&
-                  (r.product_name || '').toLowerCase().trim() === (recipe.name || '').toLowerCase().trim()
-                );
-                return (
-                  <div key={recipe.id} className="mt-1">
-                    <p>"{recipe.name}": <strong>{matched.length} runs matched</strong></p>
-                    {matched.length === 0 && (
-                      <p className="text-red-600">⚠ No runs matched. Run product names found: {[...new Set(distillationRuns.map(r => r.product_name))].join(', ') || 'none'}</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
-              <p className="font-bold text-green-800 mb-2">Botanical deductions calculated</p>
-              {Object.keys(botanicalConsumedByName).length === 0
-                ? <p className="text-red-600">⚠ Nothing calculated — check recipe ingredients and run product names match</p>
-                : Object.entries(botanicalConsumedByName).map(([k, v]) => (
-                    <p key={k}>{k}: <strong>{v.toFixed(3)} kg</strong></p>
-                  ))
-              }
-            </div>
-
-            <div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
-              <p className="font-bold text-purple-800 mb-2">Packaging deductions calculated</p>
-              <p className="mb-1">700ml bottles produced: {totalBottlesBottled700} | 200ml: {totalBottlesBottled200}</p>
-              {Object.keys(packagingConsumedByName).length === 0
-                ? <p className="text-red-600">⚠ Nothing calculated — check packaging recipe names match bottling run product names</p>
-                : Object.entries(packagingConsumedByName).map(([k, v]) => (
-                    <p key={k}>{k}: <strong>{v.toFixed(0)} units</strong></p>
-                  ))
-              }
-              {packagingRecipes.map(recipe => {
-                const matched = bottlingRuns.filter(r =>
-                  (r.product_name || '').toLowerCase().trim() === (recipe.name || '').toLowerCase().trim()
-                );
-                return (
-                  <div key={recipe.id} className="mt-1">
-                    <p>"{recipe.name}": <strong>{matched.length} bottling runs matched</strong></p>
-                    {matched.length === 0 && (
-                      <p className="text-red-600">⚠ No bottling runs matched. Product names found: {[...new Set(bottlingRuns.map(r => r.product_name))].join(', ') || 'none'}</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-              <p className="font-bold text-gray-800 mb-2">Received items by name & type</p>
-              {Object.entries(receivedByName).map(([k, v]) => (
-                <p key={k}>{k}: {v.quantity} {v.unit} | type: <strong>{v.type}</strong></p>
-              ))}
-              {Object.keys(receivedByName).length === 0 && <p className="text-red-600">⚠ No receiving records found</p>}
-            </div>
-
-          </div>
-        </TabsContent>
-
       </Tabs>
 
       {/* Dialogs */}
