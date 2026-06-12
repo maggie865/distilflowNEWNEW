@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { db } from '@/api/supabaseClient';
-import { base44 } from '@/api/base44Client';
+import { db, supabase } from '@/api/supabaseClient';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,9 +14,6 @@ import { Plus, Upload, Loader2, FileText, Pencil, ExternalLink, Trash2, MapPin, 
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
-import Pagination from '@/components/shared/Pagination';
-
-const PAGE_SIZE = 50;
 
 const MATERIAL_TYPES = ['Ethanol', 'Botanicals', 'Packaging', 'Grain', 'Sugar', 'Water', 'Flavoring', 'Other'];
 const TRANSPORT_METHODS = ['road', 'courier', 'air', 'sea'];
@@ -70,16 +66,19 @@ export default function Receiving() {
   const [calcingDistance, setCalcingDistance] = useState(false);
   const [form, setForm] = useState(BLANK_FORM);
   const [viewingSlip, setViewingSlip] = useState(null);
-  const [currentPage, setCurrentPage] = useState(0);
   const queryClient = useQueryClient();
 
-  const receivingsQuery = useQuery({
-    queryKey: ['receivings', currentPage],
-    queryFn: () => db.Receiving.listPage('-date_received', PAGE_SIZE, currentPage * PAGE_SIZE),
+  const { refetch } = useQuery({
+    queryKey: ['receivings'],
+    queryFn: () => db.Receiving.list('-date_received', 50),
   });
 
-  const { refetch } = receivingsQuery;
   const isRefreshing = usePullToRefresh(() => refetch());
+
+  const receivingsQuery = useQuery({
+    queryKey: ['receivings'],
+    queryFn: () => db.Receiving.list('-date_received', 50),
+  });
 
   const suppliersQuery = useQuery({
     queryKey: ['suppliers'],
@@ -120,6 +119,7 @@ export default function Receiving() {
     if (!supplierAddress) return;
     setCalcingDistance(true);
     try {
+      const { base44 } = await import('@/api/base44Client');
       const res = await base44.functions.invoke('getDistanceMatrix', {
         origin: supplierAddress,
         destination: DISTILLERY_ADDRESS,
@@ -133,10 +133,21 @@ export default function Receiving() {
     }
   };
 
-  // ── Upload packing slip via Base44 file upload ────────────────────────────
+  // ── Upload packing slip directly to Supabase Storage ──────────────────────
   const uploadPackingSlip = async (file) => {
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    return file_url;
+    const ext = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { data, error } = await supabase.storage
+      .from('packing-slips')
+      .upload(fileName, file, { contentType: file.type, upsert: false });
+
+    if (error) throw error;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('packing-slips')
+      .getPublicUrl(fileName);
+
+    return publicUrl;
   };
 
   // ── Handle packing slip file selection ────────────────────────────────────
@@ -156,6 +167,7 @@ export default function Receiving() {
       // 2. Try to extract data using Base44 OCR
       setExtracting(true);
       try {
+        const { base44 } = await import('@/api/base44Client');
         const result = await base44.integrations.Core.ExtractDataFromUploadedFile({
           file_url: publicUrl,
           json_schema: {
@@ -339,6 +351,11 @@ export default function Receiving() {
           : mat.lals;
         await db.RawMaterial.update(mat.id, { quantity: newQty, lals: newLals });
       }
+      // Delete the packing slip from storage if it exists
+      if (record.packing_slip_url) {
+        const fileName = record.packing_slip_url.split('/').pop();
+        await supabase.storage.from('packing-slips').remove([fileName]);
+      }
       await db.Receiving.delete(record.id);
     },
     onSuccess: () => {
@@ -349,8 +366,7 @@ export default function Receiving() {
   });
 
   const isPending = createMutation.isPending || updateMutation.isPending;
-  const data = receivingsQuery.data?.data ?? [];
-  const totalCount = receivingsQuery.data?.count ?? 0;
+  const data = receivingsQuery.data || [];
   const isLoading = receivingsQuery.isLoading;
 
   return (
@@ -383,7 +399,7 @@ export default function Receiving() {
               <Loader2 className="w-4 h-4 text-primary animate-spin flex-shrink-0" />
               <div>
                 <p className="text-sm font-medium text-primary">
-                  {uploadingSlip ? 'Uploading packing slip…' : 'Scanning document…'}
+                  {uploadingSlip ? 'Uploading packing slip to Supabase…' : 'Scanning document…'}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {uploadingSlip ? 'Your file is being saved securely' : 'Extracting fields from your document'}
@@ -588,8 +604,6 @@ export default function Receiving() {
           </Table>
         </div>
       </Card>
-
-      <Pagination currentPage={currentPage} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
 
       {/* Packing Slip Viewer */}
       <PackingSlipViewer url={viewingSlip} onClose={() => setViewingSlip(null)} />
