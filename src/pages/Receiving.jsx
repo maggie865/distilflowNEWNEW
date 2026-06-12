@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { db, supabase } from '@/api/supabaseClient';
+import { base44 } from '@/api/base44Client';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -70,19 +70,19 @@ export default function Receiving() {
 
   const { refetch } = useQuery({
     queryKey: ['receivings'],
-    queryFn: () => db.Receiving.list('-date_received', 50),
+    queryFn: () => base44.entities.Receiving.list('-date_received', 50),
   });
 
   const isRefreshing = usePullToRefresh(() => refetch());
 
   const receivingsQuery = useQuery({
     queryKey: ['receivings'],
-    queryFn: () => db.Receiving.list('-date_received', 50),
+    queryFn: () => base44.entities.Receiving.list('-date_received', 50),
   });
 
   const suppliersQuery = useQuery({
     queryKey: ['suppliers'],
-    queryFn: () => db.Supplier.list('business_name', 100),
+    queryFn: () => base44.entities.Supplier.list('business_name', 100),
   });
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
@@ -133,21 +133,10 @@ export default function Receiving() {
     }
   };
 
-  // ── Upload packing slip directly to Supabase Storage ──────────────────────
+  // ── Upload packing slip via Base44 ──────────────────────────────────────────
   const uploadPackingSlip = async (file) => {
-    const ext = file.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { data, error } = await supabase.storage
-      .from('packing-slips')
-      .upload(fileName, file, { contentType: file.type, upsert: false });
-
-    if (error) throw error;
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('packing-slips')
-      .getPublicUrl(fileName);
-
-    return publicUrl;
+    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    return file_url;
   };
 
   // ── Handle packing slip file selection ────────────────────────────────────
@@ -275,21 +264,21 @@ export default function Receiving() {
   const createMutation = useMutation({
     mutationFn: async (data) => {
       const payload = buildPayload(data);
-      await db.Receiving.create(payload);
+      await base44.entities.Receiving.create(payload);
 
-      const existing = await db.RawMaterial.filterIlike({ name: data.material_name });
+      const existing = await base44.entities.RawMaterial.filter({ name: data.material_name });
       if (existing.length > 0) {
         const mat = existing[0];
         const newQty = (mat.quantity || 0) + parseFloat(data.quantity);
         const newLals = data.material_type === 'Ethanol'
           ? (mat.lals || 0) + (payload.lals || 0) : mat.lals;
-        await db.RawMaterial.update(mat.id, {
+        await base44.entities.RawMaterial.update(mat.id, {
           quantity: newQty,
           lals: newLals,
           abv_percent: data.abv_percent ? parseFloat(data.abv_percent) : mat.abv_percent,
         });
       } else {
-        await db.RawMaterial.create({
+        await base44.entities.RawMaterial.create({
           name: data.material_name,
           type: data.material_type?.toLowerCase(),
           quantity: parseFloat(data.quantity),
@@ -309,15 +298,12 @@ export default function Receiving() {
       setForm(BLANK_FORM);
       toast.success('Material received successfully');
     },
-    onError: (err) => {
-      toast.error('Failed to save: ' + (err?.message || 'Unknown error'));
-    },
   });
 
   const updateMutation = useMutation({
     mutationFn: async (data) => {
       const payload = buildPayload(data);
-      await db.Receiving.update(editingId, payload);
+      await base44.entities.Receiving.update(editingId, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
@@ -325,9 +311,6 @@ export default function Receiving() {
       setEditingId(null);
       setForm(BLANK_FORM);
       toast.success('Receiving record updated');
-    },
-    onError: (err) => {
-      toast.error('Failed to update: ' + (err?.message || 'Unknown error'));
     },
   });
 
@@ -342,21 +325,17 @@ export default function Receiving() {
 
   const deleteMutation = useMutation({
     mutationFn: async (record) => {
-      const existing = await db.RawMaterial.filterIlike({ name: record.material_name });
+      const existing = await base44.entities.RawMaterial.filter({ name: record.material_name });
       if (existing.length > 0) {
         const mat = existing[0];
         const newQty = Math.max(0, (mat.quantity || 0) - (record.quantity || 0));
         const newLals = record.material_type === 'Ethanol'
           ? Math.max(0, (mat.lals || 0) - (record.lals || 0))
           : mat.lals;
-        await db.RawMaterial.update(mat.id, { quantity: newQty, lals: newLals });
+        await base44.entities.RawMaterial.update(mat.id, { quantity: newQty, lals: newLals });
       }
-      // Delete the packing slip from storage if it exists
-      if (record.packing_slip_url) {
-        const fileName = record.packing_slip_url.split('/').pop();
-        await supabase.storage.from('packing-slips').remove([fileName]);
-      }
-      await db.Receiving.delete(record.id);
+      // Packing slip stored via Base44 — no manual deletion needed
+      await base44.entities.Receiving.delete(record.id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
@@ -399,7 +378,7 @@ export default function Receiving() {
               <Loader2 className="w-4 h-4 text-primary animate-spin flex-shrink-0" />
               <div>
                 <p className="text-sm font-medium text-primary">
-                  {uploadingSlip ? 'Uploading packing slip to Supabase…' : 'Scanning document…'}
+                  {uploadingSlip ? 'Uploading packing slip…' : 'Scanning document…'}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {uploadingSlip ? 'Your file is being saved securely' : 'Extracting fields from your document'}
