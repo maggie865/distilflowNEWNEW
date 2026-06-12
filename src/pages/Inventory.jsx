@@ -53,7 +53,8 @@ function AdjustDialog({ item, entity, onClose, queryKey }) {
         update.total_lals = parseFloat((newQty * item.bottle_size_ml * item.abv_percent / 100 / 1000).toFixed(3));
       }
 
-      return db[entity].update(item.id, update);
+      const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
+      return entityMap[entity].update(item.id, update);
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: [queryKey] }); onClose(); },
   });
@@ -102,7 +103,10 @@ function EditDialog({ item, entity, fields, onClose, queryKey }) {
   const [form, setForm] = useState({ ...item });
 
   const mutation = useMutation({
-    mutationFn: () => db[entity].update(item.id, form),
+    mutationFn: () => {
+      const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
+      return entityMap[entity].update(item.id, form);
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: [queryKey] }); onClose(); },
   });
 
@@ -148,7 +152,10 @@ function EditDialog({ item, entity, fields, onClose, queryKey }) {
 function DeleteConfirm({ item, entity, label, onClose, queryKey }) {
   const qc = useQueryClient();
   const mutation = useMutation({
-    mutationFn: () => db[entity].delete(item.id),
+    mutationFn: () => {
+      const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
+      return entityMap[entity].delete(item.id);
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: [queryKey] }); onClose(); },
   });
   return (
@@ -618,9 +625,9 @@ export default function Inventory() {
       }
     }
 
-    const netLals = m.abv_percent && m.type === 'ethanol'
+    netLals = m.abv_percent && m.type === 'ethanol'
       ? parseFloat((netQty * m.abv_percent / 100).toFixed(3))
-      : m.lals;
+      : (received ? received.lals : m.lals);
 
     return { ...m, quantity: parseFloat(netQty.toFixed(2)), lals: netLals };
   });
