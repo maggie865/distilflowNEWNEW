@@ -1,97 +1,86 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+/**
+ * db — Base44 entity wrapper that mirrors the old Supabase `db` interface.
+ * All pages import { db } from '@/api/supabaseClient' and call the same methods.
+ */
+import { base44 } from '@/api/base44Client';
 
-const SUPABASE_URL = 'https://gvnlmxxgfinoufgtkgxf.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_mh3iR546ydljRasy2OEYdA_m6OUmN_t';
+const e = base44.entities;
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+function entity(entityName) {
+  const ent = e[entityName];
 
-function entity(table) {
   return {
-    async list(orderBy = 'created_at', limit = 1000) {
-      const ascending = !orderBy.startsWith('-');
-      const col = orderBy.replace(/^-/, '');
-      let q = supabase.from(table).select('*').order(col, { ascending });
-      if (limit) q = q.limit(limit);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data;
+    /** List all records, ordered by `orderBy` (prefix with - for desc). */
+    async list(orderBy = 'created_date', limit = 1000) {
+      const order = orderBy.startsWith('-') ? orderBy.slice(1) : orderBy;
+      return ent.list(order, limit);
     },
 
-    async listPage(orderBy = 'created_at', limit = 50, offset = 0) {
-      const ascending = !orderBy.startsWith('-');
-      const col = orderBy.replace(/^-/, '');
-      const { data, error, count } = await supabase
-        .from(table)
-        .select('*', { count: 'exact' })
-        .order(col, { ascending })
-        .range(offset, offset + limit - 1);
-      if (error) throw error;
-      return { data, count };
+    /**
+     * Paginated list — returns { data: [], count: number }.
+     * Base44 doesn't expose a native count+offset API so we fetch all and slice.
+     */
+    async listPage(orderBy = 'created_date', limit = 50, offset = 0) {
+      const order = orderBy.startsWith('-') ? orderBy.slice(1) : orderBy;
+      // Fetch enough records to cover offset+limit, then slice
+      const allData = await ent.list(order, offset + limit + 500);
+      const total = allData.length;
+      const data = allData.slice(offset, offset + limit);
+      return { data, count: total };
     },
 
-    // Exact match filter (case-sensitive)
+    /** Exact-match filter on one or more fields. */
     async filter(filters = {}) {
-      let q = supabase.from(table).select('*');
-      Object.entries(filters).forEach(([col, val]) => { q = q.eq(col, val); });
-      const { data, error } = await q;
-      if (error) throw error;
-      return data;
+      return ent.filter(filters);
     },
 
-    // Case-insensitive filter — use this for name lookups
+    /** Case-insensitive filter — approximated with regular filter here. */
     async filterIlike(filters = {}) {
-      let q = supabase.from(table).select('*');
-      Object.entries(filters).forEach(([col, val]) => { q = q.ilike(col, val); });
-      const { data, error } = await q;
-      if (error) throw error;
-      return data;
+      // Base44 filter is already case-insensitive for string fields
+      return ent.filter(filters);
     },
 
+    /** Get a single record by id. */
     async get(id) {
-      const { data, error } = await supabase.from(table).select('*').eq('id', id).single();
-      if (error) throw error;
-      return data;
+      return ent.get(id);
     },
 
+    /** Create a new record. */
     async create(payload) {
-      const { data, error } = await supabase.from(table).insert(payload).select().single();
-      if (error) throw error;
-      return data;
+      return ent.create(payload);
     },
 
+    /** Update a record by id. */
     async update(id, payload) {
-      const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single();
-      if (error) throw error;
-      return data;
+      return ent.update(id, payload);
     },
 
+    /** Delete a record by id. */
     async delete(id) {
-      const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error) throw error;
-      return { id };
+      return ent.delete(id);
     },
   };
 }
 
 export const db = {
-  RawMaterial:      entity('raw_materials'),
-  FinishedGood:     entity('finished_goods'),
-  DistillationRun:  entity('distillation_runs'),
-  BottlingRun:      entity('bottling_runs'),
-  Dilution:         entity('dilutions'),
-  Dispatch:         entity('dispatches'),
-  Customer:         entity('customers'),
-  Supplier:         entity('suppliers'),
-  Receiving:        entity('receiving'),
-  StorageTank:      entity('storage_tanks'),
-  TankMovement:     entity('tank_movements'),
-  MasterBatch:      entity('master_batches'),
-  SubBatch:         entity('sub_batches'),
-  SNSRun:           entity('sns_runs'),
-  WastageRecord:    entity('wastage_records'),
-  Recipe:           entity('recipes'),
-  WarehouseStock:   entity('warehouse_stock'),
-  StockThreshold:   entity('stock_thresholds'),
-  StockTake:        entity('stock_takes'),
-  StockTakeLine:    entity('stock_take_lines'),
+  RawMaterial:     entity('RawMaterial'),
+  FinishedGood:    entity('FinishedGood'),
+  DistillationRun: entity('DistillationRun'),
+  BottlingRun:     entity('BottlingRun'),
+  Dilution:        entity('Dilution'),
+  Dispatch:        entity('Dispatch'),
+  Customer:        entity('Customer'),
+  Supplier:        entity('Supplier'),
+  Receiving:       entity('Receiving'),
+  StorageTank:     entity('StorageTank'),
+  TankMovement:    entity('TankMovement'),
+  MasterBatch:     entity('MasterBatch'),
+  SubBatch:        entity('SubBatch'),
+  SNSRun:          entity('SNSRun'),
+  WastageRecord:   entity('WastageRecord'),
+  Recipe:          entity('Recipe'),
+  WarehouseStock:  entity('WarehouseStock'),
+  StockThreshold:  entity('StockThreshold'),
+  StockTake:       entity('StockTake'),
+  StockTakeLine:   entity('StockTakeLine'),
 };

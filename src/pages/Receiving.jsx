@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { db, supabase } from '@/api/supabaseClient';
+import { db } from '@/api/supabaseClient';
+import { base44 } from '@/api/base44Client';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -119,7 +120,6 @@ export default function Receiving() {
     if (!supplierAddress) return;
     setCalcingDistance(true);
     try {
-      const { base44 } = await import('@/api/base44Client');
       const res = await base44.functions.invoke('getDistanceMatrix', {
         origin: supplierAddress,
         destination: DISTILLERY_ADDRESS,
@@ -133,21 +133,10 @@ export default function Receiving() {
     }
   };
 
-  // ── Upload packing slip directly to Supabase Storage ──────────────────────
+  // ── Upload packing slip via Base44 file upload ────────────────────────────
   const uploadPackingSlip = async (file) => {
-    const ext = file.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { data, error } = await supabase.storage
-      .from('packing-slips')
-      .upload(fileName, file, { contentType: file.type, upsert: false });
-
-    if (error) throw error;
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('packing-slips')
-      .getPublicUrl(fileName);
-
-    return publicUrl;
+    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    return file_url;
   };
 
   // ── Handle packing slip file selection ────────────────────────────────────
@@ -167,7 +156,6 @@ export default function Receiving() {
       // 2. Try to extract data using Base44 OCR
       setExtracting(true);
       try {
-        const { base44 } = await import('@/api/base44Client');
         const result = await base44.integrations.Core.ExtractDataFromUploadedFile({
           file_url: publicUrl,
           json_schema: {
@@ -351,11 +339,6 @@ export default function Receiving() {
           : mat.lals;
         await db.RawMaterial.update(mat.id, { quantity: newQty, lals: newLals });
       }
-      // Delete the packing slip from storage if it exists
-      if (record.packing_slip_url) {
-        const fileName = record.packing_slip_url.split('/').pop();
-        await supabase.storage.from('packing-slips').remove([fileName]);
-      }
       await db.Receiving.delete(record.id);
     },
     onSuccess: () => {
@@ -400,7 +383,7 @@ export default function Receiving() {
               <Loader2 className="w-4 h-4 text-primary animate-spin flex-shrink-0" />
               <div>
                 <p className="text-sm font-medium text-primary">
-                  {uploadingSlip ? 'Uploading packing slip to Supabase…' : 'Scanning document…'}
+                  {uploadingSlip ? 'Uploading packing slip…' : 'Scanning document…'}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {uploadingSlip ? 'Your file is being saved securely' : 'Extracting fields from your document'}
