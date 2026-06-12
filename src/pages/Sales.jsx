@@ -80,16 +80,10 @@ export default function Sales() {
     queryFn: () => db.Customer.list('business_name', 200),
   });
 
-  const { data: sheetData = { dispatches: [] } } = useQuery({
-    queryKey: ['sheetDispatches'],
-    queryFn: async () => {
-      // Sheet sync removed — dispatches now in Supabase
-      return { dispatches: [] };
-    },
-    staleTime: 60_000,
+  const { data: dispatches = [] } = useQuery({
+    queryKey: ['dispatches'],
+    queryFn: () => db.Dispatch.list('-dispatch_date', 1000),
   });
-
-  const dispatches = sheetData.dispatches || [];
 
   // Only sellable stock (not tasting bottles)
   const sellableGoods = finishedGoods.filter(fg => !fg.product_name?.includes('Tasting'));
@@ -161,8 +155,8 @@ export default function Sales() {
         is_sample: 'FALSE',
       };
 
-      // 1. Append to Google Sheet
-      // Sheet append removed — dispatch already saved to Supabase above
+      // 1. Save dispatch record
+      await db.Dispatch.create(dispatchData);
 
       // 2. Deduct from finished goods stock
       if (selectedFG) {
@@ -179,11 +173,11 @@ export default function Sales() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sheetDispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['dispatches'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
       setShowForm(false);
       resetForm();
-      toast.success('Dispatch recorded and synced to Google Sheet');
+      toast.success('Dispatch recorded successfully');
     },
   });
 
@@ -196,7 +190,7 @@ export default function Sales() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sheetDispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['dispatches'] });
       setEditingDispatch(null);
       toast.success('Dispatch updated');
     },
@@ -228,7 +222,7 @@ export default function Sales() {
       await db.Dispatch.update(dispatch.id, { status: 'pending', notes: (dispatch.notes ? dispatch.notes + ' [RETURNED]' : '[RETURNED]') });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sheetDispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['dispatches'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
       setReturningDispatch(null);
       toast.success('Stock returned');
@@ -260,7 +254,7 @@ export default function Sales() {
       await db.Dispatch.delete(dispatch.id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sheetDispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['dispatches'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
       setDeletingDispatch(null);
       toast.success('Dispatch deleted and stock restored');
