@@ -309,6 +309,9 @@ export default function Receiving() {
       setForm(BLANK_FORM);
       toast.success('Material received successfully');
     },
+    onError: (err) => {
+      toast.error('Failed to save: ' + (err?.message || 'Unknown error'));
+    },
   });
 
   const updateMutation = useMutation({
@@ -322,6 +325,9 @@ export default function Receiving() {
       setEditingId(null);
       setForm(BLANK_FORM);
       toast.success('Receiving record updated');
+    },
+    onError: (err) => {
+      toast.error('Failed to update: ' + (err?.message || 'Unknown error'));
     },
   });
 
