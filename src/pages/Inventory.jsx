@@ -1,7 +1,7 @@
 import { useState } from 'react';
 // Net stock is computed dynamically from production records — no static deductions needed
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { db } from '@/api/supabaseClient';
+import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -275,13 +275,13 @@ function LowStockAlerts({ rawMaterials, thresholds }) {
     mutationFn: async ({ materialId, materialName, unit, threshold }) => {
       const existing = thresholds.find(t => t.raw_material_id === materialId);
       if (threshold === '' || parseFloat(threshold) <= 0) {
-        if (existing) await db.StockThreshold.delete(existing.id);
+        if (existing) await base44.entities.StockThreshold.delete(existing.id);
         return;
       }
       if (existing) {
-        await db.StockThreshold.update(existing.id, { threshold: parseFloat(threshold) });
+        await base44.entities.StockThreshold.update(existing.id, { threshold: parseFloat(threshold) });
       } else {
-        await db.StockThreshold.create({
+        await base44.entities.StockThreshold.create({
           raw_material_id: materialId,
           material_name: materialName,
           threshold: parseFloat(threshold),
@@ -421,37 +421,37 @@ export default function Inventory() {
 
   const { data: rawMaterials = [], isLoading: loadingRaw } = useQuery({
     queryKey: ['rawMaterials'],
-    queryFn: () => db.RawMaterial.list('name', 100),
+    queryFn: () => base44.entities.RawMaterial.list('name', 100),
   });
 
   const { data: distillationRuns = [] } = useQuery({
     queryKey: ['distillationRuns'],
-    queryFn: () => db.DistillationRun.list('date', 200),
+    queryFn: () => base44.entities.DistillationRun.list('date', 200),
   });
 
   const { data: bottlingRuns = [] } = useQuery({
     queryKey: ['bottlingRuns'],
-    queryFn: () => db.BottlingRun.list('date', 200),
+    queryFn: () => base44.entities.BottlingRun.list('date', 200),
   });
 
   const { data: dilutions = [] } = useQuery({
     queryKey: ['dilutions'],
-    queryFn: () => db.Dilution.list('date', 500),
+    queryFn: () => base44.entities.Dilution.list('date', 500),
   });
 
   const { data: finishedGoods = [], isLoading: loadingFinished } = useQuery({
     queryKey: ['finishedGoods'],
-    queryFn: () => db.FinishedGood.list('product_name', 100),
+    queryFn: () => base44.entities.FinishedGood.list('product_name', 100),
   });
 
   const { data: thresholds = [] } = useQuery({
     queryKey: ['stockThresholds'],
-    queryFn: () => db.StockThreshold.list('material_name', 200),
+    queryFn: () => base44.entities.StockThreshold.list('material_name', 200),
   });
 
   const { data: allDispatches = [], isLoading: loadingDispatches } = useQuery({
     queryKey: ['dispatches'],
-    queryFn: () => db.Dispatch.list('-dispatch_date', 2000),
+    queryFn: () => base44.entities.Dispatch.list('-dispatch_date', 2000),
   });
   const loading3PLDispatches = false;
 
