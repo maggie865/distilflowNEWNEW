@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const SUPABASE_URL = 'https://gvnlmxxgfinoufgtkgxf.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_mh3iR546ydljRasy2OEYdA_m6OUmN_t';
@@ -16,6 +16,8 @@ function entity(table) {
       if (error) throw error;
       return data;
     },
+
+    // Exact match filter (case-sensitive)
     async filter(filters = {}) {
       let q = supabase.from(table).select('*');
       Object.entries(filters).forEach(([col, val]) => { q = q.eq(col, val); });
@@ -23,21 +25,34 @@ function entity(table) {
       if (error) throw error;
       return data;
     },
+
+    // Case-insensitive filter — use this for name lookups
+    async filterIlike(filters = {}) {
+      let q = supabase.from(table).select('*');
+      Object.entries(filters).forEach(([col, val]) => { q = q.ilike(col, val); });
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
+
     async get(id) {
       const { data, error } = await supabase.from(table).select('*').eq('id', id).single();
       if (error) throw error;
       return data;
     },
+
     async create(payload) {
       const { data, error } = await supabase.from(table).insert(payload).select().single();
       if (error) throw error;
       return data;
     },
+
     async update(id, payload) {
       const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single();
       if (error) throw error;
       return data;
     },
+
     async delete(id) {
       const { error } = await supabase.from(table).delete().eq('id', id);
       if (error) throw error;
