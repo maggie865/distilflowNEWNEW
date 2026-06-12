@@ -461,11 +461,6 @@ export default function Inventory() {
     queryFn: () => base44.entities.Receiving.list('-date_received', 2000),
   });
 
-  const { data: recipes = [] } = useQuery({
-    queryKey: ['recipes'],
-    queryFn: () => base44.entities.Recipe.list('name', 50),
-  });
-
   const { data: allDispatches = [], isLoading: loadingDispatches } = useQuery({
     queryKey: ['dispatches'],
     queryFn: () => base44.entities.Dispatch.list('-dispatch_date', 2000),
@@ -508,52 +503,50 @@ export default function Inventory() {
     .filter(d => d.input_abv !== 79 && d.input_ethanol_volume)
     .reduce((s, d) => s + (d.input_ethanol_volume || 0), 0);
 
-  // ── Recipe-driven deduction calculations ────────────────────────────────────
+  // ── London Dry Gin recipe (per 300L at 55% ABV base) ────────────────────────
+  // Botanicals scale proportionally to actual input volume of each run
+  const LDG_BASE_VOLUME = 300;   // reference volume in litres
+  const LDG_BASE_ABV    = 55;    // reference ABV %
+  const LDG_BOTANICALS_PER_300L = {
+    'juniper':    7.0,      // kg per 300L
+    'coriander':  3.4,      // kg per 300L
+    'orris':      0.1874,   // kg per 300L
+    'licorice':   0.1874,   // kg per 300L
+    'lemongrass': 0.1874,   // kg per 300L
+    'hibiscus':   0.1874,   // kg per 300L
+  };
 
-  // Spirit recipes: build a map of { ingredientNameLower -> totalConsumed }
-  // by matching each distillation run's product_name to a spirit recipe
-  const spiritRecipes = recipes.filter(r => r.recipe_type === 'spirit');
-  const packagingRecipes = recipes.filter(r => r.recipe_type === 'packaging');
-
-  // For each spirit recipe, count how many completed distillation runs used it
-  const botanicalConsumedByName = {};
-  spiritRecipes.forEach(recipe => {
-    if (!recipe.ingredients?.length) return;
-    const runsForRecipe = distillationRuns.filter(
-      r => r.product_name?.toLowerCase().trim() === recipe.name?.toLowerCase().trim() && r.input_volume
-    ).length;
-    if (runsForRecipe === 0) return;
-    recipe.ingredients.forEach(ing => {
-      const key = (ing.name || '').toLowerCase().trim();
-      if (!key) return;
-      botanicalConsumedByName[key] = (botanicalConsumedByName[key] || 0) + (ing.quantity || 0) * runsForRecipe;
+  // For each completed LDG distillation run, scale botanical consumption by
+  // (actual_input_lals / base_lals) to handle runs that aren't exactly 300L at 55%
+  const LDG_BASE_LALS = LDG_BASE_VOLUME * LDG_BASE_ABV / 100; // 165 LALs
+  const botanicalConsumedByKey = {};
+  distillationRuns
+    .filter(r => (r.product_name || '').toLowerCase().includes('london dry gin') || (r.product_name || '').toLowerCase().includes('ldg'))
+    .filter(r => r.input_volume)
+    .forEach(run => {
+      const runLals = run.input_lals || (run.input_volume * (run.input_abv || LDG_BASE_ABV) / 100);
+      const scaleFactor = runLals / LDG_BASE_LALS;
+      Object.entries(LDG_BOTANICALS_PER_300L).forEach(([key, qty]) => {
+        botanicalConsumedByKey[key] = (botanicalConsumedByKey[key] || 0) + qty * scaleFactor;
+      });
     });
-  });
 
-  // For packaging recipes: build a map of { packagingNameLower -> totalConsumed }
-  // by matching each bottling run's product_name to a packaging recipe
-  const packagingConsumedByName = {};
-  packagingRecipes.forEach(recipe => {
-    if (!recipe.packaging?.length) return;
-    const bottlesForRecipe = bottlingRuns
-      .filter(r => r.product_name?.toLowerCase().trim() === recipe.name?.toLowerCase().trim())
-      .reduce((s, r) => s + (r.bottles_produced || 0), 0);
-    if (bottlesForRecipe === 0) return;
-    recipe.packaging.forEach(pkg => {
-      const key = (pkg.name || '').toLowerCase().trim();
-      if (!key) return;
-      const qty = (pkg.quantity || 1) * bottlesForRecipe;
-      packagingConsumedByName[key] = (packagingConsumedByName[key] || 0) + qty;
-    });
-  });
-
-  // Total bottles produced (still needed for finished goods display)
+  // ── Packaging recipes (1 of each component per bottle) ───────────────────
   const totalBottlesBottled700 = bottlingRuns
     .filter(r => r.bottle_size_ml === 700)
     .reduce((s, r) => s + (r.bottles_produced || 0), 0);
   const totalBottlesBottled200 = bottlingRuns
     .filter(r => r.bottle_size_ml === 200)
     .reduce((s, r) => s + (r.bottles_produced || 0), 0);
+
+  // Keywords that identify 700ml packaging components (1 per bottle)
+  const PACKAGING_700ML_KEYWORDS = [
+    '700ml', '700 ml',
+  ];
+  // Keywords that identify 200ml packaging components (1 per bottle)
+  const PACKAGING_200ML_KEYWORDS = [
+    '200ml', '200 ml',
+  ];
 
   // Build received quantities per material name from Receiving records
   const receivedByName = allReceivings.reduce((acc, r) => {
@@ -615,24 +608,26 @@ export default function Inventory() {
       netQty = Math.max(0, netQty - consumed);
     }
 
-    // Deduct botanicals based on actual recipe × distillation run count
+    // Deduct botanicals using scaled recipe consumption across all runs
     if (m.type === 'botanical') {
-      // Try exact match first, then partial match
-      const exactKey = Object.keys(botanicalConsumedByName).find(k => k === nameLower);
-      const partialKey = exactKey || Object.keys(botanicalConsumedByName).find(k => nameLower.includes(k) || k.includes(nameLower));
-      if (partialKey) {
-        const consumed = botanicalConsumedByName[partialKey] || 0;
+      const matchedKey = Object.keys(botanicalConsumedByKey).find(k => nameLower.includes(k));
+      if (matchedKey) {
+        const consumed = botanicalConsumedByKey[matchedKey];
         netQty = Math.max(0, netQty - consumed);
       }
     }
 
-    // Deduct packaging consumed in bottling runs using actual packaging recipes
+    // Deduct packaging — 1 unit per bottle produced for matching bottle size
     if (m.type === 'packaging') {
-      // Try exact match first, then partial
-      const exactKey = Object.keys(packagingConsumedByName).find(k => k === nameLower);
-      const partialKey = exactKey || Object.keys(packagingConsumedByName).find(k => nameLower.includes(k) || k.includes(nameLower));
-      if (partialKey) {
-        netQty = Math.max(0, netQty - (packagingConsumedByName[partialKey] || 0));
+      if (nameLower.includes('box') && nameLower.includes('6')) {
+        // Cartons: 1 per 6 bottles
+        const bottles700 = PACKAGING_700ML_KEYWORDS.some(k => nameLower.includes(k)) ? totalBottlesBottled700 : 0;
+        const bottles200 = PACKAGING_200ML_KEYWORDS.some(k => nameLower.includes(k)) ? totalBottlesBottled200 : 0;
+        netQty = Math.max(0, netQty - Math.floor((bottles700 + bottles200) / 6));
+      } else if (PACKAGING_700ML_KEYWORDS.some(k => nameLower.includes(k))) {
+        netQty = Math.max(0, netQty - totalBottlesBottled700);
+      } else if (PACKAGING_200ML_KEYWORDS.some(k => nameLower.includes(k))) {
+        netQty = Math.max(0, netQty - totalBottlesBottled200);
       }
     }
 
