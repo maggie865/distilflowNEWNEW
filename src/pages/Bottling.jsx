@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { db } from '@/api/supabaseClient';
+import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,7 +27,7 @@ export default function Bottling() {
 
   const { data: runs = [], isLoading } = useQuery({
     queryKey: ['bottlingRuns'],
-    queryFn: () => db.BottlingRun.list('-date', 50),
+    queryFn: () => base44.entities.BottlingRun.list('-date', 50),
   });
 
   const inputLALs = form.input_volume && form.input_abv
@@ -47,7 +47,7 @@ export default function Bottling() {
       const totalLals = lalPerBottle * bottlesProduced;
 
       const lalsPerBottleCalc = bottlesProduced > 0 && inputLALs > 0 ? inputLALs / bottlesProduced : 0;
-      await db.BottlingRun.create({
+      await base44.entities.BottlingRun.create({
         ...data,
         input_volume: parseFloat(data.input_volume) || 0,
         input_abv: parseFloat(data.input_abv) || 0,
@@ -59,18 +59,18 @@ export default function Bottling() {
 
       // Create/update finished goods
       if (data.status === 'completed' && bottlesProduced > 0) {
-        const existing = await db.FinishedGood.filter({
+        const existing = await base44.entities.FinishedGood.filter({
           product_name: data.product_name,
           batch_number: data.batch_number,
         });
         if (existing.length > 0) {
           const fg = existing[0];
-          await db.FinishedGood.update(fg.id, {
+          await base44.entities.FinishedGood.update(fg.id, {
             quantity_bottles: (fg.quantity_bottles || 0) + bottlesProduced,
             total_lals: (fg.total_lals || 0) + totalLals,
           });
         } else {
-          await db.FinishedGood.create({
+          await base44.entities.FinishedGood.create({
             product_name: data.product_name,
             batch_number: data.batch_number,
             bottle_size_ml: parseFloat(data.bottle_size_ml),
