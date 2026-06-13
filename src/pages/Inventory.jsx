@@ -433,17 +433,17 @@ export default function Inventory() {
 
   const { data: distillationRuns = [] } = useQuery({
     queryKey: ['distillationRuns'],
-    queryFn: () => base44.entities.DistillationRun.list('date', 200),
+    queryFn: () => base44.entities.DistillationRun.list('-date', 200),
   });
 
   const { data: bottlingRuns = [] } = useQuery({
     queryKey: ['bottlingRuns'],
-    queryFn: () => base44.entities.BottlingRun.list('date', 200),
+    queryFn: () => base44.entities.BottlingRun.list('-date', 200),
   });
 
   const { data: dilutions = [] } = useQuery({
     queryKey: ['dilutions'],
-    queryFn: () => base44.entities.Dilution.list('date', 500),
+    queryFn: () => base44.entities.Dilution.list('-date', 500),
   });
 
   const { data: finishedGoods = [], isLoading: loadingFinished } = useQuery({
