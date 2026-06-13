@@ -64,7 +64,7 @@ export default function Warehouse() {
 
   const { data: finishedGoods = [] } = useQuery({
     queryKey: ['finishedGoods'],
-    queryFn: () => db.FinishedGood.list('-created_date', 200),
+    queryFn: () => db.FinishedGood.list('-created_at', 200),
   });
 
   const { data: warehouseStock = [] } = useQuery({
