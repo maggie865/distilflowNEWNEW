@@ -40,7 +40,10 @@ const navGroups = [
 
 export default function MobileNav() {
   const location = useLocation();
+  const [open, setOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState({});
+
+  const closeNav = () => setOpen(false);
 
   const toggleGroup = (groupName) => {
     setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
@@ -51,6 +54,7 @@ export default function MobileNav() {
       <div className="flex justify-between items-center px-4 py-3">
         <Link
           to="/"
+          onClick={closeNav}
           className={cn(
             "flex flex-col items-center py-2 px-2 text-[10px] font-medium transition-colors",
             location.pathname === '/' ? "text-primary" : "text-muted-foreground"
@@ -60,7 +64,7 @@ export default function MobileNav() {
           Home
         </Link>
 
-        <Sheet>
+        <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
             <button className="flex flex-col items-center py-2 px-2 text-[10px] font-medium text-muted-foreground hover:text-primary transition-colors">
               <Menu className="w-5 h-5 mb-0.5" />
@@ -82,6 +86,7 @@ export default function MobileNav() {
                         <Link
                           key={item.path}
                           to={item.path}
+                          onClick={closeNav}
                           className={cn(
                             "flex items-center gap-3 px-6 py-2 rounded-md transition-colors text-sm",
                             isActive ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
@@ -98,6 +103,7 @@ export default function MobileNav() {
               <div className="border-t pt-2 mt-4">
                 <Link
                   to="/reports"
+                  onClick={closeNav}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm",
                     location.pathname === '/reports' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
@@ -108,6 +114,7 @@ export default function MobileNav() {
                 </Link>
                 <Link
                   to="/settings"
+                  onClick={closeNav}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm",
                     location.pathname === '/settings' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
