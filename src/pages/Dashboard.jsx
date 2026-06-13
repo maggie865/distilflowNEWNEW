@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { db } from '@/api/supabaseClient';
+import { base44 } from '@/api/base44Client';
 import { Droplets, Flame, Wine, Warehouse, TrendingUp, AlertTriangle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { format } from 'date-fns';
@@ -13,27 +13,27 @@ export default function Dashboard() {
 
   const { data: rawMaterials = [] } = useQuery({
     queryKey: ['rawMaterials'],
-    queryFn: () => db.RawMaterial.list('-created_at', 100),
+    queryFn: () => base44.entities.RawMaterial.list('-created_at', 100),
   });
   const { data: dilutions = [] } = useQuery({
     queryKey: ['dilutions'],
-    queryFn: () => db.Dilution.list('-date', 5),
+    queryFn: () => base44.entities.Dilution.list('-date', 5),
   });
   const { data: distillations = [] } = useQuery({
     queryKey: ['distillations'],
-    queryFn: () => db.DistillationRun.list('-date', 5),
+    queryFn: () => base44.entities.DistillationRun.list('-date', 5),
   });
   const { data: bottlings = [] } = useQuery({
     queryKey: ['bottlings'],
-    queryFn: () => db.BottlingRun.list('-date', 5),
+    queryFn: () => base44.entities.BottlingRun.list('-date', 5),
   });
   const { data: finishedGoods = [] } = useQuery({
     queryKey: ['finishedGoods'],
-    queryFn: () => db.FinishedGood.list('-created_at', 100),
+    queryFn: () => base44.entities.FinishedGood.list('-created_at', 100),
   });
   const { data: thresholds = [] } = useQuery({
     queryKey: ['stockThresholds'],
-    queryFn: () => db.StockThreshold.list('material_name', 200),
+    queryFn: () => base44.entities.StockThreshold.list('material_name', 200),
   });
 
   const totalEthanolLitres = rawMaterials
