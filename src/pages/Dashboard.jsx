@@ -126,7 +126,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
-          title="Materials Received"
+          title="PURCHASED"
           value={uniqueMaterials}
           subtitle="Unique items in stock"
           icon={Warehouse}
