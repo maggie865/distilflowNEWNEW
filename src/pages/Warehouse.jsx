@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ArrowRightLeft, Truck, PackageCheck, Trash2, MapPin, Users, Search } from 'lucide-react';
+import { ArrowRightLeft, Truck, PackageCheck, Trash2, MapPin, Users, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -61,6 +61,8 @@ export default function Warehouse() {
   const [calcingDistance, setCalcingDistance] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [dispatchPage, setDispatchPage] = useState(1);
+  const DISPATCH_PAGE_SIZE = 25;
 
   const queryClient = useQueryClient();
 
@@ -81,7 +83,7 @@ export default function Warehouse() {
 
   const { data: allDispatches = [] } = useQuery({
     queryKey: ['dispatches'],
-    queryFn: () => db.Dispatch.list('-dispatch_date', 1000),
+    queryFn: () => db.Dispatch.list('-dispatch_date', 2000),
   });
 
   // 3PL dispatches: records with [Auckland 3PL] in notes, or dispatched_from set to Auckland 3PL
@@ -376,9 +378,9 @@ export default function Warehouse() {
         <div className="flex flex-col sm:flex-row gap-2 mb-4">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search customer, product, batch…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 text-sm" />
+            <Input placeholder="Search customer, product, batch…" value={search} onChange={e => { setSearch(e.target.value); setDispatchPage(1); }} className="pl-8 text-sm" />
           </div>
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <Select value={filterStatus} onValueChange={v => { setFilterStatus(v); setDispatchPage(1); }}>
             <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All statuses" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Statuses</SelectItem>
@@ -409,23 +411,49 @@ export default function Warehouse() {
                     No warehouse dispatches recorded yet
                   </TableCell>
                 </TableRow>
-              ) : warehouseDispatches.filter(d => {
-                const s = search.toLowerCase();
-                const matchSearch = !s || d.customer_name?.toLowerCase().includes(s) || d.product_name?.toLowerCase().includes(s) || d.batch_number?.toLowerCase().includes(s);
-                const matchStatus = filterStatus === 'all' || d.status === filterStatus;
-                return matchSearch && matchStatus;
-              }).map((d, i) => (
-                <TableRow key={d.id || d._row_index || i}>
-                  <TableCell>{d.dispatch_date ? format(new Date(d.dispatch_date), 'dd MMM yyyy') : '—'}</TableCell>
-                  <TableCell className="font-semibold">{d.customer_name}</TableCell>
-                  <TableCell>{d.product_name}</TableCell>
-                  <TableCell className="font-mono text-xs">{d.batch_number}</TableCell>
-                  <TableCell className="font-semibold">{d.quantity_bottles}</TableCell>
-                  <TableCell className="capitalize">{d.transport_method || '—'}</TableCell>
-                  <TableCell className="font-semibold text-green-600">{d.co2e_kg ? `${parseFloat(d.co2e_kg).toFixed(3)} kg` : '—'}</TableCell>
-                  <TableCell><StatusBadge status={d.status} /></TableCell>
-                </TableRow>
-              ))}
+              ) : (() => {
+                const filtered = warehouseDispatches.filter(d => {
+                  const s = search.toLowerCase();
+                  const matchSearch = !s || d.customer_name?.toLowerCase().includes(s) || d.product_name?.toLowerCase().includes(s) || d.batch_number?.toLowerCase().includes(s);
+                  const matchStatus = filterStatus === 'all' || d.status === filterStatus;
+                  return matchSearch && matchStatus;
+                });
+                const totalPages = Math.ceil(filtered.length / DISPATCH_PAGE_SIZE);
+                const paginated = filtered.slice((dispatchPage - 1) * DISPATCH_PAGE_SIZE, dispatchPage * DISPATCH_PAGE_SIZE);
+                return (
+                  <>
+                    {paginated.map((d, i) => (
+                      <TableRow key={d.id || i}>
+                        <TableCell>{d.dispatch_date ? format(new Date(d.dispatch_date), 'dd MMM yyyy') : '—'}</TableCell>
+                        <TableCell className="font-semibold">{d.customer_name}</TableCell>
+                        <TableCell>{d.product_name}</TableCell>
+                        <TableCell className="font-mono text-xs">{d.batch_number}</TableCell>
+                        <TableCell className="font-semibold">{d.quantity_bottles}</TableCell>
+                        <TableCell className="capitalize">{d.transport_method || '—'}</TableCell>
+                        <TableCell className="font-semibold text-green-600">{d.co2e_kg ? `${parseFloat(d.co2e_kg).toFixed(3)} kg` : '—'}</TableCell>
+                        <TableCell><StatusBadge status={d.status} /></TableCell>
+                      </TableRow>
+                    ))}
+                    {totalPages > 1 && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="py-3">
+                          <div className="flex items-center justify-between text-sm text-muted-foreground">
+                            <span>{filtered.length} records — page {dispatchPage} of {totalPages}</span>
+                            <div className="flex items-center gap-1">
+                              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setDispatchPage(p => Math.max(1, p - 1))} disabled={dispatchPage === 1}>
+                                <ChevronLeft className="w-4 h-4" />
+                              </Button>
+                              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setDispatchPage(p => Math.min(totalPages, p + 1))} disabled={dispatchPage === totalPages}>
+                                <ChevronRight className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
+                );
+              })()}
             </TableBody>
           </Table>
         </div>
