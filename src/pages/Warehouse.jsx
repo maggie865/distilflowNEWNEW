@@ -412,12 +412,14 @@ export default function Warehouse() {
                   </TableCell>
                 </TableRow>
               ) : (() => {
-                const filtered = warehouseDispatches.filter(d => {
-                  const s = search.toLowerCase();
-                  const matchSearch = !s || d.customer_name?.toLowerCase().includes(s) || d.product_name?.toLowerCase().includes(s) || d.batch_number?.toLowerCase().includes(s);
-                  const matchStatus = filterStatus === 'all' || d.status === filterStatus;
-                  return matchSearch && matchStatus;
-                });
+                const filtered = warehouseDispatches
+                  .filter(d => {
+                    const s = search.toLowerCase();
+                    const matchSearch = !s || d.customer_name?.toLowerCase().includes(s) || d.product_name?.toLowerCase().includes(s) || d.batch_number?.toLowerCase().includes(s);
+                    const matchStatus = filterStatus === 'all' || d.status === filterStatus;
+                    return matchSearch && matchStatus;
+                  })
+                  .sort((a, b) => new Date(b.dispatch_date) - new Date(a.dispatch_date));
                 const totalPages = Math.ceil(filtered.length / DISPATCH_PAGE_SIZE);
                 const paginated = filtered.slice((dispatchPage - 1) * DISPATCH_PAGE_SIZE, dispatchPage * DISPATCH_PAGE_SIZE);
                 return (
