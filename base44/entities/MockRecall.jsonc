@@ -1,0 +1,18 @@
+{
+  "name": "MockRecall",
+  "fields": [
+    { "name": "recall_number", "type": "string" },
+    { "name": "date_conducted", "type": "string" },
+    { "name": "conducted_by", "type": "string" },
+    { "name": "scenario", "type": "string" },
+    { "name": "batch_numbers", "type": "string" },
+    { "name": "time_to_complete_mins", "type": "number" },
+    { "name": "distribution_list_accurate", "type": "boolean" },
+    { "name": "stock_located", "type": "boolean" },
+    { "name": "mpi_contact_identified", "type": "boolean" },
+    { "name": "outcome", "type": "string" },
+    { "name": "corrective_actions", "type": "string" },
+    { "name": "next_mock_due", "type": "string" },
+    { "name": "notes", "type": "string" }
+  ]
+}
