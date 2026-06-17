@@ -81,6 +81,15 @@ export default function Distillation() {
     queryFn: () => base44.entities.RawMaterial.filter({ type: 'ethanol' }),
   });
 
+  // Botanical receiving records — used to resolve FIFO lot codes by date_received
+  const { data: botanicalReceivings = [] } = useQuery({
+    queryKey: ['receivings-botanical'],
+    queryFn: async () => {
+      const all = await base44.entities.Receiving.list('-date_received', 2000);
+      return all.filter(r => (r.material_type || '').toLowerCase().startsWith('botanical'));
+    },
+  });
+
   const { data: allTanks = [] } = useQuery({
     queryKey: ['storageTanks'],
     queryFn: () => base44.entities.StorageTank.list('name', 50),
@@ -157,9 +166,29 @@ export default function Distillation() {
     const ratio = actualVolume / recipe.base_ethanol_volume;
     setScaledIngredients(recipe.ingredients.map(ing => {
       const needed = parseFloat((ing.quantity * ratio).toFixed(2));
-      const lots = rawMaterials
-        .filter(m => m.name?.toLowerCase() === ing.name?.toLowerCase())
+      const ingNameLower = (ing.name || '').toLowerCase();
+
+      // Build FIFO lot list from Receiving records (oldest date_received first)
+      // Then fall back to RawMaterial records sorted by created_at
+      const receivingLots = botanicalReceivings
+        .filter(r => (r.material_name || '').toLowerCase() === ingNameLower && (r.quantity || 0) > 0)
+        .sort((a, b) => new Date(a.date_received) - new Date(b.date_received))
+        .map(r => ({
+          id: 'recv-' + r.id,
+          _receivingId: r.id,
+          batch_number: r.batch_number || '',
+          quantity: r.quantity || 0,
+          date_received: r.date_received,
+        }));
+
+      // Also check RawMaterial entity lots (manually entered stock)
+      const rawLots = rawMaterials
+        .filter(m => (m.name || '').toLowerCase() === ingNameLower && (m.quantity || 0) > 0)
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      // Use Receiving-based lots if available (preferred — proper date_received FIFO)
+      // otherwise fall back to RawMaterial lots
+      const lots = receivingLots.length > 0 ? receivingLots : rawLots;
       const totalStock = lots.reduce((sum, lot) => sum + (lot.quantity || 0), 0);
       return { ...ing, scaledQuantity: needed, totalStock, lots, sufficient: totalStock >= needed };
     }));
@@ -288,7 +317,17 @@ export default function Distillation() {
           if (remaining <= 0) break;
           const deduct = Math.min(lot.quantity || 0, remaining);
           if (deduct > 0) {
-            await base44.entities.RawMaterial.update(lot.id, { quantity: parseFloat((lot.quantity - deduct).toFixed(4)) });
+            if (lot._receivingId) {
+              // Lot sourced from Receiving — deduct from Receiving record quantity
+              await base44.entities.Receiving.update(lot._receivingId, {
+                quantity: parseFloat(Math.max(0, (lot.quantity - deduct)).toFixed(4)),
+              });
+            } else {
+              // Lot sourced from RawMaterial entity
+              await base44.entities.RawMaterial.update(lot.id, {
+                quantity: parseFloat((lot.quantity - deduct).toFixed(4)),
+              });
+            }
             const lotLabel = lot.batch_number ? `${ing.name} (${lot.batch_number})` : ing.name;
             usedBotanicalLots.add(lotLabel);
           }
