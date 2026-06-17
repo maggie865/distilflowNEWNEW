@@ -239,7 +239,7 @@ export default function Reports() {
     const monthDistillDumped = distillationRuns.filter(r => r.status === 'completed' && r.dumped_lals && inM(r.date)).reduce((acc, r) => acc + (r.dumped_lals || 0), 0);
     return {
       month: format(s, 'MMM yy'),
-      received: receiving.filter(r => inM(r.date_received)).reduce((acc, r) => acc + (r.lals || r.quantity || 0), 0),
+      received: receiving.filter(r => inM(r.date_received)).reduce((acc, r) => acc + (r.lals || 0), 0),
       dispatched: dispatches.filter(d => inM(d.dispatch_date)).reduce((acc, d) => acc + (d.quantity_bottles || 0), 0),
       wasted: parseFloat((monthWastageData.reduce((acc, w) => acc + (w.lals || 0), 0) + monthDistillDumped).toFixed(3)),
     };
