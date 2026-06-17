@@ -1,0 +1,14 @@
+{
+  "name": "MaintenanceRecord",
+  "fields": [
+    { "name": "date", "type": "string" },
+    { "name": "equipment_name", "type": "string" },
+    { "name": "maintenance_type", "type": "string", "enum": ["scheduled","repair","calibration","cleaning","inspection"] },
+    { "name": "description", "type": "string" },
+    { "name": "performed_by", "type": "string" },
+    { "name": "next_due_date", "type": "string" },
+    { "name": "status", "type": "string", "enum": ["completed","pending","overdue"] },
+    { "name": "cost", "type": "number" },
+    { "name": "notes", "type": "string" }
+  ]
+}
