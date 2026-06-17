@@ -1,0 +1,16 @@
+{
+  "name": "TemperatureLog",
+  "fields": [
+    { "name": "date", "type": "string" },
+    { "name": "time", "type": "string" },
+    { "name": "unit_name", "type": "string" },
+    { "name": "unit_type", "type": "string", "enum": ["refrigerator","freezer","cool_room","ambient"] },
+    { "name": "temperature_c", "type": "number" },
+    { "name": "min_safe_c", "type": "number" },
+    { "name": "max_safe_c", "type": "number" },
+    { "name": "in_range", "type": "boolean" },
+    { "name": "recorded_by", "type": "string" },
+    { "name": "corrective_action", "type": "string" },
+    { "name": "notes", "type": "string" }
+  ]
+}
