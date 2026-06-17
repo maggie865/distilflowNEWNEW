@@ -57,7 +57,7 @@ function LotTag({ icon: Icon, color, label, value }) {
   );
 }
 
-function BatchCard({ batchNumber, distillations, bottlings, subBatches, dispatches = [] }) {
+function BatchCard({ batchNumber, distillations, bottlings, subBatches, dispatches = [], resolveEthanolBatchCode, resolveReceivingBatchCode }) {
   const [expanded, setExpanded] = useState(false);
   const [showCustomers, setShowCustomers] = useState(false);
 
@@ -72,14 +72,22 @@ function BatchCard({ batchNumber, distillations, bottlings, subBatches, dispatch
   const totalOutLALs = distillations.reduce((s, d) => s + (d.output_lals || 0), 0);
   const totalBottles = bottlings.reduce((s, b) => s + (b.bottles_produced || 0), 0);
 
-  // Collect all unique lot codes across sub-batches for the summary header
-  const allEthanolLots = [...new Set([
+  // Collect all unique lot codes across sub-batches for the summary header, resolved to receiving batch codes
+  const earliestRunDate = [...distillations].sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0]?.date;
+  const rawEthanolLots = [...new Set([
     ...distillations.map(d => d.ethanol_lot_code).filter(Boolean),
     ...subBatches.map(s => s.ethanol_lot).filter(Boolean),
   ])];
-  const allBotanicalLots = [...new Set(
-    subBatches.flatMap(s => s.botanical_lots ? s.botanical_lots.split(',').map(l => l.trim()).filter(Boolean) : [])
+  const allEthanolLots = resolveEthanolBatchCode
+    ? [...new Set(rawEthanolLots.map(lot => resolveEthanolBatchCode(lot, earliestRunDate)))]
+    : rawEthanolLots;
+
+  const rawBotanicalNames = [...new Set(
+    subBatches.flatMap(s => s.botanical_lots ? s.botanical_lots.split(/[,/]/).map(l => l.trim()).filter(Boolean) : [])
   )];
+  const allBotanicalLots = resolveReceivingBatchCode
+    ? [...new Set(rawBotanicalNames.map(name => resolveReceivingBatchCode(name, earliestRunDate) || name))]
+    : rawBotanicalNames;
   const products = [...new Set([
     ...distillations.map(d => d.product_name),
     ...bottlings.map(b => b.product_name),
@@ -159,9 +167,18 @@ function BatchCard({ batchNumber, distillations, bottlings, subBatches, dispatch
             // Match sub-batch: prefer by sub_batch_code, then by index order
             const sub = subBatches.find(s => s.sub_batch_code === d.sub_batch_code)
               || (subBatches.length > i ? subBatches[i] : subBatches[0]);
-            const ethanolLot = d.ethanol_lot_code || sub?.ethanol_lot;
-            // Only use sub.botanical_lots (not maceration_notes which is free text)
-            const botanicalLots = sub?.botanical_lots;
+            const rawEthanolLot = d.ethanol_lot_code || sub?.ethanol_lot;
+            const ethanolLot = resolveEthanolBatchCode ? resolveEthanolBatchCode(rawEthanolLot, d.date) : rawEthanolLot;
+            // Resolve each botanical ingredient name to its receiving batch code
+            const botanicalNames = sub?.botanical_lots
+              ? sub.botanical_lots.split(/[,/]/).map(l => l.trim()).filter(Boolean)
+              : [];
+            const resolvedBotanicals = resolveReceivingBatchCode
+              ? botanicalNames.map(name => ({
+                  name,
+                  code: resolveReceivingBatchCode(name, d.date) || name,
+                }))
+              : botanicalNames.map(name => ({ name, code: name }));
 
             return (
               <StepRow
@@ -182,23 +199,25 @@ function BatchCard({ batchNumber, distillations, bottlings, subBatches, dispatch
                   label="LAL Yield"
                   value={d.input_lals > 0 ? `${((d.output_lals / d.input_lals) * 100).toFixed(1)}%` : null}
                 />
-                {(ethanolLot || botanicalLots) && (
+                {(ethanolLot || resolvedBotanicals.length > 0) && (
                   <div className="col-span-2 sm:col-span-4 pt-1 border-t border-border mt-1">
                     <p className="text-xs text-muted-foreground mb-1.5 font-medium">Lot Traceability</p>
                     <div className="flex flex-wrap gap-2">
-                      <LotTag
-                        icon={FlaskConical}
-                        color="bg-blue-50 border-blue-200 text-blue-700"
-                        label="Ethanol"
-                        value={ethanolLot}
-                      />
-                      {botanicalLots && botanicalLots.split(',').map(lot => lot.trim()).filter(Boolean).map((lot, idx) => (
+                      {ethanolLot && (
+                        <LotTag
+                          icon={FlaskConical}
+                          color="bg-blue-50 border-blue-200 text-blue-700"
+                          label="Ethanol"
+                          value={ethanolLot}
+                        />
+                      )}
+                      {resolvedBotanicals.map((bot, idx) => (
                         <LotTag
                           key={idx}
                           icon={Leaf}
                           color="bg-green-50 border-green-200 text-green-700"
-                          label="Botanical"
-                          value={lot}
+                          label={bot.name}
+                          value={bot.code}
                         />
                       ))}
                     </div>
@@ -329,6 +348,50 @@ export default function BatchTracker() {
     queryFn: () => base44.entities.Dispatch.list('-dispatch_date', 2000),
   });
 
+  const { data: receiving = [] } = useQuery({
+    queryKey: ['receiving'],
+    queryFn: () => base44.entities.Receiving.list('-date_received', 500),
+  });
+
+  // Build lookup: given a material name and a run date, find the most recent
+  // receiving record for that material on or before that date.
+  function resolveReceivingBatchCode(materialName, runDate) {
+    if (!materialName || !receiving.length) return null;
+    const needle = materialName.toLowerCase().trim();
+    const runDateMs = runDate ? new Date(runDate).getTime() : Infinity;
+    const matches = receiving.filter(r => {
+      const name = (r.material_name || '').toLowerCase().trim();
+      // fuzzy: starts-with or contains
+      return name.includes(needle) || needle.includes(name.split(' ')[0]);
+    }).filter(r => r.date_received && new Date(r.date_received).getTime() <= runDateMs);
+    if (!matches.length) return null;
+    // Return the most recent one
+    matches.sort((a, b) => new Date(b.date_received) - new Date(a.date_received));
+    return matches[0].batch_number || null;
+  }
+
+  function resolveEthanolBatchCode(ethanolLotOrName, runDate) {
+    if (!ethanolLotOrName || !receiving.length) return ethanolLotOrName;
+    const runDateMs = runDate ? new Date(runDate).getTime() : Infinity;
+    // Try exact match on batch_number first
+    const exactMatch = receiving.find(r =>
+      r.material_type === 'Ethanol' &&
+      r.batch_number === ethanolLotOrName &&
+      r.date_received && new Date(r.date_received).getTime() <= runDateMs
+    );
+    if (exactMatch) return exactMatch.batch_number;
+    // Try matching by material name
+    const needle = ethanolLotOrName.toLowerCase();
+    const nameMatches = receiving.filter(r =>
+      r.material_type === 'Ethanol' &&
+      ((r.material_name || '').toLowerCase().includes(needle) || needle.includes((r.material_name || '').toLowerCase().split(' ')[0])) &&
+      r.date_received && new Date(r.date_received).getTime() <= runDateMs
+    );
+    if (!nameMatches.length) return ethanolLotOrName;
+    nameMatches.sort((a, b) => new Date(b.date_received) - new Date(a.date_received));
+    return nameMatches[0].batch_number || ethanolLotOrName;
+  }
+
   const isLoading = loadingD || loadingB;
 
   // Group everything by batch_number
@@ -394,6 +457,8 @@ export default function BatchTracker() {
               bottlings={bs}
               subBatches={subBatches.filter(s => s.master_batch_code === batchNumber)}
               dispatches={dispatches}
+              resolveEthanolBatchCode={resolveEthanolBatchCode}
+              resolveReceivingBatchCode={resolveReceivingBatchCode}
             />
           ))}
         </div>
