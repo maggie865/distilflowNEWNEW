@@ -86,7 +86,10 @@ export default function Dilutions() {
 
   const { data: receivings = [] } = useQuery({
     queryKey: ['receivings-ethanol'],
-    queryFn: () => db.Receiving.filter({ material_type: 'ethanol' }),
+    queryFn: async () => {
+      const all = await db.Receiving.list('-date_received', 2000);
+      return all.filter(r => (r.material_type || '').toLowerCase() === 'ethanol');
+    },
   });
 
   const { data: tanks = [] } = useQuery({
