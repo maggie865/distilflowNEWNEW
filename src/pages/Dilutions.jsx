@@ -233,7 +233,6 @@ export default function Dilutions() {
         status: finalStatus,
         notes: `[Heads Dilution] Source tank: ${hSourceTank?.name || ''}${isTransfer ? `. Transferred to Tank ${destTank?.name}` : ' (saved in-place)'}. ${data.notes}`,
       });
-      return created;
 
       if (hSourceTank && hWater > 0) {
         await db.TankMovement.create({
