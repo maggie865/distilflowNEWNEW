@@ -70,14 +70,14 @@ export default function Receiving() {
 
   const { refetch } = useQuery({
     queryKey: ['receivings'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 50),
+    queryFn: () => base44.entities.Receiving.list('-date_received', 500),
   });
 
   const isRefreshing = usePullToRefresh(() => refetch());
 
   const receivingsQuery = useQuery({
     queryKey: ['receivings'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 50),
+    queryFn: () => base44.entities.Receiving.list('-date_received', 500),
   });
 
   const suppliersQuery = useQuery({
