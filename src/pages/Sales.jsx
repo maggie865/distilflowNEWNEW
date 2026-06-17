@@ -267,15 +267,17 @@ export default function Sales() {
     },
   });
 
-  const filtered = dispatches.filter(d => {
-    if (!search) return true;
-    const s = search.toLowerCase();
-    return (
-      d.customer_name?.toLowerCase().includes(s) ||
-      d.product_name?.toLowerCase().includes(s) ||
-      d.batch_number?.toLowerCase().includes(s)
-    );
-  });
+  const filtered = dispatches
+    .filter(d => {
+      if (!search) return true;
+      const s = search.toLowerCase();
+      return (
+        d.customer_name?.toLowerCase().includes(s) ||
+        d.product_name?.toLowerCase().includes(s) ||
+        d.batch_number?.toLowerCase().includes(s)
+      );
+    })
+    .sort((a, b) => new Date(b.dispatch_date) - new Date(a.dispatch_date));
 
   // Reset to first page when searching
   const handleSearch = (val) => {
