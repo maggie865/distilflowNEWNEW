@@ -92,6 +92,7 @@ function BatchCard({ batchNumber, distillations, bottlings, subBatches, dispatch
     .at(-1);
 
   return (
+    <>
     <Card className="overflow-hidden">
       <button
         onClick={() => setExpanded(e => !e)}
@@ -301,6 +302,7 @@ function BatchCard({ batchNumber, distillations, bottlings, subBatches, dispatch
         </div>
       </div>
     )}
+    </>
   );
 }
 
