@@ -162,7 +162,6 @@ export default function PestControl() {
               style={{ height: '400px', background: mapImageUrl ? 'transparent' : 'var(--color-background-secondary)' }}
               onClick={handleMapClick}
             >
-              {/* Floor plan image */}
               {mapImageUrl ? (
                 <img
                   src={mapImageUrl}
@@ -171,11 +170,10 @@ export default function PestControl() {
                 />
               ) : (
                 <>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/40 text-sm pointer-events-none gap-2">
-                    <p>{traps.length === 0 ? 'Add traps and drag them to their locations' : 'Your facility floor plan'}</p>
-                    <p className="text-xs">Upload a floor plan in Settings → Pest Map</p>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 pointer-events-none">
+                    <p className="text-sm text-muted-foreground/40">{traps.length === 0 ? 'Add traps and drag them to their locations' : 'Blank canvas'}</p>
+                    <p className="text-xs text-muted-foreground/30">Upload a floor plan in Settings → Pest Map</p>
                   </div>
-                  {/* Grid lines for blank canvas */}
                   <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ opacity: 0.08 }}>
                     {[20,40,60,80].map(p => (
                       <g key={p}>
