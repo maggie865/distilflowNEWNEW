@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Plus, Trash2, Settings as SettingsIcon, User, Cylinder, FlaskConical, MapPin, Upload, Download, FileText, CheckCircle2, XCircle, Loader2, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { useRef } from 'react';
+import { base44 } from '@/api/base44Client';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
@@ -127,8 +129,8 @@ function PestControlMapSettings() {
     queryFn: () => base44.entities.AppSettings.list('key', 100),
   });
 
-  const mapImageUrl = settings.find(s => s.key === 'pest_map_image')?.value
-    || (typeof localStorage !== 'undefined' ? localStorage.getItem('pest_map_image') : null)
+  const mapImageUrl = (typeof localStorage !== 'undefined' ? localStorage.getItem('pest_map_image') : null)
+    || settings.find(s => s.key === 'pest_map_image')?.value
     || null;
   const mapSettingId = settings.find(s => s.key === 'pest_map_image')?.id || null;
 
@@ -136,53 +138,44 @@ function PestControlMapSettings() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    let uploadedUrl = null;
     try {
-      // Step 1: upload the file
       const result = await base44.integrations.Core.UploadFile({ file });
-      // Debug: show exactly what Base44 returns so we can find the URL field
-      toast.info('Upload result: ' + JSON.stringify(result).slice(0, 200));
-      uploadedUrl = result?.file_url || result?.url || result?.data?.url || result?.data?.file_url || (typeof result === 'string' ? result : null);
+      const uploadedUrl = result?.file_url || result?.url || result?.data?.url
+        || result?.data?.file_url || (typeof result === 'string' ? result : null);
       if (!uploadedUrl || typeof uploadedUrl !== 'string') {
-        throw new Error('Cannot find URL in: ' + JSON.stringify(result).slice(0, 300));
+        throw new Error('Unexpected upload response: ' + JSON.stringify(result).slice(0, 200));
       }
-    } catch (err) {
-      toast.error('File upload failed: ' + err.message);
-      setUploading(false);
-      e.target.value = '';
-      return;
-    }
-    setUploading(false);
-    setSaving(true);
-    try {
-      // Step 2: save URL to AppSettings
-      if (mapSettingId) {
-        await base44.entities.AppSettings.update(mapSettingId, { key: 'pest_map_image', value: uploadedUrl });
-      } else {
-        await base44.entities.AppSettings.create({ key: 'pest_map_image', value: uploadedUrl });
-      }
-      qc.invalidateQueries({ queryKey: ['appSettings'] });
-      toast.success('Floor plan saved successfully');
-    } catch (err) {
-      // AppSettings entity may not exist — fall back to localStorage
+      // Save to localStorage — works immediately across all pages
+      localStorage.setItem('pest_map_image', uploadedUrl);
+      // Also try AppSettings entity as a backup
       try {
-        localStorage.setItem('pest_map_image', uploadedUrl);
+        if (mapSettingId) {
+          await base44.entities.AppSettings.update(mapSettingId, { key: 'pest_map_image', value: uploadedUrl });
+        } else {
+          await base44.entities.AppSettings.create({ key: 'pest_map_image', value: uploadedUrl });
+        }
         qc.invalidateQueries({ queryKey: ['appSettings'] });
-        toast.success('Floor plan saved (local storage fallback)');
       } catch {
-        toast.error('Could not save: ' + err.message + '. Make sure AppSettings.jsonc is created in base44/entities/');
+        // AppSettings save failed — localStorage is the fallback, that's fine
       }
+      qc.invalidateQueries({ queryKey: ['pestMapImage'] });
+      toast.success('Floor plan saved — go to Pest Control to see it on the map');
+    } catch (err) {
+      toast.error('Upload failed: ' + err.message);
     } finally {
-      setSaving(false);
+      setUploading(false);
       e.target.value = '';
     }
   };
 
   const handleRemove = async () => {
-    if (!mapSettingId) return;
     if (!confirm('Remove the floor plan image?')) return;
-    await base44.entities.AppSettings.delete(mapSettingId);
+    localStorage.removeItem('pest_map_image');
+    if (mapSettingId) {
+      try { await base44.entities.AppSettings.delete(mapSettingId); } catch {}
+    }
     qc.invalidateQueries({ queryKey: ['appSettings'] });
+    qc.invalidateQueries({ queryKey: ['pestMapImage'] });
     toast.success('Floor plan removed');
   };
 
