@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Upload, Loader2, FileText, Pencil, ExternalLink, Trash2, MapPin, Eye } from 'lucide-react';
+import { Plus, Upload, Loader2, FileText, Pencil, ExternalLink, Trash2, MapPin, Eye, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -315,9 +315,18 @@ export default function Receiving() {
     },
   });
 
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('all');
+
   const isPending = createMutation.isPending || updateMutation.isPending;
-  const data = receivingsQuery.data || [];
+  const rawData = receivingsQuery.data || [];
   const isLoading = receivingsQuery.isLoading;
+  const data = rawData.filter(r => {
+    const matchType = filterType === 'all' || r.material_type === filterType;
+    const s = search.toLowerCase();
+    const matchSearch = !s || r.material_name?.toLowerCase().includes(s) || r.supplier_name?.toLowerCase().includes(s) || r.batch_number?.toLowerCase().includes(s);
+    return matchType && matchSearch;
+  });
 
   return (
     <div className="pb-20 md:pb-0 relative">
@@ -490,6 +499,19 @@ export default function Receiving() {
       </Dialog>
 
       <Card className="overflow-hidden">
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
+            <Input placeholder="Search material, supplier, batch…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 text-sm" />
+          </div>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All types" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              {MATERIAL_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>

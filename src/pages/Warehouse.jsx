@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ArrowRightLeft, Truck, PackageCheck, Trash2, MapPin, Users } from 'lucide-react';
+import { ArrowRightLeft, Truck, PackageCheck, Trash2, MapPin, Users, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -59,6 +59,8 @@ export default function Warehouse() {
 
   const [deletingWS, setDeletingWS] = useState(null);
   const [calcingDistance, setCalcingDistance] = useState(false);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
 
   const queryClient = useQueryClient();
 
@@ -371,6 +373,21 @@ export default function Warehouse() {
       {/* Warehouse Dispatch History */}
       <Card className="p-4">
         <h2 className="text-lg font-semibold mb-4">Dispatch History from Warehouse</h2>
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
+            <Input placeholder="Search customer, product, batch…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 text-sm" />
+          </div>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All statuses" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="dispatched">Dispatched</SelectItem>
+              <SelectItem value="delivered">Delivered</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="overflow-x-auto">
           <Table className="text-sm">
             <TableHeader>
@@ -392,7 +409,12 @@ export default function Warehouse() {
                     No warehouse dispatches recorded yet
                   </TableCell>
                 </TableRow>
-              ) : warehouseDispatches.map((d, i) => (
+              ) : warehouseDispatches.filter(d => {
+                const s = search.toLowerCase();
+                const matchSearch = !s || d.customer_name?.toLowerCase().includes(s) || d.product_name?.toLowerCase().includes(s) || d.batch_number?.toLowerCase().includes(s);
+                const matchStatus = filterStatus === 'all' || d.status === filterStatus;
+                return matchSearch && matchStatus;
+              }).map((d, i) => (
                 <TableRow key={d.id || d._row_index || i}>
                   <TableCell>{d.dispatch_date ? format(new Date(d.dispatch_date), 'dd MMM yyyy') : '—'}</TableCell>
                   <TableCell className="font-semibold">{d.customer_name}</TableCell>

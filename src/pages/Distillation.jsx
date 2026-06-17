@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Calculator, FlaskConical, AlertTriangle, CheckCircle2, Pencil } from 'lucide-react';
+import { Plus, Calculator, FlaskConical, AlertTriangle, CheckCircle2, Pencil, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -45,6 +45,8 @@ export default function Distillation() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [createBatchOpen, setCreateBatchOpen] = useState(false);
   const [batchError, setBatchError] = useState(false);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
   const queryClient = useQueryClient();
 
   const { data: masterBatches = [] } = useQuery({
@@ -836,6 +838,22 @@ export default function Distillation() {
 
 
       <Card className="overflow-hidden">
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
+            <Input placeholder="Search batch, product…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 text-sm" />
+          </div>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All statuses" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="planned">Planned</SelectItem>
+              <SelectItem value="macerating">Macerating</SelectItem>
+              <SelectItem value="in_progress">In Progress</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -857,7 +875,12 @@ export default function Distillation() {
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading…</TableCell></TableRow>
               ) : runs.length === 0 ? (
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No distillation runs yet</TableCell></TableRow>
-              ) : runs.map(r => (
+              ) : runs.filter(r => {
+                const s = search.toLowerCase();
+                const matchSearch = !s || r.batch_number?.toLowerCase().includes(s) || r.product_name?.toLowerCase().includes(s);
+                const matchStatus = filterStatus === 'all' || r.status === filterStatus;
+                return matchSearch && matchStatus;
+              }).map(r => (
                 <TableRow key={r.id}>
                   <TableCell className="text-sm">{r.date ? format(new Date(r.date), 'MMM d, yyyy') : '—'}</TableCell>
                   <TableCell className="font-medium text-sm">{r.batch_number}</TableCell>

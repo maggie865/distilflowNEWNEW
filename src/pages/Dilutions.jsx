@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Calculator, FlaskConical, Droplets, Pencil } from 'lucide-react';
+import { Calculator, FlaskConical, Droplets, Pencil, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -48,6 +48,8 @@ const BLANK_HEARTS = {
 
 export default function Dilutions() {
   const [openType, setOpenType] = useState(null); // 'ethanol' | 'heads'
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('all'); // 'all' | 'ethanol' | 'hearts'
   const [ethanolForm, setEthanolForm] = useState(BLANK_ETHANOL);
   const [heartsForm, setHeartsForm] = useState(BLANK_HEARTS);
   const [editingDilution, setEditingDilution] = useState(null);
@@ -635,6 +637,20 @@ export default function Dilutions() {
       </PageHeader>
 
       <Card className="overflow-hidden">
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
+            <Input placeholder="Search batch, lot code…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 text-sm" />
+          </div>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All types" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="hearts">Hearts</SelectItem>
+              <SelectItem value="ethanol">Ethanol</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -658,7 +674,13 @@ export default function Dilutions() {
                 <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
               ) : dilutions.length === 0 ? (
                 <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No dilutions recorded</TableCell></TableRow>
-              ) : dilutions.map(d => {
+              ) : dilutions.filter(d => {
+                const isHearts = d.notes?.includes('[Heads Dilution]') || parseFloat(d.input_abv) === 79;
+                const s = search.toLowerCase();
+                const matchSearch = !s || d.batch_number?.toLowerCase().includes(s);
+                const matchType = filterType === 'all' || (filterType === 'hearts' && isHearts) || (filterType === 'ethanol' && !isHearts);
+                return matchSearch && matchType;
+              }).map(d => {
                 const isHearts = d.notes?.includes('[Heads Dilution]') || parseFloat(d.input_abv) === 79;
                 return (
                   <TableRow key={d.id}>
