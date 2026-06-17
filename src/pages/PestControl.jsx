@@ -156,6 +156,14 @@ export default function PestControl() {
               </div>
             </div>
 
+            {/* Debug panel — remove once working */}
+            <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs space-y-1">
+              <p className="font-semibold text-amber-800">Debug info:</p>
+              <p className="text-amber-700">AppSettings loaded: {appSettings.length} records</p>
+              <p className="text-amber-700">Records: {JSON.stringify(appSettings.map(s => ({key: s.key, val: (s.value||'').slice(0,50)})))}</p>
+              <p className="text-amber-700">mapImageUrl: {mapImageUrl ? mapImageUrl.slice(0,80) + '...' : 'NULL'}</p>
+            </div>
+
             {/* Map area */}
             <div
               className="relative w-full border border-border rounded-xl overflow-hidden cursor-crosshair"
