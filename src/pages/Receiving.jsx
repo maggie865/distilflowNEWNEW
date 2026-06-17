@@ -250,14 +250,14 @@ export default function Receiving() {
       supplier_id: data.supplier_id || undefined,
       supplier_name: data.supplier_name || undefined,
       transport_distance_km: distance || undefined,
-      transport_method: distance > 0 ? method : undefined,
+      transport_method: method || undefined,
       weight_kg: weight || undefined,
       co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined,
       cost_per_unit: data.cost_per_unit ? parseFloat(data.cost_per_unit) : undefined,
-      batch_number: data.batch_number,
+      batch_number: data.batch_number || undefined,
       date_received: data.date_received,
-      notes: data.notes,
-      packing_slip_url: data.packing_slip_url,
+      notes: data.notes || undefined,
+      packing_slip_url: data.packing_slip_url || undefined,
     };
   };
 
