@@ -29,6 +29,10 @@ import Reports from '@/pages/Reports';
 import Settings from '@/pages/Settings';
 import SNSDistillation from '@/pages/SNSDistillation';
 import StockTakes from '@/pages/StockTakes';
+import FoodRecallManager from '@/pages/FoodRecall';
+import MaintenanceRecords from '@/pages/MaintenanceRecords';
+import PestControl from '@/pages/PestControl';
+import TemperatureLogs from '@/pages/TemperatureLogs';
 import Suppliers from '@/pages/Suppliers';
 
 const AuthenticatedApp = () => {
@@ -78,6 +82,10 @@ const AuthenticatedApp = () => {
           <Route path="/suppliers" element={<Suppliers />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/food-recall" element={<FoodRecallManager />} />
+          <Route path="/maintenance" element={<MaintenanceRecords />} />
+          <Route path="/pest-control" element={<PestControl />} />
+          <Route path="/temperature-logs" element={<TemperatureLogs />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />
