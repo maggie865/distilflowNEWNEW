@@ -43,10 +43,16 @@ const BLANK = {
 
 const BLANK_MOCK = {
   recall_number: `MOCK-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
-  product_name: '', batch_numbers: '', date_conducted: new Date().toISOString().split('T')[0],
-  scenario: '', conducted_by: '', outcome: '', time_to_complete_mins: '',
+  product_name: '', batch_numbers: '', date_initiated: new Date().toISOString().split('T')[0],
+  reason_type: 'allergen', reason_detail: '', recall_level: 'consumer',
+  status: 'investigating', bottles_affected: '', bottles_recovered: '',
+  mpi_notified_at: '', mpi_case_officer: '', distribution_list: '', corrective_actions: '',
+  step1_notes: '', step2_notes: '', step3_notes: '', step4_notes: '', step5_notes: '', step6_notes: '',
+  notes: '',
+  // Mock-specific fields
+  conducted_by: '', time_to_complete_mins: '',
   distribution_list_accurate: false, stock_located: false, mpi_contact_identified: false,
-  corrective_actions: '', notes: '', next_mock_due: '',
+  outcome: '', next_mock_due: '',
 };
 
 function RecallCard({ recall, dispatches, onEdit }) {
@@ -246,7 +252,12 @@ export default function FoodRecallManager() {
 
   const saveMockMutation = useMutation({
     mutationFn: async (data) => {
-      const payload = { ...data, time_to_complete_mins: data.time_to_complete_mins ? parseInt(data.time_to_complete_mins) : undefined };
+      const payload = {
+        ...data,
+        time_to_complete_mins: data.time_to_complete_mins ? parseInt(data.time_to_complete_mins) : undefined,
+        bottles_affected: data.bottles_affected ? parseInt(data.bottles_affected) : undefined,
+        bottles_recovered: data.bottles_recovered ? parseInt(data.bottles_recovered) : undefined,
+      };
       if (editingMockId) await base44.entities.MockRecall.update(editingMockId, payload);
       else await base44.entities.MockRecall.create(payload);
     },
@@ -356,50 +367,6 @@ export default function FoodRecallManager() {
         </div>
       )}
 
-        </TabsContent>
-
-        <TabsContent value="mock">
-          {loadingMocks ? (
-            <div className="text-center py-16 text-muted-foreground text-sm">Loading...</div>
-          ) : mockRecalls.length === 0 ? (
-            <Card className="p-10 text-center">
-              <ClipboardList className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
-              <p className="font-medium">No mock recalls logged</p>
-              <p className="text-sm text-muted-foreground mt-1">Use the Log Mock Recall button to record a drill</p>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {mockRecalls.map(m => (
-                <Card key={m.id} className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-sm font-semibold">{m.recall_number}</span>
-                        {m.product_name && <span className="text-sm text-muted-foreground">— {m.product_name}</span>}
-                        {m.outcome && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.outcome === 'pass' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{m.outcome}</span>}
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                        {m.date_conducted && <span>{format(new Date(m.date_conducted), 'MMM d, yyyy')}</span>}
-                        {m.conducted_by && <span>By: {m.conducted_by}</span>}
-                        {m.time_to_complete_mins && <span>{m.time_to_complete_mins} mins</span>}
-                      </div>
-                      {m.scenario && <p className="text-sm mt-1 text-muted-foreground">{m.scenario}</p>}
-                    </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                      <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => { setEditingMockId(m.id); setMockForm({ ...BLANK_MOCK, ...m }); setMockOpen(true); }}>Edit</Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => { if (confirm('Delete this mock recall?')) deleteMockMutation.mutate(m.id); }}>
-                        <X className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
-
-      {/* Recall dialog */}
       <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setEditingId(null); } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -549,76 +516,6 @@ export default function FoodRecallManager() {
 
             <Button className="w-full bg-destructive hover:bg-destructive/90" onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending || !form.product_name}>
               {saveMutation.isPending ? 'Saving...' : editingId ? 'Update Recall' : 'Initiate Recall'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Mock recall dialog */}
-      <Dialog open={mockOpen} onOpenChange={v => { setMockOpen(v); if (!v) { setEditingMockId(null); setMockForm(BLANK_MOCK); } }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2">
-              <ClipboardList className="w-5 h-5" />
-              {editingMockId ? 'Edit Mock Recall' : 'Log Mock Recall'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Recall number</Label>
-                <Input value={mockForm.recall_number} onChange={e => setM('recall_number', e.target.value)} className="mt-1 font-mono" />
-              </div>
-              <div>
-                <Label>Date conducted</Label>
-                <Input type="date" value={mockForm.date_conducted} onChange={e => setM('date_conducted', e.target.value)} className="mt-1" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Product name</Label>
-                <Input value={mockForm.product_name} onChange={e => setM('product_name', e.target.value)} placeholder="e.g. London Dry Gin" className="mt-1" />
-              </div>
-              <div>
-                <Label>Conducted by</Label>
-                <Input value={mockForm.conducted_by} onChange={e => setM('conducted_by', e.target.value)} placeholder="Name" className="mt-1" />
-              </div>
-            </div>
-            <div>
-              <Label>Scenario</Label>
-              <Textarea value={mockForm.scenario} onChange={e => setM('scenario', e.target.value)} placeholder="Describe the mock recall scenario" className="mt-1" rows={2} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Outcome</Label>
-                <Select value={mockForm.outcome} onValueChange={v => setM('outcome', v)}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select…" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pass">Pass</SelectItem>
-                    <SelectItem value="fail">Fail</SelectItem>
-                    <SelectItem value="partial">Partial pass</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Time to complete (mins)</Label>
-                <Input type="number" value={mockForm.time_to_complete_mins} onChange={e => setM('time_to_complete_mins', e.target.value)} className="mt-1" />
-              </div>
-            </div>
-            <div>
-              <Label>Next mock due</Label>
-              <Input type="date" value={mockForm.next_mock_due} onChange={e => setM('next_mock_due', e.target.value)} className="mt-1" />
-            </div>
-            <div>
-              <Label>Corrective actions</Label>
-              <Textarea value={mockForm.corrective_actions} onChange={e => setM('corrective_actions', e.target.value)} placeholder="Any improvements identified?" className="mt-1" rows={2} />
-            </div>
-            <div>
-              <Label>Notes</Label>
-              <Textarea value={mockForm.notes} onChange={e => setM('notes', e.target.value)} className="mt-1" rows={2} />
-            </div>
-            <Button className="w-full" onClick={() => saveMockMutation.mutate(mockForm)} disabled={saveMockMutation.isPending}>
-              {saveMockMutation.isPending ? 'Saving...' : editingMockId ? 'Update Mock Recall' : 'Log Mock Recall'}
             </Button>
           </div>
         </DialogContent>
