@@ -87,11 +87,17 @@ export default function Warehouse() {
   });
 
   // 3PL dispatches: records with [Auckland 3PL] in notes, or dispatched_from set to Auckland 3PL
+  // Also includes Bluff dispatches (dispatched_from = 'Bluff' or notes contains [Bluff Dispatch])
   const warehouseDispatches = allDispatches.filter(d =>
     (d.notes || '').includes('[Auckland 3PL]') ||
     (d.dispatched_from || '').toLowerCase().includes('auckland') ||
-    (d.dispatched_from || '') === 'Auckland 3PL'
+    (d.dispatched_from || '') === 'Auckland 3PL' ||
+    (d.notes || '').includes('[Bluff Dispatch]') ||
+    (d.dispatched_from || '').toLowerCase().includes('bluff')
   );
+
+  // Total bottles dispatched from ALL 3PL/Bluff records (unfiltered)
+  const totalBottlesDispatched = warehouseDispatches.reduce((s, d) => s + (d.quantity_bottles || 0), 0);
 
   const sellableGoods = finishedGoods.filter(fg => !fg.product_name?.includes('Tasting'));
   const selectedFG = finishedGoods.find(fg => fg.id === selectedFGId);
@@ -322,9 +328,9 @@ export default function Warehouse() {
         <div className="rounded-xl border p-4 flex flex-col gap-1 bg-green-50 border-green-200">
           <div className="flex items-center gap-2">
             <PackageCheck className="w-4 h-4 text-green-600" />
-            <span className="text-xs font-medium text-muted-foreground">Dispatched from 3PL</span>
+            <span className="text-xs font-medium text-muted-foreground">Bottles Dispatched from 3PL</span>
           </div>
-          <p className="text-2xl font-bold font-display text-green-600">{warehouseDispatches.length}</p>
+          <p className="text-2xl font-bold font-display text-green-600">{totalBottlesDispatched.toLocaleString()}</p>
         </div>
       </div>
 
