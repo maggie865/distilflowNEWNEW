@@ -1,0 +1,12 @@
+{
+  "name": "PestControlTrap",
+  "fields": [
+    { "name": "trap_id", "type": "string" },
+    { "name": "trap_type", "type": "string", "enum": ["snap_trap","bait_station","glue_board","live_trap","electronic","fly_screen"] },
+    { "name": "location_description", "type": "string" },
+    { "name": "location_x", "type": "number" },
+    { "name": "location_y", "type": "number" },
+    { "name": "status", "type": "string", "enum": ["active","inactive","removed"] },
+    { "name": "notes", "type": "string" }
+  ]
+}
