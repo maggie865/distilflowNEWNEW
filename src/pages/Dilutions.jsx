@@ -177,7 +177,6 @@ export default function Dilutions() {
         status: data.status,
         notes: `[Ethanol Dilution] Lot code: ${lotCode}. Material: ${materialName}. ${data.notes}`,
       });
-      return created;
 
       if (data.tank_id && eSelectedTank) {
         const newVol = Math.min((eSelectedTank.current_volume || 0) + eOutputVol, eSelectedTank.capacity_litres);
