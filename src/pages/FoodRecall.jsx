@@ -55,6 +55,129 @@ const BLANK_MOCK = {
   outcome: '', next_mock_due: '',
 };
 
+function MockRecallCard({ mockRecall, onEdit, onDelete }) {
+  const [expanded, setExpanded] = useState(false);
+  const currentStep = STATUS_STEP_MAP[mockRecall.status] || 1;
+
+  const affectedBatches = (mockRecall.batch_numbers || '').split(',').map(b => b.trim()).filter(Boolean);
+
+  const statusColors = {
+    investigating: 'bg-orange-100 text-orange-800',
+    informed: 'bg-amber-100 text-amber-800',
+    assessed: 'bg-yellow-100 text-yellow-800',
+    checked: 'bg-blue-100 text-blue-800',
+    communicating: 'bg-purple-100 text-purple-800',
+    auditing: 'bg-indigo-100 text-indigo-800',
+    closed: 'bg-emerald-100 text-emerald-800',
+  };
+
+  const outcomeColors = {
+    pass: 'bg-emerald-100 text-emerald-800',
+    fail: 'bg-red-100 text-red-800',
+    partial: 'bg-amber-100 text-amber-800',
+  };
+
+  return (
+    <Card className="overflow-hidden">
+      <button
+        className="w-full flex items-center gap-4 p-4 hover:bg-muted/40 transition-colors text-left"
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+          <ClipboardList className="w-5 h-5 text-blue-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-sm font-semibold">{mockRecall.recall_number}</span>
+            {mockRecall.product_name && <span className="text-sm text-muted-foreground">— {mockRecall.product_name}</span>}
+            {mockRecall.outcome && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${outcomeColors[mockRecall.outcome] || 'bg-gray-100 text-gray-600'}`}>{mockRecall.outcome.toUpperCase()}</span>}
+          </div>
+          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+            {mockRecall.date_conducted && <span>{format(new Date(mockRecall.date_conducted), 'MMM d, yyyy')}</span>}
+            {mockRecall.conducted_by && <span>By: {mockRecall.conducted_by}</span>}
+            {mockRecall.time_to_complete_mins && <span>{mockRecall.time_to_complete_mins} mins</span>}
+          </div>
+          {mockRecall.scenario && <p className="text-xs text-muted-foreground mt-1">{mockRecall.scenario}</p>}
+          {mockRecall.status && (
+            <div className="flex items-center gap-1 mt-2">
+              {RECALL_STEPS.map(s => (
+                <div key={s.num} className={`h-1.5 flex-1 rounded-full ${currentStep >= s.num ? s.color : 'bg-muted'}`} />
+              ))}
+              <span className="text-xs text-muted-foreground ml-2">Step {currentStep}/6</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button variant="outline" size="sm" className="text-xs h-7" onClick={e => { e.stopPropagation(); onEdit(mockRecall); }}>Edit</Button>
+          {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border p-5 space-y-5">
+          {/* Checkpoints */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className={`rounded-lg p-3 text-center ${mockRecall.distribution_list_accurate ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted/40 border border-border'}`}>
+              <p className="text-xs text-muted-foreground">Distribution list</p>
+              <p className="text-sm font-semibold mt-1">{mockRecall.distribution_list_accurate ? '✓' : '—'}</p>
+            </div>
+            <div className={`rounded-lg p-3 text-center ${mockRecall.stock_located ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted/40 border border-border'}`}>
+              <p className="text-xs text-muted-foreground">Stock located</p>
+              <p className="text-sm font-semibold mt-1">{mockRecall.stock_located ? '✓' : '—'}</p>
+            </div>
+            <div className={`rounded-lg p-3 text-center ${mockRecall.mpi_contact_identified ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted/40 border border-border'}`}>
+              <p className="text-xs text-muted-foreground">MPI contact</p>
+              <p className="text-sm font-semibold mt-1">{mockRecall.mpi_contact_identified ? '✓' : '—'}</p>
+            </div>
+          </div>
+
+          {/* Step notes */}
+          {mockRecall.status && (
+            <div className="space-y-3">
+              <p className="text-sm font-semibold">Step notes</p>
+              {RECALL_STEPS.map(s => (
+                <div key={s.num} className="flex gap-3">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5 ${currentStep >= s.num ? s.color : 'bg-muted'}`}>
+                    {currentStep > s.num ? '✓' : s.num}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{s.label}</p>
+                    <p className="text-xs text-muted-foreground mb-1">{s.desc}</p>
+                    {mockRecall[s.key] && <p className="text-sm bg-muted/40 rounded p-2">{mockRecall[s.key]}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Outcome & actions */}
+          {mockRecall.corrective_actions && (
+            <div>
+              <p className="text-sm font-semibold mb-2">Corrective actions identified</p>
+              <p className="text-sm bg-muted/40 rounded p-3">{mockRecall.corrective_actions}</p>
+            </div>
+          )}
+
+          {mockRecall.next_mock_due && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <p className="text-xs text-blue-700 font-medium">Next mock due: {format(new Date(mockRecall.next_mock_due), 'MMM d, yyyy')}</p>
+            </div>
+          )}
+
+          {mockRecall.notes && (
+            <div>
+              <p className="text-sm font-semibold mb-2">Notes</p>
+              <p className="text-sm text-muted-foreground">{mockRecall.notes}</p>
+            </div>
+          )}
+
+          <Button variant="ghost" size="sm" className="text-destructive w-full" onClick={() => onDelete(mockRecall.id)}>Delete mock recall</Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function RecallCard({ recall, dispatches, onEdit }) {
   const [expanded, setExpanded] = useState(false);
   const currentStep = STATUS_STEP_MAP[recall.status] || 1;
@@ -533,31 +656,7 @@ export default function FoodRecallManager() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {mockRecalls.map(m => (
-                <Card key={m.id} className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-sm font-semibold">{m.recall_number}</span>
-                        {m.product_name && <span className="text-sm text-muted-foreground">— {m.product_name}</span>}
-                        {m.outcome && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.outcome === 'pass' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{m.outcome}</span>}
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                        {m.date_conducted && <span>{format(new Date(m.date_conducted), 'MMM d, yyyy')}</span>}
-                        {m.conducted_by && <span>By: {m.conducted_by}</span>}
-                        {m.time_to_complete_mins && <span>{m.time_to_complete_mins} mins</span>}
-                      </div>
-                      {m.scenario && <p className="text-sm mt-1 text-muted-foreground">{m.scenario}</p>}
-                    </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                      <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => { setEditingMockId(m.id); setMockForm({ ...BLANK_MOCK, ...m }); setMockOpen(true); }}>Edit</Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => { if (confirm('Delete this mock recall?')) deleteMockMutation.mutate(m.id); }}>
-                        <X className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              ))}
+              {mockRecalls.map(m => <MockRecallCard key={m.id} mockRecall={m} onEdit={(rec) => { setEditingMockId(rec.id); setMockForm({ ...BLANK_MOCK, ...rec }); setMockOpen(true); }} onDelete={(id) => { if (confirm('Delete this mock recall?')) deleteMockMutation.mutate(id); }} />)}
             </div>
           )}
         </TabsContent>

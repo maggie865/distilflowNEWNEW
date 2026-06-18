@@ -1,14 +1,62 @@
 {
   "name": "MaintenanceRecord",
-  "fields": [
-    { "name": "date", "type": "string" },
-    { "name": "equipment_name", "type": "string" },
-    { "name": "maintenance_type", "type": "string", "enum": ["scheduled","repair","calibration","cleaning","inspection"] },
-    { "name": "description", "type": "string" },
-    { "name": "performed_by", "type": "string" },
-    { "name": "next_due_date", "type": "string" },
-    { "name": "status", "type": "string", "enum": ["completed","pending","overdue"] },
-    { "name": "cost", "type": "number" },
-    { "name": "notes", "type": "string" }
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of maintenance"
+    },
+    "equipment_name": {
+      "type": "string",
+      "description": "Name of equipment"
+    },
+    "maintenance_type": {
+      "type": "string",
+      "enum": [
+        "scheduled",
+        "repair",
+        "calibration",
+        "cleaning",
+        "inspection"
+      ],
+      "default": "scheduled",
+      "description": "Type of maintenance"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of work performed"
+    },
+    "performed_by": {
+      "type": "string",
+      "description": "Name of person who performed maintenance"
+    },
+    "next_due_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Next scheduled maintenance date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "pending",
+        "overdue"
+      ],
+      "default": "completed",
+      "description": "Status of maintenance"
+    },
+    "cost": {
+      "type": "number",
+      "description": "Cost of maintenance"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Additional notes"
+    }
+  },
+  "required": [
+    "date",
+    "equipment_name"
   ]
 }
