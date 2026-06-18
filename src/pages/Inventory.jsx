@@ -472,16 +472,16 @@ export default function Inventory() {
   });
   const loading3PLDispatches = false;
 
-  // Build dispatch totals per batch+product key
+  // Build dispatch totals per batch+product+bottle_size key
   const dispatchedByBatch = allDispatches.reduce((acc, d) => {
-    const key = `${d.batch_number}||${d.product_name}`;
+    const key = `${d.batch_number}||${d.product_name}||${d.bottle_size_ml || 'unknown'}`;
     acc[key] = (acc[key] || 0) + (d.quantity_bottles || 0);
     return acc;
   }, {});
 
   // Compute live remaining stock per FinishedGood record
   const finishedGoodsWithStock = finishedGoods.map(g => {
-    const key = `${g.batch_number}||${g.product_name}`;
+    const key = `${g.batch_number}||${g.product_name}||${g.bottle_size_ml || 'unknown'}`;
     const dispatched = dispatchedByBatch[key] || 0;
     const bottled = g.quantity_bottles || 0;
     const remaining = Math.max(0, bottled - dispatched);
