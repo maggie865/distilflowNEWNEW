@@ -28,7 +28,7 @@ const ACTIVITY_COLORS = {
 };
 
 const BLANK_TRAP = { trap_id: '', trap_type: 'bait_station', location_description: '', location_x: 50, location_y: 50, status: 'active', notes: '' };
-const BLANK_LOG = { date: new Date().toISOString().split('T')[0], trap_id: '', inspected_by: '', activity: 'checked_clear', pest_type: '', quantity: '', bait_used: '', notes: '' };
+const BLANK_LOG = { date: new Date().toISOString().split('T')[0], trap_ids: [], inspected_by: '', activity: 'checked_clear', pest_type: '', quantity: '', bait_used: '', notes: '' };
 
 export default function PestControl() {
   const [trapOpen, setTrapOpen] = useState(false);
@@ -77,13 +77,19 @@ export default function PestControl() {
   });
 
   const saveLogMutation = useMutation({
-    mutationFn: (data) => base44.entities.PestControlLog.create({
-      ...data, quantity: data.quantity ? parseInt(data.quantity) : undefined
-    }),
+    mutationFn: async (data) => {
+      const { trap_ids, ...baseData } = data;
+      const payload = { ...baseData, quantity: baseData.quantity ? parseInt(baseData.quantity) : undefined };
+      
+      // Create a log entry for each selected trap
+      for (const trapId of trap_ids) {
+        await base44.entities.PestControlLog.create({ ...payload, trap_id: trapId });
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pestLogs'] });
       setLogOpen(false); setLogForm(BLANK_LOG);
-      toast.success('Inspection logged');
+      toast.success('Inspections logged');
     },
   });
 
@@ -338,19 +344,38 @@ export default function PestControl() {
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle className="font-display">Log Inspection</DialogTitle></DialogHeader>
           <div className="space-y-4 mt-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Date</Label>
-                <Input type="date" value={logForm.date} onChange={e => setL('date', e.target.value)} className="mt-1" />
-              </div>
-              <div>
-                <Label>Trap ID</Label>
-                <Select value={logForm.trap_id} onValueChange={v => setL('trap_id', v)}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select trap…" /></SelectTrigger>
-                  <SelectContent>
-                    {traps.map(t => <SelectItem key={t.id} value={t.trap_id}>{t.trap_id} — {t.location_description}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+            <div>
+              <Label>Date</Label>
+              <Input type="date" value={logForm.date} onChange={e => setL('date', e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label>Traps ({logForm.trap_ids.length} selected)</Label>
+              <div className="mt-2 space-y-2 max-h-48 overflow-y-auto border border-border rounded-lg p-3">
+                {traps.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No traps available. Add traps first.</p>
+                ) : (
+                  traps.map(t => (
+                    <div key={t.id} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id={`trap-${t.id}`}
+                        checked={logForm.trap_ids.includes(t.trap_id)}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setL('trap_ids', [...logForm.trap_ids, t.trap_id]);
+                          } else {
+                            setL('trap_ids', logForm.trap_ids.filter(id => id !== t.trap_id));
+                          }
+                        }}
+                        className="rounded border-input"
+                      />
+                      <label htmlFor={`trap-${t.id}`} className="text-sm cursor-pointer flex-1">
+                        <span className="font-medium">{t.trap_id}</span>
+                        <span className="text-muted-foreground text-xs block">{t.location_description}</span>
+                      </label>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
             <div>
@@ -386,7 +411,7 @@ export default function PestControl() {
               <Label>Notes</Label>
               <Textarea value={logForm.notes} onChange={e => setL('notes', e.target.value)} className="mt-1" rows={2} />
             </div>
-            <Button className="w-full" onClick={() => saveLogMutation.mutate(logForm)} disabled={saveLogMutation.isPending || !logForm.trap_id}>
+            <Button className="w-full" onClick={() => saveLogMutation.mutate(logForm)} disabled={saveLogMutation.isPending || logForm.trap_ids.length === 0}>
               {saveLogMutation.isPending ? 'Saving...' : 'Log Inspection'}
             </Button>
           </div>
