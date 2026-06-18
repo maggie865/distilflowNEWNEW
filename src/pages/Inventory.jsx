@@ -195,7 +195,9 @@ function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
 
   // Group by product_name + bottle_size_ml, only including records with stock
   const groups = finishedGoods.filter(g => (g.quantity_bottles || 0) > 0).reduce((acc, g) => {
-    const key = `${g.product_name}||${g.bottle_size_ml}`;
+    // Ensure bottle_size_ml is always treated distinctly (null vs 700 vs 200)
+    const sizeKey = g.bottle_size_ml ?? 'no-size';
+    const key = `${g.product_name}||${sizeKey}`;
     if (!acc[key]) acc[key] = { product_name: g.product_name, bottle_size_ml: g.bottle_size_ml, abv_percent: g.abv_percent, batches: [] };
     acc[key].batches.push(g);
     return acc;
