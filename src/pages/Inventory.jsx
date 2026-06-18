@@ -193,11 +193,11 @@ function Actions({ onAdjust, onEdit, onDelete }) {
 function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
   const [expanded, setExpanded] = useState({});
 
-  // Group by product_name + bottle_size_ml
-  const groups = finishedGoods.reduce((acc, g) => {
+  // Group by product_name + bottle_size_ml, only including records with stock
+  const groups = finishedGoods.filter(g => (g.quantity_bottles || 0) > 0).reduce((acc, g) => {
     const key = `${g.product_name}||${g.bottle_size_ml}`;
     if (!acc[key]) acc[key] = { product_name: g.product_name, bottle_size_ml: g.bottle_size_ml, abv_percent: g.abv_percent, batches: [] };
-    if ((g.quantity_bottles || 0) > 0) acc[key].batches.push(g);
+    acc[key].batches.push(g);
     return acc;
   }, {});
 
@@ -206,7 +206,7 @@ function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
     ...g,
     total_bottles: g.batches.reduce((s, b) => s + (b.quantity_bottles || 0), 0),
     total_lals: g.batches.reduce((s, b) => s + (b.total_lals || 0), 0),
-  })).filter(g => g.total_bottles > 0);
+  }));
 
   const toggle = key => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
