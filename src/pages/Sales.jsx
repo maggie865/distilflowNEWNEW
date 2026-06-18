@@ -202,12 +202,21 @@ export default function Sales() {
         co2e = calcCO2e(distance, weight, method);
       }
 
-      await db.Dispatch.update(editingDispatch.id, { ...data, co2e_kg: co2e });
+      // Strip empty strings to avoid API errors
+      const cleanData = Object.fromEntries(
+        Object.entries({ ...data, co2e_kg: co2e }).filter(([, v]) => v !== '')
+      );
+
+      await db.Dispatch.update(editingDispatch.id, cleanData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dispatches'] });
       setEditingDispatch(null);
       toast.success('Dispatch updated');
+    },
+    onError: (err) => {
+      console.error('Update failed:', err);
+      toast.error('Failed to save changes');
     },
   });
 
