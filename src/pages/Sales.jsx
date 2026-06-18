@@ -80,6 +80,11 @@ export default function Sales() {
     queryFn: () => db.FinishedGood.list('-created_at', 200),
   });
 
+  const { data: allDispatches = [] } = useQuery({
+    queryKey: ['dispatches-all'],
+    queryFn: () => db.Dispatch.list('-dispatch_date', 5000),
+  });
+
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
     queryFn: () => db.Customer.list('business_name', 200),
@@ -100,7 +105,11 @@ export default function Sales() {
 
   const selectedFG = finishedGoods.find(fg => fg.id === selectedFGId);
 
-  const maxBottles = selectedFG?.quantity_bottles || 0;
+  // Calculate truly available stock: bottled minus already dispatched for this FG
+  const dispatchedForFG = allDispatches
+    .filter(d => d.product_name === selectedFG?.product_name && d.batch_number === selectedFG?.batch_number && Number(d.bottle_size_ml) === Number(selectedFG?.bottle_size_ml))
+    .reduce((s, d) => s + (d.quantity_bottles || 0), 0);
+  const maxBottles = Math.max(0, (selectedFG?.quantity_bottles || 0) - dispatchedForFG);
   const qty = parseInt(form.quantity_bottles) || 0;
   const overStock = qty > maxBottles;
   const estimatedWeightKg = selectedFG ? calcWeightKg(selectedFG.bottle_size_ml, qty) : 0;
@@ -241,13 +250,14 @@ export default function Sales() {
 
   const returnMutation = useMutation({
     mutationFn: async (dispatch) => {
-      // Restore stock
-      const existing = await db.FinishedGood.filter({
-        product_name: dispatch.product_name,
-        batch_number: dispatch.batch_number,
-      });
-      if (existing.length > 0) {
-        const fg = existing[0];
+      // Restore stock - match by product_name + batch + bottle size
+      const allFG = await db.FinishedGood.list('product_name', 1000);
+      const fg = allFG.find(g =>
+        g.product_name === dispatch.product_name &&
+        g.batch_number === dispatch.batch_number &&
+        Number(g.bottle_size_ml) === Number(dispatch.bottle_size_ml)
+      );
+      if (fg) {
         await db.FinishedGood.update(fg.id, {
           quantity_bottles: (fg.quantity_bottles || 0) + (dispatch.quantity_bottles || 0),
           total_lals: parseFloat(((fg.total_lals || 0) + (dispatch.total_lals || 0)).toFixed(4)),
@@ -291,13 +301,14 @@ export default function Sales() {
 
   const deleteMutation = useMutation({
     mutationFn: async (dispatch) => {
-      // Restore stock to the finished good
-      const existing = await db.FinishedGood.filter({
-        product_name: dispatch.product_name,
-        batch_number: dispatch.batch_number,
-      });
-      if (existing.length > 0) {
-        const fg = existing[0];
+      // Restore stock to the finished good - match by product_name + batch + bottle size
+      const allFG = await db.FinishedGood.list('product_name', 1000);
+      const fg = allFG.find(g =>
+        g.product_name === dispatch.product_name &&
+        g.batch_number === dispatch.batch_number &&
+        Number(g.bottle_size_ml) === Number(dispatch.bottle_size_ml)
+      );
+      if (fg) {
         await db.FinishedGood.update(fg.id, {
           quantity_bottles: (fg.quantity_bottles || 0) + (dispatch.quantity_bottles || 0),
           total_lals: parseFloat(((fg.total_lals || 0) + (dispatch.total_lals || 0)).toFixed(4)),
@@ -339,11 +350,7 @@ export default function Sales() {
     setCurrentPage(0);
   };
 
-  // Summary stats — fetch all records unfiltered for accurate totals
-  const { data: allDispatches = [] } = useQuery({
-    queryKey: ['dispatches-all'],
-    queryFn: () => db.Dispatch.list('-dispatch_date', 5000),
-  });
+  // Summary stats
   const totalBottlesDispatched = allDispatches.reduce((s, d) => s + (d.quantity_bottles || 0), 0);
   const totalLalsDispatched = allDispatches.reduce((s, d) => s + (d.total_lals || 0), 0);
   const totalKm = allDispatches.reduce((s, d) => s + (d.transport_distance_km || 0), 0);
