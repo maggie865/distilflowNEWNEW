@@ -66,12 +66,13 @@ export default function Bottling() {
           batch_number: data.batch_number,
         });
         if (existing.length > 0) {
-          const fg = existing[0];
-          await base44.entities.FinishedGood.update(fg.id, {
-            quantity_bottles: (fg.quantity_bottles || 0) + bottlesProduced,
-            total_lals: (fg.total_lals || 0) + totalLals,
-          });
-        } else {
+           const fg = existing[0];
+           await base44.entities.FinishedGood.update(fg.id, {
+             bottle_size_ml: parseFloat(data.bottle_size_ml),
+             quantity_bottles: (fg.quantity_bottles || 0) + bottlesProduced,
+             total_lals: (fg.total_lals || 0) + totalLals,
+           });
+         } else {
           await base44.entities.FinishedGood.create({
             product_name: data.product_name,
             batch_number: data.batch_number,
