@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Truck, PackageCheck, MapPin, Trash2, Search, Users, Map, Pencil, RotateCcw } from 'lucide-react';
+import { Plus, Truck, PackageCheck, MapPin, Trash2, Search, Users, Map, Pencil, RotateCcw, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -18,6 +18,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import DeliveryMap from '@/components/sales/DeliveryMap';
 import Pagination from '@/components/shared/Pagination';
+import { base44 } from '@/api/base44Client';
 
 const DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
 
@@ -68,6 +69,7 @@ export default function Sales() {
   const [search, setSearch] = useState('');
   const [showMap, setShowMap] = useState(false);
   const [calcingDistance, setCalcingDistance] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -235,6 +237,23 @@ export default function Sales() {
     },
   });
 
+  const handleSyncDispatches = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await base44.functions.invoke('syncDispatchesWithCustomerAddresses', {});
+      queryClient.invalidateQueries({ queryKey: ['dispatches'] });
+      setCurrentPage(0);
+      toast.success(res.data.message);
+      if (res.data.errors?.length > 0) {
+        console.warn('Sync warnings:', res.data.errors);
+      }
+    } catch (err) {
+      toast.error('Failed to sync dispatches');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const deleteMutation = useMutation({
     mutationFn: async (dispatch) => {
       // Restore stock to the finished good
@@ -302,6 +321,10 @@ export default function Sales() {
         <Button variant="outline" onClick={() => setShowMap(v => !v)} className="gap-2">
           <Map className="w-4 h-4" />
           {showMap ? 'Hide Map' : 'Delivery Map'}
+        </Button>
+        <Button variant="outline" onClick={handleSyncDispatches} disabled={isSyncing} className="gap-2">
+          <Zap className="w-4 h-4" />
+          {isSyncing ? 'Syncing...' : 'Sync Distances'}
         </Button>
         <Button onClick={() => setShowForm(true)} className="gap-2">
           <Plus className="w-4 h-4" />
