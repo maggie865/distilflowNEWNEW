@@ -186,6 +186,7 @@ export default function BottlingFloor() {
         const existing = await db.FinishedGood.filter({
           product_name: activeRun.product_name,
           batch_number: activeRun.batch_code,
+          bottle_size_ml: activeRun.bottle_size_ml,
         });
         if (existing.length > 0) {
           const fg = existing[0];
@@ -302,6 +303,7 @@ export default function BottlingFloor() {
         const existingFG = await db.FinishedGood.filter({
           product_name: run.product_name,
           batch_number: run.batch_number,
+          bottle_size_ml: run.bottle_size_ml,
         });
         if (existingFG.length > 0) {
           const fg = existingFG[0];
