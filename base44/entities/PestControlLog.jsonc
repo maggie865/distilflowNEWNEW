@@ -1,13 +1,52 @@
 {
   "name": "PestControlLog",
-  "fields": [
-    { "name": "date", "type": "string" },
-    { "name": "trap_id", "type": "string" },
-    { "name": "inspected_by", "type": "string" },
-    { "name": "activity", "type": "string", "enum": ["checked_clear","trapped","reset","rebaited","damaged","removed"] },
-    { "name": "pest_type", "type": "string" },
-    { "name": "quantity", "type": "number" },
-    { "name": "bait_used", "type": "string" },
-    { "name": "notes", "type": "string" }
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of inspection"
+    },
+    "trap_id": {
+      "type": "string",
+      "description": "ID of the trap inspected"
+    },
+    "inspected_by": {
+      "type": "string",
+      "description": "Name of person who inspected"
+    },
+    "activity": {
+      "type": "string",
+      "enum": [
+        "checked_clear",
+        "trapped",
+        "reset",
+        "rebaited",
+        "damaged",
+        "removed"
+      ],
+      "default": "checked_clear",
+      "description": "Type of activity performed"
+    },
+    "pest_type": {
+      "type": "string",
+      "description": "Type of pest found (if trapped)"
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Quantity of pests caught"
+    },
+    "bait_used": {
+      "type": "string",
+      "description": "Type of bait used (if rebaited)"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Additional notes"
+    }
+  },
+  "required": [
+    "date",
+    "trap_id"
   ]
 }
