@@ -43,12 +43,12 @@ const BLANK = {
 
 const BLANK_MOCK = {
   recall_number: `MOCK-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
-  product_name: '', batch_numbers: '', date_initiated: new Date().toISOString().split('T')[0],
+  product_name: '', batch_numbers: '', date_conducted: new Date().toISOString().split('T')[0],
   reason_type: 'allergen', reason_detail: '', recall_level: 'consumer',
   status: 'investigating', bottles_affected: '', bottles_recovered: '',
   mpi_notified_at: '', mpi_case_officer: '', distribution_list: '', corrective_actions: '',
   step1_notes: '', step2_notes: '', step3_notes: '', step4_notes: '', step5_notes: '', step6_notes: '',
-  notes: '',
+  notes: '', scenario: '',
   // Mock-specific fields
   conducted_by: '', time_to_complete_mins: '',
   distribution_list_accurate: false, stock_located: false, mpi_contact_identified: false,
