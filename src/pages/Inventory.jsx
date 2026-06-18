@@ -189,26 +189,32 @@ function Actions({ onAdjust, onEdit, onDelete }) {
   );
 }
 
-// ── Finished Goods Table (consolidated by product + bottle size) ─────────────
+// ── Finished Goods Table (grouped by bottle size, then by product) ──────────
 function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
   const [expanded, setExpanded] = useState({});
 
-  // Group by product_name + bottle_size_ml, only including records with stock
-  const groups = finishedGoods.filter(g => (g.quantity_bottles || 0) > 0).reduce((acc, g) => {
-    // Ensure bottle_size_ml is always treated distinctly (null vs 700 vs 200)
+  // First group by bottle_size_ml, then by product_name within each size
+  const bySize = {};
+  finishedGoods.filter(g => (g.quantity_bottles || 0) > 0).forEach(g => {
     const sizeKey = g.bottle_size_ml ?? 'no-size';
-    const key = `${g.product_name}||${sizeKey}`;
-    if (!acc[key]) acc[key] = { product_name: g.product_name, bottle_size_ml: g.bottle_size_ml, abv_percent: g.abv_percent, batches: [] };
-    acc[key].batches.push(g);
-    return acc;
-  }, {});
+    if (!bySize[sizeKey]) bySize[sizeKey] = {};
+    
+    const prodKey = g.product_name || 'Unknown';
+    if (!bySize[sizeKey][prodKey]) {
+      bySize[sizeKey][prodKey] = { product_name: g.product_name, bottle_size_ml: g.bottle_size_ml, abv_percent: g.abv_percent, batches: [] };
+    }
+    bySize[sizeKey][prodKey].batches.push(g);
+  });
 
-  const groupList = Object.entries(groups).map(([key, g]) => ({
-    key,
-    ...g,
-    total_bottles: g.batches.reduce((s, b) => s + (b.quantity_bottles || 0), 0),
-    total_lals: g.batches.reduce((s, b) => s + (b.total_lals || 0), 0),
-  }));
+  const sizeOrder = [700, 200]; // Display 700ml first, then 200ml
+  const sizes = Object.keys(bySize)
+    .sort((a, b) => {
+      const aNum = a === 'no-size' ? Infinity : parseInt(a);
+      const bNum = b === 'no-size' ? Infinity : parseInt(b);
+      return sizeOrder.indexOf(aNum) !== -1 && sizeOrder.indexOf(bNum) !== -1 
+        ? sizeOrder.indexOf(aNum) - sizeOrder.indexOf(bNum)
+        : aNum - bNum;
+    });
 
   const toggle = key => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
@@ -219,8 +225,8 @@ function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
           <TableHeader>
             <TableRow>
               <TableHead className="w-6"></TableHead>
-              <TableHead>Product</TableHead>
               <TableHead>Bottle Size</TableHead>
+              <TableHead>Product</TableHead>
               <TableHead>ABV</TableHead>
               <TableHead>Total Bottles</TableHead>
               <TableHead>Total LALs</TableHead>
@@ -229,45 +235,62 @@ function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
           <TableBody>
             {loading ? (
               <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-            ) : groupList.length === 0 ? (
+            ) : sizes.length === 0 ? (
               <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No finished goods in stock</TableCell></TableRow>
-            ) : groupList.map(g => (
-              <>
-                <TableRow
-                  key={g.key}
-                  className="cursor-pointer hover:bg-muted/50 font-medium"
-                  onClick={() => toggle(g.key)}
-                >
+            ) : sizes.flatMap(sizeKey => {
+              const sizeGroup = bySize[sizeKey];
+              const products = Object.entries(sizeGroup);
+              
+              return [
+                // Size header row (collapsible)
+                <TableRow key={`size-${sizeKey}`} className="bg-accent/20 hover:bg-accent/30 cursor-pointer font-bold" onClick={() => toggle(`size-${sizeKey}`)}>
                   <TableCell className="w-6 pr-0">
-                    {g.batches.length > 0
-                      ? (expanded[g.key] ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />)
-                      : null}
+                    {expanded[`size-${sizeKey}`] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </TableCell>
-                  <TableCell className="font-semibold text-sm">{g.product_name}</TableCell>
-                  <TableCell className="text-sm">{g.bottle_size_ml ? `${g.bottle_size_ml}ml` : '—'}</TableCell>
-                  <TableCell className="text-sm">{g.abv_percent ? `${g.abv_percent}%` : '—'}</TableCell>
-                  <TableCell className="text-sm font-bold text-primary">{g.total_bottles}</TableCell>
-                  <TableCell className="text-sm font-semibold">{g.total_lals.toFixed(3)}</TableCell>
-                </TableRow>
-                {expanded[g.key] && g.batches.map(b => (
-                  <TableRow key={b.id} className="bg-muted/30">
-                    <TableCell />
-                    <TableCell className="text-sm text-muted-foreground pl-6">↳ {b.batch_number}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{b.bottle_size_ml ? `${b.bottle_size_ml}ml` : '—'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{b.abv_percent ? `${b.abv_percent}%` : '—'}</TableCell>
-                    <TableCell className="text-sm">{b.quantity_bottles}</TableCell>
-                    <TableCell className="text-sm">{b.total_lals?.toFixed(3) || '—'}</TableCell>
-                    <TableCell>
-                      <Actions
-                        onAdjust={() => onOpen('adjust', b, 'FinishedGood', 'finishedGoods')}
-                        onEdit={() => onOpen('edit', b, 'FinishedGood', 'finishedGoods')}
-                        onDelete={() => onOpen('delete', b, 'FinishedGood', 'finishedGoods')}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </>
-            ))}
+                  <TableCell className="font-bold text-sm">{sizeKey === 'no-size' ? 'No Size' : `${sizeKey}ml`}</TableCell>
+                  <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                    {products.length} product{products.length !== 1 ? 's' : ''} · {products.reduce((s, [, p]) => s + p.batches.reduce((bs, b) => bs + (b.quantity_bottles || 0), 0), 0)} total bottles
+                  </TableCell>
+                </TableRow>,
+                // Product rows (nested under size)
+                ...(expanded[`size-${sizeKey}`] ? products.flatMap(([prodKey, prodGroup]) => {
+                  const prodKey2 = `${sizeKey}||${prodKey}`;
+                  const totalBottles = prodGroup.batches.reduce((s, b) => s + (b.quantity_bottles || 0), 0);
+                  const totalLals = prodGroup.batches.reduce((s, b) => s + (b.total_lals || 0), 0);
+                  
+                  return [
+                    <TableRow key={prodKey2} className="cursor-pointer hover:bg-muted/50" onClick={() => toggle(prodKey2)}>
+                      <TableCell className="w-6 pr-0 pl-6">
+                        {prodGroup.batches.length > 0 && (expanded[prodKey2] ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />)}
+                      </TableCell>
+                      <TableCell className="text-sm"></TableCell>
+                      <TableCell className="font-semibold text-sm">{prodKey}</TableCell>
+                      <TableCell className="text-sm">{prodGroup.abv_percent ? `${prodGroup.abv_percent}%` : '—'}</TableCell>
+                      <TableCell className="text-sm font-bold text-primary">{totalBottles}</TableCell>
+                      <TableCell className="text-sm font-semibold">{totalLals.toFixed(3)}</TableCell>
+                    </TableRow>,
+                    // Batch rows (nested under product)
+                    ...(expanded[prodKey2] ? prodGroup.batches.map(b => (
+                      <TableRow key={b.id} className="bg-muted/30">
+                        <TableCell />
+                        <TableCell></TableCell>
+                        <TableCell className="text-sm text-muted-foreground pl-12">↳ {b.batch_number}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{b.abv_percent ? `${b.abv_percent}%` : '—'}</TableCell>
+                        <TableCell className="text-sm">{b.quantity_bottles}</TableCell>
+                        <TableCell className="text-sm">{b.total_lals?.toFixed(3) || '—'}</TableCell>
+                        <TableCell>
+                          <Actions
+                            onAdjust={() => onOpen('adjust', b, 'FinishedGood', 'finishedGoods')}
+                            onEdit={() => onOpen('edit', b, 'FinishedGood', 'finishedGoods')}
+                            onDelete={() => onOpen('delete', b, 'FinishedGood', 'finishedGoods')}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )) : [])
+                  ];
+                }) : [])
+              ];
+            })}
           </TableBody>
         </Table>
       </div>
