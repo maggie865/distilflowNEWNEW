@@ -18,6 +18,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import DeliveryMap from '@/components/sales/DeliveryMap';
 import Pagination from '@/components/shared/Pagination';
+import CustomerAutocomplete from '@/components/sales/CustomerAutocomplete.jsx';
 import { base44 } from '@/api/base44Client';
 
 const DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
@@ -566,40 +567,30 @@ export default function Sales() {
             </div>
 
             {/* Customer */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <Label>Customer</Label>
-                <Link to="/customers" className="text-xs text-primary hover:underline flex items-center gap-1">
-                  <Users className="w-3 h-3" /> Manage customers
-                </Link>
-              </div>
-              <Select
-                value={form.customer_name}
-                onValueChange={v => {
-                  const c = customers.find(c => c.business_name === v);
-                  const addr = c?.delivery_address || '';
-                  setForm(f => ({ ...f, customer_name: v, customer_address: addr }));
-                  if (addr) calculateDistance(addr);
-                }}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select customer…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {customers.length === 0 && (
-                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No customers yet</div>
-                  )}
-                  {customers.map(c => (
-                    <SelectItem key={c.id} value={c.business_name}>{c.business_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {form.customer_address && (
-                <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
-                  <MapPin className="w-3 h-3" /> {form.customer_address}
-                </p>
-              )}
-            </div>
+             <div>
+               <div className="flex items-center justify-between mb-1">
+                 <Label>Customer</Label>
+                 <Link to="/customers" className="text-xs text-primary hover:underline flex items-center gap-1">
+                   <Users className="w-3 h-3" /> Manage customers
+                 </Link>
+               </div>
+               <CustomerAutocomplete
+                 customers={customers}
+                 value={form.customer_name}
+                 onSelect={v => {
+                   setForm(f => ({ ...f, customer_name: v }));
+                 }}
+                 onAddressChange={addr => {
+                   setForm(f => ({ ...f, customer_address: addr }));
+                   if (addr) calculateDistance(addr);
+                 }}
+               />
+               {form.customer_address && (
+                 <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
+                   <MapPin className="w-3 h-3" /> {form.customer_address}
+                 </p>
+               )}
+             </div>
 
             {/* Date */}
             <div>
@@ -775,17 +766,16 @@ export default function Sales() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Customer Name</Label>
-                <Select value={editForm.customer_name} onValueChange={v => {
-                  const c = customers.find(c => c.business_name === v);
-                  setEditForm(f => ({ ...f, customer_name: v, customer_address: c?.delivery_address || '' }));
-                }}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {customers.map(c => (
-                      <SelectItem key={c.id} value={c.business_name}>{c.business_name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CustomerAutocomplete
+                  customers={customers}
+                  value={editForm.customer_name}
+                  onSelect={v => {
+                    setEditForm(f => ({ ...f, customer_name: v }));
+                  }}
+                  onAddressChange={addr => {
+                    setEditForm(f => ({ ...f, customer_address: addr }));
+                  }}
+                />
               </div>
               <div>
                 <Label>Delivery Address</Label>
