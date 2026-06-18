@@ -478,7 +478,7 @@ export default function Inventory() {
 
   const { data: thresholds = [] } = useQuery({
     queryKey: ['stockThresholds'],
-    queryFn: () => base44.entities.StockThreshold.list('material_name', 200),
+    queryFn: async () => { try { return await base44.entities.StockThreshold.list('material_name', 200); } catch { return []; } },
   });
 
   const { data: allReceivings = [] } = useQuery({
