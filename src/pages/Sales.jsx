@@ -70,6 +70,7 @@ export default function Sales() {
   const [showMap, setShowMap] = useState(false);
   const [calcingDistance, setCalcingDistance] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [editCalcingDistance, setEditCalcingDistance] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -191,10 +192,31 @@ export default function Sales() {
 
   const editMutation = useMutation({
     mutationFn: async () => {
+      // Recalculate CO2e if distance/weight/method changed
+      let co2e = editForm.co2e_kg || editingDispatch.co2e_kg || 0;
+      const distance = editForm.transport_distance_km || editingDispatch.transport_distance_km || 0;
+      const weight = editForm.parcel_weight_kg || editingDispatch.parcel_weight_kg || 0;
+      const method = editForm.transport_method || editingDispatch.transport_method;
+
+      if (distance && weight && method) {
+        co2e = calcCO2e(distance, weight, method);
+      }
+
       await db.Dispatch.update(editingDispatch.id, {
         status: editForm.status,
         notes: editForm.notes,
         dispatch_date: editForm.dispatch_date,
+        product_name: editForm.product_name,
+        batch_number: editForm.batch_number,
+        quantity_bottles: editForm.quantity_bottles,
+        bottle_size_ml: editForm.bottle_size_ml,
+        total_lals: editForm.total_lals,
+        parcel_weight_kg: editForm.parcel_weight_kg,
+        transport_distance_km: editForm.transport_distance_km,
+        transport_method: editForm.transport_method,
+        customer_name: editForm.customer_name,
+        customer_address: editForm.customer_address,
+        co2e_kg: co2e,
       });
     },
     onSuccess: () => {
@@ -203,6 +225,24 @@ export default function Sales() {
       toast.success('Dispatch updated');
     },
   });
+
+  const calculateEditDistance = async (address) => {
+    if (!address) return;
+    setEditCalcingDistance(true);
+    try {
+      const res = await base44.functions.invoke('getDistanceMatrix', {
+        origins: [DISTILLERY_ORIGIN],
+        destinations: [address],
+        mode: editForm.transport_method || 'road'
+      });
+      const km = Math.round(res.data?.rows?.[0]?.elements?.[0]?.distance?.value / 1000) || 0;
+      setEditForm(f => ({ ...f, transport_distance_km: km }));
+    } catch (err) {
+      console.error('Distance calc failed:', err);
+    } finally {
+      setEditCalcingDistance(false);
+    }
+  };
 
   const returnMutation = useMutation({
     mutationFn: async (dispatch) => {
@@ -416,7 +456,24 @@ export default function Sales() {
                         <Button
                           variant="ghost" size="icon" className="h-7 w-7"
                           title="Edit"
-                          onClick={() => { setEditingDispatch(d); setEditForm({ status: d.status, notes: d.notes || '', dispatch_date: d.dispatch_date }); }}
+                          onClick={() => { 
+                            setEditingDispatch(d); 
+                            setEditForm({ 
+                              status: d.status, 
+                              notes: d.notes || '', 
+                              dispatch_date: d.dispatch_date,
+                              product_name: d.product_name || '',
+                              batch_number: d.batch_number || '',
+                              quantity_bottles: d.quantity_bottles || '',
+                              bottle_size_ml: d.bottle_size_ml || '',
+                              total_lals: d.total_lals || '',
+                              parcel_weight_kg: d.parcel_weight_kg || '',
+                              transport_distance_km: d.transport_distance_km || '',
+                              transport_method: d.transport_method || 'road',
+                              customer_name: d.customer_name || '',
+                              customer_address: d.customer_address || '',
+                            });
+                          }}
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
@@ -639,30 +696,173 @@ export default function Sales() {
 
       {/* Edit Dispatch Dialog */}
       <Dialog open={!!editingDispatch} onOpenChange={v => !v && setEditingDispatch(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">Edit Dispatch</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
-            <div>
-              <Label>Dispatch Date</Label>
-              <Input
-                type="date"
-                value={editForm.dispatch_date || ''}
-                onChange={e => setEditForm(f => ({ ...f, dispatch_date: e.target.value }))}
-                className="mt-1"
-              />
+            {/* Product Details */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Product Name</Label>
+                <Input
+                  value={editForm.product_name || ''}
+                  onChange={e => setEditForm(f => ({ ...f, product_name: e.target.value }))}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Batch Number</Label>
+                <Input
+                  value={editForm.batch_number || ''}
+                  onChange={e => setEditForm(f => ({ ...f, batch_number: e.target.value }))}
+                  className="mt-1"
+                />
+              </div>
             </div>
-            <div>
-              <Label>Status</Label>
-              <Select value={editForm.status} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="dispatched">Dispatched</SelectItem>
-                </SelectContent>
-              </Select>
+
+            {/* Volumes & Quantities */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Quantity (bottles)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={editForm.quantity_bottles || ''}
+                  onChange={e => setEditForm(f => ({ ...f, quantity_bottles: parseInt(e.target.value) || '' }))}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Bottle Size (ml)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={editForm.bottle_size_ml || ''}
+                  onChange={e => setEditForm(f => ({ ...f, bottle_size_ml: parseInt(e.target.value) || '' }))}
+                  className="mt-1"
+                />
+              </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Total LALs</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  value={editForm.total_lals || ''}
+                  onChange={e => setEditForm(f => ({ ...f, total_lals: parseFloat(e.target.value) || '' }))}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Parcel Weight (kg)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={editForm.parcel_weight_kg || ''}
+                  onChange={e => setEditForm(f => ({ ...f, parcel_weight_kg: parseFloat(e.target.value) || '' }))}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+
+            {/* Customer */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Customer Name</Label>
+                <Select value={editForm.customer_name} onValueChange={v => {
+                  const c = customers.find(c => c.business_name === v);
+                  setEditForm(f => ({ ...f, customer_name: v, customer_address: c?.delivery_address || '' }));
+                }}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {customers.map(c => (
+                      <SelectItem key={c.id} value={c.business_name}>{c.business_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Delivery Address</Label>
+                <Input
+                  value={editForm.customer_address || ''}
+                  onChange={e => setEditForm(f => ({ ...f, customer_address: e.target.value }))}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+
+            {/* Transport */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Transport Method</Label>
+                <Select value={editForm.transport_method || 'road'} onValueChange={v => setEditForm(f => ({ ...f, transport_method: v }))}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="road">Road</SelectItem>
+                    <SelectItem value="courier">Courier</SelectItem>
+                    <SelectItem value="air">Air</SelectItem>
+                    <SelectItem value="sea">Sea</SelectItem>
+                    <SelectItem value="pickup">Pickup</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Distance (km)</Label>
+                <div className="relative mt-1">
+                  <Input
+                    type="number"
+                    min="0"
+                    value={editForm.transport_distance_km || ''}
+                    onChange={e => setEditForm(f => ({ ...f, transport_distance_km: parseInt(e.target.value) || '' }))}
+                    disabled={editCalcingDistance}
+                  />
+                  {editCalcingDistance && (
+                    <div className="absolute right-2.5 top-2.5">
+                      <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
+                {editForm.customer_address && !editCalcingDistance && (
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline mt-1"
+                    onClick={() => calculateEditDistance(editForm.customer_address)}
+                  >
+                    Auto-calculate from address
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Date & Status */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Dispatch Date</Label>
+                <Input
+                  type="date"
+                  value={editForm.dispatch_date || ''}
+                  onChange={e => setEditForm(f => ({ ...f, dispatch_date: e.target.value }))}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Status</Label>
+                <Select value={editForm.status || 'dispatched'} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="dispatched">Dispatched</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div>
               <Label>Notes</Label>
               <Input
@@ -671,6 +871,7 @@ export default function Sales() {
                 className="mt-1"
               />
             </div>
+
             <Button
               onClick={() => editMutation.mutate()}
               disabled={editMutation.isPending}
