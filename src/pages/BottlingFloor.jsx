@@ -183,12 +183,13 @@ export default function BottlingFloor() {
 
       // 3. Update main finished goods stock (cases + extra bottles)
       if (totalBottles > 0) {
-        const existing = await db.FinishedGood.filter({
-          product_name: activeRun.product_name,
-          batch_number: activeRun.batch_code,
-        });
-        if (existing.length > 0) {
-          const fg = existing[0];
+        const allFG = await db.FinishedGood.list('product_name', 1000);
+        const fg = allFG.find(g =>
+          g.product_name === activeRun.product_name &&
+          g.batch_number === activeRun.batch_code &&
+          Number(g.bottle_size_ml) === Number(activeRun.bottle_size_ml)
+        );
+        if (fg) {
           await db.FinishedGood.update(fg.id, {
             quantity_bottles: (fg.quantity_bottles || 0) + totalBottles,
             total_lals: (fg.total_lals || 0) + parseFloat(lals.toFixed(4)),
@@ -299,12 +300,13 @@ export default function BottlingFloor() {
 
       // 2. Deduct from finished goods
       if (bottlesProduced > 0) {
-        const existingFG = await db.FinishedGood.filter({
-          product_name: run.product_name,
-          batch_number: run.batch_number,
-        });
-        if (existingFG.length > 0) {
-          const fg = existingFG[0];
+        const allFG = await db.FinishedGood.list('product_name', 1000);
+        const fg = allFG.find(g =>
+          g.product_name === run.product_name &&
+          g.batch_number === run.batch_number &&
+          Number(g.bottle_size_ml) === Number(run.bottle_size_ml)
+        );
+        if (fg) {
           const newQty = Math.max(0, (fg.quantity_bottles || 0) - bottlesProduced);
           const newLals = Math.max(0, (fg.total_lals || 0) - lals);
           if (newQty === 0) {
