@@ -191,33 +191,18 @@ export default function Sales() {
   });
 
   const editMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (data) => {
       // Recalculate CO2e if distance/weight/method changed
-      let co2e = editForm.co2e_kg || editingDispatch.co2e_kg || 0;
-      const distance = editForm.transport_distance_km || editingDispatch.transport_distance_km || 0;
-      const weight = editForm.parcel_weight_kg || editingDispatch.parcel_weight_kg || 0;
-      const method = editForm.transport_method || editingDispatch.transport_method;
+      let co2e = data.co2e_kg || editingDispatch.co2e_kg || 0;
+      const distance = data.transport_distance_km || editingDispatch.transport_distance_km || 0;
+      const weight = data.parcel_weight_kg || editingDispatch.parcel_weight_kg || 0;
+      const method = data.transport_method || editingDispatch.transport_method;
 
       if (distance && weight && method) {
         co2e = calcCO2e(distance, weight, method);
       }
 
-      await db.Dispatch.update(editingDispatch.id, {
-        status: editForm.status,
-        notes: editForm.notes,
-        dispatch_date: editForm.dispatch_date,
-        product_name: editForm.product_name,
-        batch_number: editForm.batch_number,
-        quantity_bottles: editForm.quantity_bottles,
-        bottle_size_ml: editForm.bottle_size_ml,
-        total_lals: editForm.total_lals,
-        parcel_weight_kg: editForm.parcel_weight_kg,
-        transport_distance_km: editForm.transport_distance_km,
-        transport_method: editForm.transport_method,
-        customer_name: editForm.customer_name,
-        customer_address: editForm.customer_address,
-        co2e_kg: co2e,
-      });
+      await db.Dispatch.update(editingDispatch.id, { ...data, co2e_kg: co2e });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dispatches'] });
@@ -729,7 +714,14 @@ export default function Sales() {
                   type="number"
                   min="0"
                   value={editForm.quantity_bottles || ''}
-                  onChange={e => setEditForm(f => ({ ...f, quantity_bottles: parseInt(e.target.value) || '' }))}
+                  onChange={e => {
+                    const newQty = parseInt(e.target.value) || '';
+                    const lalsPerBottle = editingDispatch.total_lals && editingDispatch.quantity_bottles 
+                      ? editingDispatch.total_lals / editingDispatch.quantity_bottles 
+                      : 0;
+                    const newLals = newQty && lalsPerBottle ? parseFloat((newQty * lalsPerBottle).toFixed(3)) : '';
+                    setEditForm(f => ({ ...f, quantity_bottles: newQty, total_lals: newLals }));
+                  }}
                   className="mt-1"
                 />
               </div>
@@ -873,7 +865,7 @@ export default function Sales() {
             </div>
 
             <Button
-              onClick={() => editMutation.mutate()}
+              onClick={() => editMutation.mutate(editForm)}
               disabled={editMutation.isPending}
               className="w-full"
             >
