@@ -15,34 +15,31 @@ Deno.serve(async (req) => {
     let updated = 0;
 
     // For each bottling run, find and update matching finished goods
-    for (const run of bottlingRuns) {
-      if (!run.batch_number) continue;
+     for (const run of bottlingRuns) {
+       if (!run.batch_number) continue;
 
-      // Find all finished goods with matching batch number
-      const matches = finishedGoods.filter(fg => fg.batch_number === run.batch_number);
+       // Find finished goods matching batch number AND bottle size
+       const matches = finishedGoods.filter(fg => 
+         fg.batch_number === run.batch_number && 
+         fg.bottle_size_ml === run.bottle_size_ml
+       );
 
-      for (const fg of matches) {
-        const updates = {};
-        let needsUpdate = false;
+       for (const fg of matches) {
+         const updates = {};
+         let needsUpdate = false;
 
-        // Update product name if it differs
-        if (fg.product_name !== run.product_name) {
-          updates.product_name = run.product_name;
-          needsUpdate = true;
-        }
+         // Update product name if it differs
+         if (fg.product_name !== run.product_name) {
+           updates.product_name = run.product_name;
+           needsUpdate = true;
+         }
 
-        // Update bottle size if it differs
-        if (fg.bottle_size_ml !== run.bottle_size_ml) {
-          updates.bottle_size_ml = run.bottle_size_ml;
-          needsUpdate = true;
-        }
-
-        if (needsUpdate) {
-          await base44.entities.FinishedGood.update(fg.id, updates);
-          updated++;
-        }
-      }
-    }
+         if (needsUpdate) {
+           await base44.entities.FinishedGood.update(fg.id, updates);
+           updated++;
+         }
+       }
+     }
 
     return Response.json({
       success: true,
