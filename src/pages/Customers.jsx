@@ -8,11 +8,12 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash2, Users, MapPin, Pencil } from 'lucide-react';
+import { Plus, Trash2, Users, MapPin, Pencil, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import Pagination from '@/components/shared/Pagination';
+import { base44 } from '@/api/base44Client';
 
 const EMPTY_FORM = { business_name: '', delivery_address: '' };
 const PAGE_SIZE = 50;
@@ -24,6 +25,7 @@ export default function Customers() {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [currentPage, setCurrentPage] = useState(0);
+  const [isDeduping, setIsDeduping] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: pageResult = { data: [], count: 0 } } = useQuery({
@@ -65,13 +67,33 @@ export default function Customers() {
     },
   });
 
+  const handleRemoveDuplicates = async () => {
+    setIsDeduping(true);
+    try {
+      const res = await base44.functions.invoke('removeDuplicateCustomers', {});
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      setCurrentPage(0);
+      toast.success(res.data.message);
+    } catch (err) {
+      toast.error('Failed to remove duplicates');
+    } finally {
+      setIsDeduping(false);
+    }
+  };
+
   return (
     <div className="pb-20 md:pb-0">
       <PageHeader title="Customers" subtitle="Manage your customer directory for dispatch">
-        <Button onClick={() => setShowForm(true)} className="gap-2">
-          <Plus className="w-4 h-4" />
-          Add Customer
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setShowForm(true)} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Add Customer
+          </Button>
+          <Button variant="outline" onClick={handleRemoveDuplicates} disabled={isDeduping} className="gap-2">
+            <Zap className="w-4 h-4" />
+            {isDeduping ? 'Cleaning...' : 'Remove Duplicates'}
+          </Button>
+        </div>
       </PageHeader>
 
       {/* Stats */}
