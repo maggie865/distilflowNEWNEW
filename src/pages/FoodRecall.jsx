@@ -664,14 +664,16 @@ export default function FoodRecallManager() {
 
       {/* Mock recall dialog */}
       <Dialog open={mockOpen} onOpenChange={v => { setMockOpen(v); if (!v) { setEditingMockId(null); setMockForm(BLANK_MOCK); } }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
               <ClipboardList className="w-5 h-5" />
-              {editingMockId ? 'Edit Mock Recall' : 'Log Mock Recall'}
+              {editingMockId ? 'Edit Mock Recall' : 'Practice Mock Recall'}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 mt-2">
+
+          <div className="space-y-5 mt-2">
+            {/* Basic details */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Recall number</Label>
@@ -692,40 +694,112 @@ export default function FoodRecallManager() {
                 <Input value={mockForm.conducted_by} onChange={e => setM('conducted_by', e.target.value)} placeholder="Name" className="mt-1" />
               </div>
             </div>
-            <div>
-              <Label>Scenario</Label>
-              <Textarea value={mockForm.scenario} onChange={e => setM('scenario', e.target.value)} placeholder="Describe the mock recall scenario" className="mt-1" rows={2} />
-            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Outcome</Label>
-                <Select value={mockForm.outcome} onValueChange={v => setM('outcome', v)}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select…" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pass">Pass</SelectItem>
-                    <SelectItem value="fail">Fail</SelectItem>
-                    <SelectItem value="partial">Partial pass</SelectItem>
-                  </SelectContent>
+                <Label>Reason type</Label>
+                <Select value={mockForm.reason_type} onValueChange={v => setM('reason_type', v)}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>{REASON_TYPES.map(t => <SelectItem key={t} value={t}>{t.replace('_', ' ')}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Time to complete (mins)</Label>
-                <Input type="number" value={mockForm.time_to_complete_mins} onChange={e => setM('time_to_complete_mins', e.target.value)} className="mt-1" />
+                <Label>Recall level</Label>
+                <Select value={mockForm.recall_level} onValueChange={v => setM('recall_level', v)}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="consumer">Consumer-level</SelectItem>
+                    <SelectItem value="trade">Trade-level</SelectItem>
+                    <SelectItem value="none">No recall needed</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div>
-              <Label>Next mock due</Label>
-              <Input type="date" value={mockForm.next_mock_due} onChange={e => setM('next_mock_due', e.target.value)} className="mt-1" />
+              <Label>Scenario / Reason detail</Label>
+              <Textarea value={mockForm.reason_detail} onChange={e => setM('reason_detail', e.target.value)} placeholder="Describe the food safety issue in this mock scenario" className="mt-1" rows={2} />
             </div>
+
+            {/* Current status */}
             <div>
-              <Label>Corrective actions</Label>
-              <Textarea value={mockForm.corrective_actions} onChange={e => setM('corrective_actions', e.target.value)} placeholder="Any improvements identified?" className="mt-1" rows={2} />
+              <Label>Current step / status</Label>
+              <Select value={mockForm.status} onValueChange={v => setM('status', v)}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="investigating">Step 1 — Investigating</SelectItem>
+                  <SelectItem value="informed">Step 2 — MPI informed</SelectItem>
+                  <SelectItem value="assessed">Step 3 — Risk assessed</SelectItem>
+                  <SelectItem value="checked">Step 4 — MPI checked</SelectItem>
+                  <SelectItem value="communicating">Step 5 — Communicating</SelectItem>
+                  <SelectItem value="auditing">Step 6 — Auditing</SelectItem>
+                  <SelectItem value="closed">Closed</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {/* Per-step notes */}
+            <div className="space-y-3">
+              <p className="text-sm font-semibold">Notes per step</p>
+              {RECALL_STEPS.map(s => (
+                <div key={s.num}>
+                  <Label className="flex items-center gap-2">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white text-xs ${s.color}`}>{s.num}</span>
+                    {s.label} — {s.desc}
+                    {s.urgent && <span className="text-xs text-destructive font-medium">24hr limit</span>}
+                  </Label>
+                  <Textarea value={mockForm[s.key]} onChange={e => setM(s.key, e.target.value)} className="mt-1" rows={2} placeholder={`Step ${s.num} notes…`} />
+                </div>
+              ))}
+            </div>
+
+            {/* Recovery stats */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Bottles affected</Label>
+                <Input type="number" value={mockForm.bottles_affected} onChange={e => setM('bottles_affected', e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label>Bottles recovered</Label>
+                <Input type="number" value={mockForm.bottles_recovered} onChange={e => setM('bottles_recovered', e.target.value)} className="mt-1" />
+              </div>
+            </div>
+
+            {/* Practice metrics */}
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+              <p className="text-xs font-semibold text-blue-800">Mock drill metrics</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Time to complete (mins)</Label>
+                  <Input type="number" value={mockForm.time_to_complete_mins} onChange={e => setM('time_to_complete_mins', e.target.value)} className="mt-1" />
+                </div>
+                <div>
+                  <Label className="text-xs">Outcome</Label>
+                  <Select value={mockForm.outcome} onValueChange={v => setM('outcome', v)}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pass">Pass</SelectItem>
+                      <SelectItem value="fail">Fail</SelectItem>
+                      <SelectItem value="partial">Partial pass</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Next mock due</Label>
+                  <Input type="date" value={mockForm.next_mock_due} onChange={e => setM('next_mock_due', e.target.value)} className="mt-1" />
+                </div>
+              </div>
+            </div>
+
             <div>
-              <Label>Notes</Label>
+              <Label>Corrective actions identified</Label>
+              <Textarea value={mockForm.corrective_actions} onChange={e => setM('corrective_actions', e.target.value)} placeholder="What improvements were identified?" className="mt-1" rows={2} />
+            </div>
+
+            <div>
+              <Label>Additional notes</Label>
               <Textarea value={mockForm.notes} onChange={e => setM('notes', e.target.value)} className="mt-1" rows={2} />
             </div>
-            <Button className="w-full" onClick={() => saveMockMutation.mutate(mockForm)} disabled={saveMockMutation.isPending}>
+
+            <Button className="w-full" onClick={() => saveMockMutation.mutate(mockForm)} disabled={saveMockMutation.isPending || !mockForm.product_name}>
               {saveMockMutation.isPending ? 'Saving...' : editingMockId ? 'Update Mock Recall' : 'Log Mock Recall'}
             </Button>
           </div>
