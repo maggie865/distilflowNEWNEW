@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/api/supabaseClient';
 import { Button } from '@/components/ui/button';
@@ -62,7 +62,7 @@ const EMPTY_FORM = {
 export default function Sales() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [selectedFGId, setSelectedFGId] = useState('');
+  const [selectedProductKey, setSelectedProductKey] = useState('');
   const [deletingDispatch, setDeletingDispatch] = useState(null);
   const [editingDispatch, setEditingDispatch] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -101,35 +101,57 @@ export default function Sales() {
   const totalDispatchCount = dispatchPage.count ?? 0;
 
   // Only sellable stock (not tasting bottles)
-  const sellableGoods = finishedGoods.filter(fg => !fg.product_name?.includes('Tasting'));
+  const sellableGoods = useMemo(
+    () => finishedGoods.filter(fg => !fg.product_name?.includes('Tasting')),
+    [finishedGoods]
+  );
 
-  const selectedFG = finishedGoods.find(fg => fg.id === selectedFGId);
+  // Build unique product options (grouped by product_name + bottle_size_ml) with FIFO-sorted batches
+  const productOptions = useMemo(() => {
+    const map = {};
+    for (const fg of sellableGoods) {
+      const key = `${fg.product_name}||${fg.bottle_size_ml || ''}`;
+      if (!map[key]) {
+        map[key] = { product_name: fg.product_name, bottle_size_ml: fg.bottle_size_ml || '', batches: [] };
+      }
+      map[key].batches.push(fg);
+    }
+    return Object.values(map).map(opt => {
+      const batchesWithAvail = opt.batches.map(fg => {
+        const dispatched = allDispatches
+          .filter(d => d.product_name === fg.product_name && d.batch_number === fg.batch_number && Number(d.bottle_size_ml) === Number(fg.bottle_size_ml))
+          .reduce((s, d) => s + (d.quantity_bottles || 0), 0);
+        return { ...fg, available: Math.max(0, (fg.quantity_bottles || 0) - dispatched) };
+      }).filter(b => b.available > 0);
+      // FIFO: oldest batch first
+      batchesWithAvail.sort((a, b) => new Date(a.created_at || a.created_date) - new Date(b.created_at || b.created_date));
+      return { ...opt, batches: batchesWithAvail, totalAvailable: batchesWithAvail.reduce((s, b) => s + b.available, 0) };
+    }).filter(opt => opt.totalAvailable > 0);
+  }, [sellableGoods, allDispatches]);
 
-  // Calculate truly available stock: bottled minus already dispatched for this FG
-  const dispatchedForFG = allDispatches
-    .filter(d => d.product_name === selectedFG?.product_name && d.batch_number === selectedFG?.batch_number && Number(d.bottle_size_ml) === Number(selectedFG?.bottle_size_ml))
-    .reduce((s, d) => s + (d.quantity_bottles || 0), 0);
-  const maxBottles = Math.max(0, (selectedFG?.quantity_bottles || 0) - dispatchedForFG);
+  const selectedProduct = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === selectedProductKey);
+  const fifoBatches = selectedProduct?.batches || [];
+  const maxBottles = selectedProduct?.totalAvailable || 0;
   const qty = parseInt(form.quantity_bottles) || 0;
   const overStock = qty > maxBottles;
-  const estimatedWeightKg = selectedFG ? calcWeightKg(selectedFG.bottle_size_ml, qty) : 0;
+  const estimatedWeightKg = selectedProduct ? calcWeightKg(selectedProduct.bottle_size_ml, qty) : 0;
 
-  const handleSelectFG = (id) => {
-    setSelectedFGId(id);
-    const fg = finishedGoods.find(f => f.id === id);
-    if (fg) {
+  const handleSelectProduct = (key) => {
+    setSelectedProductKey(key);
+    const product = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === key);
+    if (product) {
       setForm(f => ({
         ...f,
-        product_name: fg.product_name,
-        batch_number: fg.batch_number,
-        bottle_size_ml: fg.bottle_size_ml || '',
+        product_name: product.product_name,
+        bottle_size_ml: product.bottle_size_ml || '',
+        batch_number: '',
       }));
     }
   };
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
-    setSelectedFGId('');
+    setSelectedProductKey('');
   };
 
   const calculateDistance = async (customerAddress) => {
@@ -154,37 +176,52 @@ export default function Sales() {
 
   const dispatchMutation = useMutation({
     mutationFn: async () => {
-      const lals = selectedFG
-        ? ((qty * (selectedFG.bottle_size_ml || 700)) / 1000) * (selectedFG.abv_percent || 0) / 100
-        : 0;
-
-      const weightKg = calcWeightKg(selectedFG?.bottle_size_ml, qty);
       const distanceKm = parseFloat(form.transport_distance_km) || 0;
-      const co2e = calcCO2e(distanceKm, weightKg, form.transport_method);
+      const transportMethod = form.transport_method;
 
-      const dispatchData = {
-        ...form,
-        quantity_bottles: qty,
-        bottle_size_ml: selectedFG?.bottle_size_ml || null,
-        transport_distance_km: distanceKm,
-        total_lals: parseFloat(lals.toFixed(4)),
-        parcel_weight_kg: weightKg,
-        co2e_kg: co2e,
-        dispatched_from: 'Bluff Distillery',
-        is_sample: 'FALSE',
-      };
+      // FIFO allocation: assign qty across oldest batches first
+      let remaining = qty;
+      const allocations = [];
+      for (const batch of fifoBatches) {
+        if (remaining <= 0) break;
+        const take = Math.min(remaining, batch.available);
+        if (take <= 0) continue;
+        const bottleSize = batch.bottle_size_ml || 700;
+        const abv = batch.abv_percent || 0;
+        const lals = ((take * bottleSize) / 1000) * abv / 100;
+        const weightKg = calcWeightKg(bottleSize, take);
+        const co2e = calcCO2e(distanceKm, weightKg, transportMethod);
+        allocations.push({ batch, take, lals, weightKg, co2e });
+        remaining -= take;
+      }
 
-      // 1. Save dispatch record
-      await db.Dispatch.create(dispatchData);
+      if (remaining > 0) {
+        throw new Error('Insufficient stock to fulfil this dispatch');
+      }
 
-      // 2. Deduct from finished goods stock
-      if (selectedFG) {
-        const newQty = (selectedFG.quantity_bottles || 0) - qty;
-        const newLals = Math.max(0, (selectedFG.total_lals || 0) - parseFloat(lals.toFixed(4)));
+      // Create one dispatch record per batch and deduct stock (FIFO)
+      for (const a of allocations) {
+        const dispatchData = {
+          ...form,
+          product_name: a.batch.product_name,
+          batch_number: a.batch.batch_number,
+          bottle_size_ml: a.batch.bottle_size_ml || null,
+          quantity_bottles: a.take,
+          transport_distance_km: distanceKm,
+          total_lals: parseFloat(a.lals.toFixed(4)),
+          parcel_weight_kg: a.weightKg,
+          co2e_kg: a.co2e,
+          dispatched_from: 'Bluff Distillery',
+          is_sample: 'FALSE',
+        };
+        await db.Dispatch.create(dispatchData);
+
+        const newQty = (a.batch.quantity_bottles || 0) - a.take;
+        const newLals = Math.max(0, (a.batch.total_lals || 0) - parseFloat(a.lals.toFixed(4)));
         if (newQty <= 0) {
-          await db.FinishedGood.delete(selectedFG.id);
+          await db.FinishedGood.delete(a.batch.id);
         } else {
-          await db.FinishedGood.update(selectedFG.id, {
+          await db.FinishedGood.update(a.batch.id, {
             quantity_bottles: newQty,
             total_lals: parseFloat(newLals.toFixed(4)),
           });
@@ -193,10 +230,14 @@ export default function Sales() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['dispatches-all'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
       setShowForm(false);
       resetForm();
-      toast.success('Dispatch recorded successfully');
+      toast.success('Dispatch recorded successfully (FIFO)');
+    },
+    onError: (err) => {
+      toast.error(err.message || 'Failed to record dispatch');
     },
   });
 
@@ -512,20 +553,20 @@ export default function Sales() {
           </DialogHeader>
           <div className="space-y-4 mt-2">
 
-            {/* Product from stock */}
+            {/* Product selection (batch auto-assigned via FIFO) */}
             <div>
-              <Label>Product (from stock)</Label>
-              <Select value={selectedFGId} onValueChange={handleSelectFG}>
+              <Label>Product</Label>
+              <Select value={selectedProductKey} onValueChange={handleSelectProduct}>
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select finished good" />
+                  <SelectValue placeholder="Select product" />
                 </SelectTrigger>
                 <SelectContent>
-                  {sellableGoods.length === 0 && (
-                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No finished goods in stock</div>
+                  {productOptions.length === 0 && (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No stock available</div>
                   )}
-                  {sellableGoods.map(fg => (
-                    <SelectItem key={fg.id} value={fg.id}>
-                      {fg.product_name} — Batch {fg.batch_number} ({fg.quantity_bottles} btls)
+                  {productOptions.map(opt => (
+                    <SelectItem key={`${opt.product_name}||${opt.bottle_size_ml}`} value={`${opt.product_name}||${opt.bottle_size_ml}`}>
+                      {opt.product_name} ({opt.bottle_size_ml}ml) — {opt.totalAvailable} btls
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -533,19 +574,19 @@ export default function Sales() {
             </div>
 
             {/* Stock info */}
-            {selectedFG && (
+            {selectedProduct && (
               <div className="rounded-lg bg-muted px-4 py-3 grid grid-cols-3 gap-3 text-sm">
                 <div>
-                  <p className="text-xs text-muted-foreground">In Stock</p>
-                  <p className="font-semibold">{selectedFG.quantity_bottles} bottles</p>
+                  <p className="text-xs text-muted-foreground">Available</p>
+                  <p className="font-semibold">{maxBottles} bottles</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Size</p>
-                  <p className="font-semibold">{selectedFG.bottle_size_ml}ml</p>
+                  <p className="font-semibold">{selectedProduct.bottle_size_ml}ml</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Batch</p>
-                  <p className="font-semibold font-mono text-xs">{selectedFG.batch_number}</p>
+                  <p className="text-xs text-muted-foreground">Batches (FIFO)</p>
+                  <p className="font-semibold font-mono text-xs">{fifoBatches.length} batch{fifoBatches.length !== 1 ? 's' : ''}</p>
                 </div>
               </div>
             )}
@@ -565,13 +606,34 @@ export default function Sales() {
               {overStock && (
                 <p className="text-xs text-destructive mt-1">Exceeds available stock ({maxBottles} bottles)</p>
               )}
-              {qty > 0 && selectedFG && (
+              {qty > 0 && selectedProduct && (
                 <p className="text-xs text-muted-foreground mt-1">
                   Estimated parcel weight: <span className="font-semibold text-foreground">{estimatedWeightKg} kg</span>
-                  {' '}({selectedFG.bottle_size_ml <= 250 ? '200ml: 6 kg/12-pack' : '700ml: 10 kg/6-pack'})
+                  {' '}({selectedProduct.bottle_size_ml <= 250 ? '200ml: 6 kg/12-pack' : '700ml: 10 kg/6-pack'})
                 </p>
               )}
             </div>
+
+            {/* FIFO Allocation Preview */}
+            {qty > 0 && selectedProduct && !overStock && (
+              <div className="rounded-lg border border-border p-3 space-y-1.5 text-xs">
+                <p className="font-semibold text-muted-foreground">FIFO Batch Allocation</p>
+                {(() => {
+                  let rem = qty;
+                  return fifoBatches.map((batch) => {
+                    if (rem <= 0) return null;
+                    const take = Math.min(rem, batch.available);
+                    rem -= take;
+                    return (
+                      <div key={batch.id} className="flex justify-between">
+                        <span className="font-mono">{batch.batch_number}</span>
+                        <span>{take} bottle{take !== 1 ? 's' : ''}</span>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            )}
 
             {/* Customer */}
              <div>
@@ -677,10 +739,10 @@ export default function Sales() {
 
             <Button
               onClick={() => dispatchMutation.mutate()}
-              disabled={dispatchMutation.isPending || !selectedFGId || !form.customer_name || !qty || overStock}
+              disabled={dispatchMutation.isPending || !selectedProductKey || !form.customer_name || !qty || overStock}
               className="w-full h-12 text-base font-semibold"
             >
-              {dispatchMutation.isPending ? 'Saving…' : 'Record Dispatch & Deduct Stock'}
+              {dispatchMutation.isPending ? 'Saving…' : 'Record Dispatch & Deduct Stock (FIFO)'}
             </Button>
           </div>
         </DialogContent>
