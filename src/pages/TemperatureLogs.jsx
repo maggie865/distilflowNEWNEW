@@ -37,6 +37,8 @@ const BLANK = {
 export default function TemperatureLogs() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(BLANK);
+  const [filterUnit, setFilterUnit] = useState('all');
+  const [filterType, setFilterType] = useState('all');
   const qc = useQueryClient();
 
   const { data: logs = [], isLoading } = useQuery({
@@ -79,7 +81,11 @@ export default function TemperatureLogs() {
   const today = new Date().toISOString().split('T')[0];
   const todayLogs = logs.filter(l => l.date === today);
   const outOfRange = logs.filter(l => l.in_range === false).length;
-  const unitNames = [...new Set(logs.map(l => l.unit_name).filter(Boolean))];
+  const unitNames = [...new Set(logs.map(l => l.unit_name).filter(Boolean))].sort();
+  const filteredLogs = logs.filter(l =>
+    (filterUnit === 'all' || l.unit_name === filterUnit) &&
+    (filterType === 'all' || l.unit_type === filterType)
+  );
 
   return (
     <div className="pb-20 md:pb-0">
@@ -116,6 +122,29 @@ export default function TemperatureLogs() {
         </div>
       )}
 
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <div className="flex-1">
+          <Label className="text-xs text-muted-foreground">Filter by unit</Label>
+          <Select value={filterUnit} onValueChange={setFilterUnit}>
+            <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All units</SelectItem>
+              {unitNames.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex-1">
+          <Label className="text-xs text-muted-foreground">Filter by type</Label>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              {UNIT_TYPES.map(t => <SelectItem key={t} value={t}>{t.replace('_', ' ')}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
@@ -136,9 +165,9 @@ export default function TemperatureLogs() {
             <TableBody>
               {isLoading ? (
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-              ) : logs.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No temperature logs yet</TableCell></TableRow>
-              ) : logs.map(l => (
+              ) : filteredLogs.length === 0 ? (
+                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No temperature logs match these filters</TableCell></TableRow>
+              ) : filteredLogs.map(l => (
                 <TableRow key={l.id} className={l.in_range === false ? 'bg-destructive/5' : ''}>
                   <TableCell className="text-sm">{l.date ? format(new Date(l.date), 'MMM d, yyyy') : '—'}</TableCell>
                   <TableCell className="text-sm font-mono">{l.time || '—'}</TableCell>
