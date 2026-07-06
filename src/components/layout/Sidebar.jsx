@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle } from 'lucide-react';
+import { Home, Droplets, Flame, Wine, Cylinder, TrendingUp, Users, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, Thermometer, Wrench, Bug, AlertTriangle, FlaskConical, X } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 
@@ -20,7 +20,7 @@ const navGroups = [
     items: [
       { label: 'Batch Tracker', icon: FlaskConical, path: '/batch-tracker' },
       { label: 'Raw Materials', icon: Droplets, path: '/raw-materials' },
-      { label: 'Inventory', icon: Warehouse, path: '/inventory' },
+      { label: 'Inventory', icon: TrendingUp, path: '/inventory' },
       { label: 'Stock Takes', icon: ClipboardList, path: '/stock-takes' },
     ]
   },
@@ -44,7 +44,7 @@ const navGroups = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ open, onClose }) {
   const location = useLocation();
   const [expandedGroups, setExpandedGroups] = useState({ Production: true, Planning: true, 'Inwards/Outwards': true });
 
@@ -53,85 +53,110 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="fixed top-0 left-0 h-full w-[240px] bg-sidebar flex flex-col z-40 border-r border-sidebar-border">
-      <div className="px-5 py-5 border-b border-sidebar-border">
-        <h1 className="text-lg font-display font-bold text-sidebar-primary">Distillery OS</h1>
-      </div>
-
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
-        <Link
-          to="/"
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-            location.pathname === '/'
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <Home className="w-4 h-4" />
-          Dashboard
-        </Link>
-
-        {navGroups.map((group) => (
-          <Collapsible
-            key={group.name}
-            open={expandedGroups[group.name]}
-            onOpenChange={() => toggleGroup(group.name)}
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 transition-opacity"
+          onClick={onClose}
+        />
+      )}
+      {/* Sidebar panel */}
+      <aside
+        className={cn(
+          "fixed top-0 left-0 h-full w-[240px] bg-sidebar flex flex-col z-50 border-r border-sidebar-border transition-transform duration-200",
+          open ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        <div className="px-5 py-5 border-b border-sidebar-border flex items-center justify-between">
+          <h1 className="text-lg font-display font-bold text-sidebar-primary">Distillery OS</h1>
+          <button
+            onClick={onClose}
+            className="text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
           >
-            <CollapsibleTrigger className="flex items-center justify-between w-full px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors mt-2">
-              {group.name}
-              <ChevronDown className={cn("w-3 h-3 transition-transform", expandedGroups[group.name] && "rotate-180")} />
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-0.5 mt-0.5">
-              {group.items.map((item) => {
-                const isActive = location.pathname === item.path;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-                      isActive
-                        ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-                        : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                    )}
-                  >
-                    <item.icon className="w-4 h-4 shrink-0" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </CollapsibleContent>
-          </Collapsible>
-        ))}
-      </nav>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
-      <div className="px-3 py-3 border-t border-sidebar-border space-y-0.5">
-        <Link
-          to="/reports"
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-            location.pathname === '/reports'
-              ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <FileText className="w-4 h-4" />
-          Reports
-        </Link>
-        <Link
-          to="/settings"
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-            location.pathname === '/settings'
-              ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <Settings className="w-4 h-4" />
-          Settings
-        </Link>
-      </div>
-    </aside>
+        <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
+          <Link
+            to="/"
+            onClick={onClose}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+              location.pathname === '/'
+                ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            )}
+          >
+            <Home className="w-4 h-4" />
+            Dashboard
+          </Link>
+
+          {navGroups.map((group) => (
+            <Collapsible
+              key={group.name}
+              open={expandedGroups[group.name]}
+              onOpenChange={() => toggleGroup(group.name)}
+            >
+              <CollapsibleTrigger className="flex items-center justify-between w-full px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors mt-2">
+                {group.name}
+                <ChevronDown className={cn("w-3 h-3 transition-transform", expandedGroups[group.name] && "rotate-180")} />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-0.5 mt-0.5">
+                {group.items.map((item) => {
+                  const isActive = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={onClose}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                        isActive
+                          ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
+                          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      )}
+                    >
+                      <item.icon className="w-4 h-4 shrink-0" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </CollapsibleContent>
+            </Collapsible>
+          ))}
+        </nav>
+
+        <div className="px-3 py-3 border-t border-sidebar-border space-y-0.5">
+          <Link
+            to="/reports"
+            onClick={onClose}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+              location.pathname === '/reports'
+                ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
+                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            )}
+          >
+            <FileText className="w-4 h-4" />
+            Reports
+          </Link>
+          <Link
+            to="/settings"
+            onClick={onClose}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+              location.pathname === '/settings'
+                ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
+                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            )}
+          >
+            <Settings className="w-4 h-4" />
+            Settings
+          </Link>
+        </div>
+      </aside>
+    </>
   );
 }
