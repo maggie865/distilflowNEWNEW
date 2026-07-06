@@ -7,6 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 import StatusBadge from '@/components/shared/StatusBadge';
+import QuickLinks from '@/components/dashboard/QuickLinks';
+import StockOverview from '@/components/dashboard/StockOverview';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -100,6 +102,10 @@ export default function Dashboard() {
   return (
     <div className="pb-20 md:pb-0">
       <PageHeader title="Dashboard" subtitle="Overview of your distillery operations" />
+
+      <QuickLinks />
+
+      <StockOverview />
 
       {lowStockAlerts.length > 0 && (
         <div
