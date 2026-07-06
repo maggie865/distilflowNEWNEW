@@ -18,7 +18,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import Pagination from '@/components/shared/Pagination';
 import DispatchForm from '@/components/dispatch/DispatchForm.jsx';
-import StockByLocation from '@/components/dispatch/StockByLocation.jsx';
+import StockSummary from '@/components/dispatch/StockSummary.jsx';
 import DeliveryMap from '@/components/sales/DeliveryMap';
 
 const DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
@@ -172,7 +172,7 @@ export default function DispatchHub() {
         ))}
       </div>
 
-      <div className="mb-6"><StockByLocation finishedGoods={finishedGoods} warehouseStock={warehouseStock} /></div>
+      <div className="mb-6"><StockSummary finishedGoods={finishedGoods} warehouseStock={warehouseStock} /></div>
 
       <Card className="p-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
