@@ -725,7 +725,7 @@ export default function Sales() {
                     value={form.transport_distance_km}
                     onChange={e => setForm(f => ({ ...f, transport_distance_km: e.target.value }))}
                     placeholder={calcingDistance ? 'Calculating…' : '0'}
-                    disabled={calcingDistance}
+                    disabled={calcingDistance || form.transport_method === 'pickup'}
                   />
                   {calcingDistance && (
                     <div className="absolute right-2.5 top-2.5">
@@ -733,7 +733,7 @@ export default function Sales() {
                     </div>
                   )}
                 </div>
-                {form.customer_address && !calcingDistance && !form.transport_distance_km && (
+                {form.customer_address && !calcingDistance && form.transport_method !== 'pickup' && (
                   <button
                     type="button"
                     className="text-xs text-primary hover:underline mt-1"
@@ -744,6 +744,21 @@ export default function Sales() {
                 )}
               </div>
             </div>
+
+            {/* Pickup button */}
+            <Button
+              type="button"
+              variant={form.transport_method === 'pickup' ? 'default' : 'outline'}
+              className="w-full gap-2"
+              onClick={() => setForm(f => ({
+                ...f,
+                transport_method: f.transport_method === 'pickup' ? 'road' : 'pickup',
+                transport_distance_km: f.transport_method === 'pickup' ? '' : '0',
+              }))}
+            >
+              <PackageCheck className="w-4 h-4" />
+              {form.transport_method === 'pickup' ? 'Picked Up — No Shipping CO2' : 'Mark as Picked Up (No Shipping)'}
+            </Button>
 
             <div>
               <Label>Status</Label>
