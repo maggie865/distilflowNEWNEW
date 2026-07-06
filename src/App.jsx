@@ -20,7 +20,6 @@ import Inventory from '@/pages/Inventory';
 import RawMaterials from '@/pages/RawMaterials';
 import BatchTracker from '@/pages/BatchTracker';
 import Tanks from '@/pages/Tanks';
-import Recipes from '@/pages/Recipes';
 import BottlingFloor from '@/pages/BottlingFloor';
 import DispatchHub from '@/pages/DispatchHub';
 import Customers from '@/pages/Customers';
@@ -71,7 +70,6 @@ const AuthenticatedApp = () => {
           <Route path="/raw-materials" element={<RawMaterials />} />
           <Route path="/batch-tracker" element={<BatchTracker />} />
           <Route path="/tanks" element={<Tanks />} />
-          <Route path="/recipes" element={<Recipes />} />
           <Route path="/bottling-floor" element={<BottlingFloor />} />
           <Route path="/dispatch" element={<DispatchHub />} />
           <Route path="/customers" element={<Customers />} />
