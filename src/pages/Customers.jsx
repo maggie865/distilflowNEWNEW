@@ -25,7 +25,7 @@ export default function Customers() {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [currentPage, setCurrentPage] = useState(0);
-  const [isDeduping, setIsDeduping] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: pageResult = { data: [], count: 0 } } = useQuery({
@@ -67,17 +67,18 @@ export default function Customers() {
     },
   });
 
-  const handleRemoveDuplicates = async () => {
-    setIsDeduping(true);
+  const handleImportFromSheets = async () => {
+    setIsImporting(true);
     try {
-      const res = await base44.functions.invoke('removeDuplicateCustomers', {});
+      const res = await base44.functions.invoke('syncCustomersFromSheet', {});
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setCurrentPage(0);
-      toast.success(res.data.message);
+      const d = res.data || {};
+      toast.success(`Imported ${d.synced ?? 0} customers (${d.created ?? 0} new, ${d.updated ?? 0} updated)`);
     } catch (err) {
-      toast.error('Failed to remove duplicates');
+      toast.error('Failed to import from spreadsheet');
     } finally {
-      setIsDeduping(false);
+      setIsImporting(false);
     }
   };
 
@@ -89,9 +90,9 @@ export default function Customers() {
             <Plus className="w-4 h-4" />
             Add Customer
           </Button>
-          <Button variant="outline" onClick={handleRemoveDuplicates} disabled={isDeduping} className="gap-2">
+          <Button variant="outline" onClick={handleImportFromSheets} disabled={isImporting} className="gap-2">
             <Zap className="w-4 h-4" />
-            {isDeduping ? 'Cleaning...' : 'Remove Duplicates'}
+            {isImporting ? 'Importing...' : 'Import from Sheets'}
           </Button>
         </div>
       </PageHeader>
