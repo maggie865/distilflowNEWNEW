@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Truck, PackageCheck, MapPin, Trash2, Search, Users, Map, Pencil, RotateCcw, Zap } from 'lucide-react';
+import { Plus, Truck, PackageCheck, MapPin, Trash2, Search, Users, Map, Pencil, RotateCcw, Zap, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -49,10 +49,6 @@ const EMPTY_FORM = {
   dispatch_date: new Date().toISOString().split('T')[0],
   customer_name: '',
   customer_address: '',
-  product_name: '',
-  batch_number: '',
-  bottle_size_ml: '',
-  quantity_bottles: '',
   transport_distance_km: '',
   transport_method: 'road',
   status: 'dispatched',
@@ -62,7 +58,9 @@ const EMPTY_FORM = {
 export default function Sales() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [selectedProductKey, setSelectedProductKey] = useState('');
+  const [lineItems, setLineItems] = useState([]);
+  const [newLineProductKey, setNewLineProductKey] = useState('');
+  const [newLineQty, setNewLineQty] = useState('');
   const [deletingDispatch, setDeletingDispatch] = useState(null);
   const [editingDispatch, setEditingDispatch] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -129,29 +127,51 @@ export default function Sales() {
     }).filter(opt => opt.totalAvailable > 0);
   }, [sellableGoods, allDispatches]);
 
-  const selectedProduct = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === selectedProductKey);
-  const fifoBatches = selectedProduct?.batches || [];
-  const maxBottles = selectedProduct?.totalAvailable || 0;
-  const qty = parseInt(form.quantity_bottles) || 0;
-  const overStock = qty > maxBottles;
-  const estimatedWeightKg = selectedProduct ? calcWeightKg(selectedProduct.bottle_size_ml, qty) : 0;
-
-  const handleSelectProduct = (key) => {
-    setSelectedProductKey(key);
-    const product = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === key);
-    if (product) {
-      setForm(f => ({
-        ...f,
-        product_name: product.product_name,
-        bottle_size_ml: product.bottle_size_ml || '',
-        batch_number: '',
-      }));
+  // For each product, compute how many bottles are already committed in other line items
+  const committedByProduct = useMemo(() => {
+    const map = {};
+    for (const li of lineItems) {
+      map[li.productKey] = (map[li.productKey] || 0) + (parseInt(li.quantity) || 0);
     }
+    return map;
+  }, [lineItems]);
+
+  const getRemainingAvail = (productKey) => {
+    const product = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === productKey);
+    if (!product) return 0;
+    return Math.max(0, product.totalAvailable - (committedByProduct[productKey] || 0));
+  };
+
+  const totalBottles = lineItems.reduce((s, li) => s + (parseInt(li.quantity) || 0), 0);
+  const totalWeightKg = lineItems.reduce((s, li) => {
+    const product = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
+    return s + (product ? calcWeightKg(product.bottle_size_ml, parseInt(li.quantity) || 0) : 0);
+  }, 0);
+  const hasOverStock = lineItems.some(li => (parseInt(li.quantity) || 0) > getRemainingAvail(li.productKey));
+  const canSubmit = lineItems.length > 0 && !hasOverStock && totalBottles > 0;
+
+  const addLineItem = () => {
+    if (!newLineProductKey || !newLineQty) return;
+    const qty = parseInt(newLineQty) || 0;
+    if (qty <= 0) return;
+    setLineItems(prev => [...prev, { id: Date.now() + Math.random(), productKey: newLineProductKey, quantity: String(qty) }]);
+    setNewLineProductKey('');
+    setNewLineQty('');
+  };
+
+  const updateLineItem = (id, field, value) => {
+    setLineItems(prev => prev.map(li => li.id === id ? { ...li, [field]: value } : li));
+  };
+
+  const removeLineItem = (id) => {
+    setLineItems(prev => prev.filter(li => li.id !== id));
   };
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
-    setSelectedProductKey('');
+    setLineItems([]);
+    setNewLineProductKey('');
+    setNewLineQty('');
   };
 
   const calculateDistance = async (customerAddress) => {
@@ -179,28 +199,43 @@ export default function Sales() {
       const distanceKm = parseFloat(form.transport_distance_km) || 0;
       const transportMethod = form.transport_method;
 
-      // FIFO allocation: assign qty across oldest batches first
-      let remaining = qty;
-      const allocations = [];
-      for (const batch of fifoBatches) {
-        if (remaining <= 0) break;
-        const take = Math.min(remaining, batch.available);
-        if (take <= 0) continue;
-        const bottleSize = batch.bottle_size_ml || 700;
-        const abv = batch.abv_percent || 0;
-        const lals = ((take * bottleSize) / 1000) * abv / 100;
-        const weightKg = calcWeightKg(bottleSize, take);
-        const co2e = calcCO2e(distanceKm, weightKg, transportMethod);
-        allocations.push({ batch, take, lals, weightKg, co2e });
-        remaining -= take;
+      // Track remaining availability per batch across all line items
+      const batchAvailMap = {};
+      for (const opt of productOptions) {
+        for (const b of opt.batches) {
+          batchAvailMap[b.id] = b.available;
+        }
       }
 
-      if (remaining > 0) {
-        throw new Error('Insufficient stock to fulfil this dispatch');
+      const allAllocations = [];
+
+      for (const li of lineItems) {
+        const product = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
+        if (!product) continue;
+        let remaining = parseInt(li.quantity) || 0;
+
+        for (const batch of product.batches) {
+          if (remaining <= 0) break;
+          const avail = batchAvailMap[batch.id] || 0;
+          if (avail <= 0) continue;
+          const take = Math.min(remaining, avail);
+          const bottleSize = batch.bottle_size_ml || 700;
+          const abv = batch.abv_percent || 0;
+          const lals = ((take * bottleSize) / 1000) * abv / 100;
+          const weightKg = calcWeightKg(bottleSize, take);
+          const co2e = calcCO2e(distanceKm, weightKg, transportMethod);
+          allAllocations.push({ batch, take, lals, weightKg, co2e });
+          batchAvailMap[batch.id] = avail - take;
+          remaining -= take;
+        }
+
+        if (remaining > 0) {
+          throw new Error(`Insufficient stock for ${product.product_name} (${product.bottle_size_ml}ml)`);
+        }
       }
 
-      // Create one dispatch record per batch and deduct stock (FIFO)
-      for (const a of allocations) {
+      // Create one dispatch record per batch allocation and deduct stock (FIFO)
+      for (const a of allAllocations) {
         const dispatchData = {
           ...form,
           product_name: a.batch.product_name,
@@ -234,7 +269,7 @@ export default function Sales() {
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
       setShowForm(false);
       resetForm();
-      toast.success('Dispatch recorded successfully (FIFO)');
+      toast.success(`${lineItems.length} product(s) dispatched successfully (FIFO)`);
     },
     onError: (err) => {
       toast.error(err.message || 'Failed to record dispatch');
@@ -553,87 +588,81 @@ export default function Sales() {
           </DialogHeader>
           <div className="space-y-4 mt-2">
 
-            {/* Product selection (batch auto-assigned via FIFO) */}
+            {/* Line items */}
             <div>
-              <Label>Product</Label>
-              <Select value={selectedProductKey} onValueChange={handleSelectProduct}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select product" />
-                </SelectTrigger>
-                <SelectContent>
-                  {productOptions.length === 0 && (
-                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No stock available</div>
-                  )}
-                  {productOptions.map(opt => (
-                    <SelectItem key={`${opt.product_name}||${opt.bottle_size_ml}`} value={`${opt.product_name}||${opt.bottle_size_ml}`}>
-                      {opt.product_name} ({opt.bottle_size_ml}ml) — {opt.totalAvailable} btls
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Stock info */}
-            {selectedProduct && (
-              <div className="rounded-lg bg-muted px-4 py-3 grid grid-cols-3 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-muted-foreground">Available</p>
-                  <p className="font-semibold">{maxBottles} bottles</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Size</p>
-                  <p className="font-semibold">{selectedProduct.bottle_size_ml}ml</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Batches (FIFO)</p>
-                  <p className="font-semibold font-mono text-xs">{fifoBatches.length} batch{fifoBatches.length !== 1 ? 's' : ''}</p>
-                </div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Products</Label>
+                {lineItems.length > 0 && (
+                  <span className="text-xs text-muted-foreground">{totalBottles} bottles • {totalWeightKg} kg</span>
+                )}
               </div>
-            )}
 
-            {/* Quantity */}
-            <div>
-              <Label>Quantity (bottles)</Label>
-              <Input
-                type="number"
-                min="1"
-                max={maxBottles}
-                value={form.quantity_bottles}
-                onChange={e => setForm(f => ({ ...f, quantity_bottles: e.target.value }))}
-                className={`mt-1 ${overStock ? 'border-destructive' : ''}`}
-                placeholder="0"
-              />
-              {overStock && (
-                <p className="text-xs text-destructive mt-1">Exceeds available stock ({maxBottles} bottles)</p>
-              )}
-              {qty > 0 && selectedProduct && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Estimated parcel weight: <span className="font-semibold text-foreground">{estimatedWeightKg} kg</span>
-                  {' '}({selectedProduct.bottle_size_ml <= 250 ? '200ml: 6 kg/12-pack' : '700ml: 10 kg/6-pack'})
-                </p>
-              )}
-            </div>
-
-            {/* FIFO Allocation Preview */}
-            {qty > 0 && selectedProduct && !overStock && (
-              <div className="rounded-lg border border-border p-3 space-y-1.5 text-xs">
-                <p className="font-semibold text-muted-foreground">FIFO Batch Allocation</p>
-                {(() => {
-                  let rem = qty;
-                  return fifoBatches.map((batch) => {
-                    if (rem <= 0) return null;
-                    const take = Math.min(rem, batch.available);
-                    rem -= take;
+              {/* Existing line items */}
+              {lineItems.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {lineItems.map((li) => {
+                    const product = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
+                    const remaining = getRemainingAvail(li.productKey);
+                    const liQty = parseInt(li.quantity) || 0;
+                    const over = liQty > remaining;
                     return (
-                      <div key={batch.id} className="flex justify-between">
-                        <span className="font-mono">{batch.batch_number}</span>
-                        <span>{take} bottle{take !== 1 ? 's' : ''}</span>
+                      <div key={li.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{product?.product_name || 'Unknown'}</p>
+                          <p className="text-xs text-muted-foreground">{product?.bottle_size_ml}ml • {remaining} available</p>
+                        </div>
+                        <Input
+                          type="number"
+                          min="1"
+                          max={remaining}
+                          value={li.quantity}
+                          onChange={e => updateLineItem(li.id, 'quantity', e.target.value)}
+                          className={`w-20 ${over ? 'border-destructive' : ''}`}
+                        />
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeLineItem(li.id)}>
+                          <X className="w-4 h-4" />
+                        </Button>
                       </div>
                     );
-                  });
-                })()}
-              </div>
-            )}
+                  })}
+                </div>
+              )}
+
+              {/* Add new line item */}
+              {productOptions.length > 0 && (
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Select value={newLineProductKey} onValueChange={setNewLineProductKey}>
+                      <SelectTrigger><SelectValue placeholder="Add product…" /></SelectTrigger>
+                      <SelectContent>
+                        {productOptions.map(opt => (
+                          <SelectItem key={`${opt.product_name}||${opt.bottle_size_ml}`} value={`${opt.product_name}||${opt.bottle_size_ml}`}>
+                            {opt.product_name} ({opt.bottle_size_ml}ml) — {getRemainingAvail(`${opt.product_name}||${opt.bottle_size_ml}`)} btls
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={newLineQty}
+                    onChange={e => setNewLineQty(e.target.value)}
+                    className="w-20"
+                    placeholder="Qty"
+                  />
+                  <Button variant="outline" size="icon" onClick={addLineItem} disabled={!newLineProductKey || !newLineQty}>
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+              {productOptions.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No stock available</p>
+              )}
+              {hasOverStock && (
+                <p className="text-xs text-destructive mt-1">One or more items exceed available stock</p>
+              )}
+            </div>
 
             {/* Customer */}
              <div>
@@ -739,10 +768,10 @@ export default function Sales() {
 
             <Button
               onClick={() => dispatchMutation.mutate()}
-              disabled={dispatchMutation.isPending || !selectedProductKey || !form.customer_name || !qty || overStock}
+              disabled={dispatchMutation.isPending || !canSubmit || !form.customer_name}
               className="w-full h-12 text-base font-semibold"
             >
-              {dispatchMutation.isPending ? 'Saving…' : 'Record Dispatch & Deduct Stock (FIFO)'}
+              {dispatchMutation.isPending ? 'Saving…' : `Record Dispatch (${totalBottles} bottles, FIFO)`}
             </Button>
           </div>
         </DialogContent>
