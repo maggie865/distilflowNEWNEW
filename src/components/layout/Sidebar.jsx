@@ -39,8 +39,7 @@ const navGroups = [
     items: [
       { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
       { label: 'Suppliers', icon: Truck, path: '/suppliers' },
-      { label: 'Sales & Dispatch', icon: TrendingUp, path: '/sales' },
-      { label: '3PL Warehouse', icon: Warehouse, path: '/warehouse' },
+      { label: 'Sales & Dispatch', icon: TrendingUp, path: '/dispatch' },
       { label: 'Customers', icon: Users, path: '/customers' },
     ]
   },

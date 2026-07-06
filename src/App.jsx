@@ -22,9 +22,8 @@ import BatchTracker from '@/pages/BatchTracker';
 import Tanks from '@/pages/Tanks';
 import Recipes from '@/pages/Recipes';
 import BottlingFloor from '@/pages/BottlingFloor';
-import Sales from '@/pages/Sales';
+import DispatchHub from '@/pages/DispatchHub';
 import Customers from '@/pages/Customers';
-import Warehouse from '@/pages/Warehouse';
 import Reports from '@/pages/Reports';
 import Settings from '@/pages/Settings';
 import SNSDistillation from '@/pages/SNSDistillation';
@@ -74,9 +73,8 @@ const AuthenticatedApp = () => {
           <Route path="/tanks" element={<Tanks />} />
           <Route path="/recipes" element={<Recipes />} />
           <Route path="/bottling-floor" element={<BottlingFloor />} />
-          <Route path="/sales" element={<Sales />} />
+          <Route path="/dispatch" element={<DispatchHub />} />
           <Route path="/customers" element={<Customers />} />
-          <Route path="/warehouse" element={<Warehouse />} />
           <Route path="/sns-distillation" element={<SNSDistillation />} />
           <Route path="/stock-takes" element={<StockTakes />} />
           <Route path="/suppliers" element={<Suppliers />} />

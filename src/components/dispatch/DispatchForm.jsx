@@ -1,0 +1,397 @@
+import { useState, useMemo } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { db } from '@/api/supabaseClient';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { PackageCheck, MapPin, Users, X, Plus, Building2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
+import { base44 } from '@/api/base44Client';
+import CustomerAutocomplete from '@/components/sales/CustomerAutocomplete.jsx';
+
+const DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
+const WAREHOUSE_ADDRESS = '27 Pavillion Drive, Māngere, Auckland 2015, New Zealand';
+
+const calcWeightKg = (bottleSizeMl, numBottles) => {
+  if (!numBottles) return 0;
+  const kgPerBottle = bottleSizeMl <= 250 ? (6 / 12) : (10 / 6);
+  return parseFloat((kgPerBottle * numBottles).toFixed(2));
+};
+
+const EMISSION_FACTORS = { road: 0.12, courier: 0.12, air: 0.9, sea: 0.01, pickup: 0 };
+
+const calcCO2e = (distanceKm, weightKg, method) => {
+  if (!distanceKm || !weightKg || !method) return 0;
+  return parseFloat(((distanceKm * weightKg / 1000) * (EMISSION_FACTORS[method] || 0)).toFixed(3));
+};
+
+const EMPTY_FORM = {
+  dispatch_date: new Date().toISOString().split('T')[0],
+  customer_name: '',
+  customer_address: '',
+  transport_distance_km: '',
+  transport_method: 'road',
+  status: 'dispatched',
+  notes: '',
+};
+
+export default function DispatchForm({ open, onClose, finishedGoods = [], warehouseStock = [], customers = [], allDispatches = [] }) {
+  const [dispatchedFrom, setDispatchedFrom] = useState('Bluff');
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [lineItems, setLineItems] = useState([]);
+  const [newLineProductKey, setNewLineProductKey] = useState('');
+  const [newLineWSId, setNewLineWSId] = useState('');
+  const [newLineQty, setNewLineQty] = useState('');
+  const [calcingDistance, setCalcingDistance] = useState(false);
+
+  const queryClient = useQueryClient();
+  const originAddress = dispatchedFrom === 'Bluff' ? DISTILLERY_ORIGIN : WAREHOUSE_ADDRESS;
+
+  const sellableGoods = useMemo(
+    () => finishedGoods.filter(fg => !fg.product_name?.includes('Tasting')),
+    [finishedGoods]
+  );
+
+  // Bluff: grouped by product+size, FIFO sorted batches
+  const bluffProductOptions = useMemo(() => {
+    const map = {};
+    for (const fg of sellableGoods) {
+      const key = `${fg.product_name}||${fg.bottle_size_ml || ''}`;
+      if (!map[key]) map[key] = { product_name: fg.product_name, bottle_size_ml: fg.bottle_size_ml || '', batches: [] };
+      map[key].batches.push(fg);
+    }
+    return Object.values(map).map(opt => {
+      const batchesWithAvail = opt.batches.map(fg => {
+        const dispatched = allDispatches
+          .filter(d => d.product_name === fg.product_name && d.batch_number === fg.batch_number && Number(d.bottle_size_ml) === Number(fg.bottle_size_ml))
+          .reduce((s, d) => s + (d.quantity_bottles || 0), 0);
+        return { ...fg, available: Math.max(0, (fg.quantity_bottles || 0) - dispatched) };
+      }).filter(b => b.available > 0);
+      batchesWithAvail.sort((a, b) => new Date(a.created_at || a.created_date) - new Date(b.created_at || b.created_date));
+      return { ...opt, batches: batchesWithAvail, totalAvailable: batchesWithAvail.reduce((s, b) => s + b.available, 0) };
+    }).filter(opt => opt.totalAvailable > 0);
+  }, [sellableGoods, allDispatches]);
+
+  // 3PL: individual WarehouseStock records
+  const threePLProductOptions = useMemo(
+    () => warehouseStock.map(ws => ({ ...ws, available: ws.quantity_bottles || 0 })).filter(ws => ws.available > 0),
+    [warehouseStock]
+  );
+
+  const committedByProduct = useMemo(() => {
+    const map = {};
+    for (const li of lineItems) {
+      const key = dispatchedFrom === 'Bluff' ? li.productKey : li.wsId;
+      map[key] = (map[key] || 0) + (parseInt(li.quantity) || 0);
+    }
+    return map;
+  }, [lineItems, dispatchedFrom]);
+
+  const getRemainingAvail = (key) => {
+    if (dispatchedFrom === 'Bluff') {
+      const product = bluffProductOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === key);
+      return product ? Math.max(0, product.totalAvailable - (committedByProduct[key] || 0)) : 0;
+    }
+    const ws = threePLProductOptions.find(w => w.id === key);
+    return ws ? Math.max(0, ws.available - (committedByProduct[key] || 0)) : 0;
+  };
+
+  const totalBottles = lineItems.reduce((s, li) => s + (parseInt(li.quantity) || 0), 0);
+  const totalWeightKg = lineItems.reduce((s, li) => {
+    if (dispatchedFrom === 'Bluff') {
+      const product = bluffProductOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
+      return s + (product ? calcWeightKg(product.bottle_size_ml, parseInt(li.quantity) || 0) : 0);
+    }
+    const ws = threePLProductOptions.find(w => w.id === li.wsId);
+    return s + (ws ? calcWeightKg(ws.bottle_size_ml, parseInt(li.quantity) || 0) : 0);
+  }, 0);
+  const hasOverStock = lineItems.some(li => {
+    const key = dispatchedFrom === 'Bluff' ? li.productKey : li.wsId;
+    return (parseInt(li.quantity) || 0) > getRemainingAvail(key);
+  });
+  const canSubmit = lineItems.length > 0 && !hasOverStock && totalBottles > 0 && !!form.customer_name;
+
+  const handleSourceChange = (value) => {
+    setDispatchedFrom(value);
+    setLineItems([]);
+    setNewLineProductKey('');
+    setNewLineWSId('');
+    setNewLineQty('');
+    setForm(f => ({ ...f, transport_distance_km: '' }));
+  };
+
+  const addLineItem = () => {
+    if (!newLineQty) return;
+    const qty = parseInt(newLineQty) || 0;
+    if (qty <= 0) return;
+    if (dispatchedFrom === 'Bluff') {
+      if (!newLineProductKey) return;
+      setLineItems(prev => [...prev, { id: Date.now() + Math.random(), productKey: newLineProductKey, quantity: String(qty) }]);
+      setNewLineProductKey('');
+    } else {
+      if (!newLineWSId) return;
+      setLineItems(prev => [...prev, { id: Date.now() + Math.random(), wsId: newLineWSId, quantity: String(qty) }]);
+      setNewLineWSId('');
+    }
+    setNewLineQty('');
+  };
+
+  const updateLineItem = (id, field, value) => setLineItems(prev => prev.map(li => li.id === id ? { ...li, [field]: value } : li));
+  const removeLineItem = (id) => setLineItems(prev => prev.filter(li => li.id !== id));
+
+  const calculateDistance = async (customerAddress) => {
+    if (!customerAddress) return;
+    setCalcingDistance(true);
+    try {
+      const res = await base44.functions.invoke('getDistanceMatrix', { origin: originAddress, destination: customerAddress });
+      if (res.data?.distance_km) {
+        setForm(f => ({ ...f, transport_distance_km: String(res.data.distance_km) }));
+        toast.success(`Distance: ${res.data.distance_km} km (${res.data.duration_text})`);
+      }
+    } catch {
+      toast.error('Could not calculate distance — enter manually');
+    } finally {
+      setCalcingDistance(false);
+    }
+  };
+
+  const handleClose = () => {
+    setForm(EMPTY_FORM);
+    setLineItems([]);
+    setNewLineProductKey('');
+    setNewLineWSId('');
+    setNewLineQty('');
+    setDispatchedFrom('Bluff');
+    onClose();
+  };
+
+  const dispatchMutation = useMutation({
+    mutationFn: async () => {
+      const distanceKm = parseFloat(form.transport_distance_km) || 0;
+      const transportMethod = form.transport_method;
+
+      if (dispatchedFrom === 'Bluff') {
+        const batchAvailMap = {};
+        for (const opt of bluffProductOptions) for (const b of opt.batches) batchAvailMap[b.id] = b.available;
+        const allAllocations = [];
+
+        for (const li of lineItems) {
+          const product = bluffProductOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
+          if (!product) continue;
+          let remaining = parseInt(li.quantity) || 0;
+          for (const batch of product.batches) {
+            if (remaining <= 0) break;
+            const avail = batchAvailMap[batch.id] || 0;
+            if (avail <= 0) continue;
+            const take = Math.min(remaining, avail);
+            const bottleSize = batch.bottle_size_ml || 700;
+            const lals = ((take * bottleSize) / 1000) * (batch.abv_percent || 0) / 100;
+            const weightKg = calcWeightKg(bottleSize, take);
+            allAllocations.push({ batch, take, lals, weightKg, co2e: calcCO2e(distanceKm, weightKg, transportMethod) });
+            batchAvailMap[batch.id] = avail - take;
+            remaining -= take;
+          }
+          if (remaining > 0) throw new Error(`Insufficient stock for ${product.product_name} (${product.bottle_size_ml}ml)`);
+        }
+
+        for (const a of allAllocations) {
+          await db.Dispatch.create({
+            ...form, product_name: a.batch.product_name, batch_number: a.batch.batch_number,
+            bottle_size_ml: a.batch.bottle_size_ml || null, quantity_bottles: a.take,
+            transport_distance_km: distanceKm, total_lals: parseFloat(a.lals.toFixed(4)),
+            parcel_weight_kg: a.weightKg, co2e_kg: a.co2e, dispatched_from: 'Bluff',
+          });
+          const newQty = (a.batch.quantity_bottles || 0) - a.take;
+          const newLals = Math.max(0, (a.batch.total_lals || 0) - parseFloat(a.lals.toFixed(4)));
+          if (newQty <= 0) await db.FinishedGood.delete(a.batch.id);
+          else await db.FinishedGood.update(a.batch.id, { quantity_bottles: newQty, total_lals: parseFloat(newLals.toFixed(4)) });
+        }
+      } else {
+        for (const li of lineItems) {
+          const ws = warehouseStock.find(w => w.id === li.wsId);
+          if (!ws) continue;
+          const qty = parseInt(li.quantity) || 0;
+          const lals = ((qty * (ws.bottle_size_ml || 700)) / 1000) * (ws.abv_percent || 0) / 100;
+          const weight = calcWeightKg(ws.bottle_size_ml, qty);
+          const co2e = calcCO2e(distanceKm, weight, transportMethod);
+          await db.Dispatch.create({
+            dispatch_date: form.dispatch_date, customer_name: form.customer_name, customer_address: form.customer_address,
+            product_name: ws.product_name, batch_number: ws.batch_number, bottle_size_ml: ws.bottle_size_ml,
+            quantity_bottles: qty, total_lals: parseFloat(lals.toFixed(4)), parcel_weight_kg: weight,
+            transport_distance_km: distanceKm || undefined, transport_method: transportMethod,
+            co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined, status: form.status || 'dispatched',
+            notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
+          });
+          const newQty = ws.quantity_bottles - qty;
+          if (newQty <= 0) await db.WarehouseStock.delete(ws.id);
+          else {
+            const newLals = Math.max(0, (ws.total_lals || 0) - lals);
+            await db.WarehouseStock.update(ws.id, { quantity_bottles: newQty, total_lals: parseFloat(newLals.toFixed(4)) });
+          }
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['dispatches-all'] });
+      queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
+      queryClient.invalidateQueries({ queryKey: ['warehouseStock'] });
+      handleClose();
+      toast.success(`${lineItems.length} product(s) dispatched from ${dispatchedFrom === 'Bluff' ? 'Bluff Distillery' : 'Auckland 3PL'}`);
+    },
+    onError: (err) => toast.error(err.message || 'Failed to record dispatch'),
+  });
+
+  const hasStock = dispatchedFrom === 'Bluff' ? bluffProductOptions.length > 0 : threePLProductOptions.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) handleClose(); }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle className="font-display">Record Dispatch</DialogTitle></DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div>
+            <Label>Dispatching From</Label>
+            <Select value={dispatchedFrom} onValueChange={handleSourceChange}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Bluff"><span className="flex items-center gap-2"><Building2 className="w-4 h-4" /> Bluff Distillery</span></SelectItem>
+                <SelectItem value="Auckland 3PL"><span className="flex items-center gap-2"><Building2 className="w-4 h-4" /> Auckland 3PL Warehouse</span></SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Products</Label>
+              {lineItems.length > 0 && <span className="text-xs text-muted-foreground">{totalBottles} bottles • {totalWeightKg} kg</span>}
+            </div>
+            {lineItems.length > 0 && (
+              <div className="space-y-2 mb-3">
+                {lineItems.map((li) => {
+                  const key = dispatchedFrom === 'Bluff' ? li.productKey : li.wsId;
+                  const remaining = getRemainingAvail(key);
+                  const liQty = parseInt(li.quantity) || 0;
+                  const over = liQty > remaining;
+                  let label, sublabel;
+                  if (dispatchedFrom === 'Bluff') {
+                    const product = bluffProductOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
+                    label = product?.product_name || 'Unknown';
+                    sublabel = `${product?.bottle_size_ml}ml • ${remaining} available`;
+                  } else {
+                    const ws = threePLProductOptions.find(w => w.id === li.wsId);
+                    label = ws?.product_name || 'Unknown';
+                    sublabel = `${ws?.bottle_size_ml}ml • Batch ${ws?.batch_number} • ${remaining} available`;
+                  }
+                  return (
+                    <div key={li.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{label}</p>
+                        <p className="text-xs text-muted-foreground">{sublabel}</p>
+                      </div>
+                      <Input type="number" min="1" max={remaining} value={li.quantity} onChange={e => updateLineItem(li.id, 'quantity', e.target.value)} className={`w-20 ${over ? 'border-destructive' : ''}`} />
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeLineItem(li.id)}><X className="w-4 h-4" /></Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {hasStock && (
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  {dispatchedFrom === 'Bluff' ? (
+                    <Select value={newLineProductKey} onValueChange={setNewLineProductKey}>
+                      <SelectTrigger><SelectValue placeholder="Add product…" /></SelectTrigger>
+                      <SelectContent>
+                        {bluffProductOptions.map(opt => (
+                          <SelectItem key={`${opt.product_name}||${opt.bottle_size_ml}`} value={`${opt.product_name}||${opt.bottle_size_ml}`}>
+                            {opt.product_name} ({opt.bottle_size_ml}ml) — {getRemainingAvail(`${opt.product_name}||${opt.bottle_size_ml}`)} btls
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Select value={newLineWSId} onValueChange={setNewLineWSId}>
+                      <SelectTrigger><SelectValue placeholder="Add product…" /></SelectTrigger>
+                      <SelectContent>
+                        {threePLProductOptions.map(ws => (
+                          <SelectItem key={ws.id} value={ws.id}>
+                            {ws.product_name} — Batch {ws.batch_number} ({getRemainingAvail(ws.id)} btls)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <Input type="number" min="1" value={newLineQty} onChange={e => setNewLineQty(e.target.value)} className="w-20" placeholder="Qty" />
+                <Button variant="outline" size="icon" onClick={addLineItem} disabled={dispatchedFrom === 'Bluff' ? !newLineProductKey || !newLineQty : !newLineWSId || !newLineQty}><Plus className="w-4 h-4" /></Button>
+              </div>
+            )}
+            {!hasStock && <p className="text-sm text-muted-foreground text-center py-4">No stock available at this location</p>}
+            {hasOverStock && <p className="text-xs text-destructive mt-1">One or more items exceed available stock</p>}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <Label>Customer</Label>
+              <Link to="/customers" className="text-xs text-primary hover:underline flex items-center gap-1"><Users className="w-3 h-3" /> Manage customers</Link>
+            </div>
+            <CustomerAutocomplete
+              customers={customers} value={form.customer_name}
+              onSelect={v => setForm(f => ({ ...f, customer_name: v }))}
+              onAddressChange={addr => { setForm(f => ({ ...f, customer_address: addr })); if (addr) calculateDistance(addr); }}
+            />
+            {form.customer_address && <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1"><MapPin className="w-3 h-3" /> {form.customer_address}</p>}
+          </div>
+
+          <div><Label>Dispatch Date</Label><Input type="date" value={form.dispatch_date} onChange={e => setForm(f => ({ ...f, dispatch_date: e.target.value }))} className="mt-1" /></div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Transport Method</Label>
+              <Select value={form.transport_method} onValueChange={v => setForm(f => ({ ...f, transport_method: v }))}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="road">Road</SelectItem><SelectItem value="courier">Courier</SelectItem>
+                  <SelectItem value="air">Air</SelectItem><SelectItem value="sea">Sea</SelectItem><SelectItem value="pickup">Pickup</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Distance (km)</Label>
+              <div className="relative mt-1">
+                <Input type="number" min="0" value={form.transport_distance_km} onChange={e => setForm(f => ({ ...f, transport_distance_km: e.target.value }))} placeholder={calcingDistance ? 'Calculating…' : '0'} disabled={calcingDistance || form.transport_method === 'pickup'} />
+                {calcingDistance && <div className="absolute right-2.5 top-2.5"><div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}
+              </div>
+              {form.customer_address && !calcingDistance && form.transport_method !== 'pickup' && (
+                <button type="button" className="text-xs text-primary hover:underline mt-1" onClick={() => calculateDistance(form.customer_address)}>Auto-calculate from address</button>
+              )}
+            </div>
+          </div>
+
+          <Button type="button" variant={form.transport_method === 'pickup' ? 'default' : 'outline'} className="w-full gap-2"
+            onClick={() => setForm(f => ({ ...f, transport_method: f.transport_method === 'pickup' ? 'road' : 'pickup', transport_distance_km: f.transport_method === 'pickup' ? '' : '0' }))}>
+            <PackageCheck className="w-4 h-4" />
+            {form.transport_method === 'pickup' ? 'Picked Up — No Shipping CO2' : 'Mark as Picked Up (No Shipping)'}
+          </Button>
+
+          <div>
+            <Label>Status</Label>
+            <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="pending">Pending</SelectItem><SelectItem value="dispatched">Dispatched</SelectItem><SelectItem value="delivered">Delivered</SelectItem></SelectContent>
+            </Select>
+          </div>
+
+          <div><Label>Notes</Label><Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any additional notes" className="mt-1" /></div>
+
+          <Button onClick={() => dispatchMutation.mutate()} disabled={dispatchMutation.isPending || !canSubmit} className="w-full h-12 text-base font-semibold">
+            {dispatchMutation.isPending ? 'Saving…' : `Record Dispatch (${totalBottles} bottles${dispatchedFrom === 'Bluff' ? ', FIFO' : ''})`}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
