@@ -16,6 +16,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
+import CustomerAutocomplete from '@/components/sales/CustomerAutocomplete.jsx';
 
 const WAREHOUSE_ADDRESS = '27 Pavillion Drive, Māngere, Auckland 2015, New Zealand';
 const DISTILLERY_ADDRESS = '250 Ocean Beach Road, Bluff, New Zealand';
@@ -78,7 +79,7 @@ export default function Warehouse() {
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
-    queryFn: () => db.Customer.list('business_name', 200),
+    queryFn: () => db.Customer.list('business_name', 2000),
   });
 
   const { data: allDispatches = [] } = useQuery({
@@ -594,22 +595,20 @@ export default function Warehouse() {
                   <Users className="w-3 h-3" /> Manage customers
                 </Link>
               </div>
-              <Select
+              <CustomerAutocomplete
+                customers={customers}
                 value={dispatchForm.customer_name}
-                onValueChange={v => {
+                onSelect={v => {
                   const c = customers.find(c => c.business_name === v);
                   const addr = c?.delivery_address || '';
                   setDispatchForm(f => ({ ...f, customer_name: v, customer_address: addr }));
                   if (addr) calculateDistance(addr);
                 }}
-              >
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Select customer…" /></SelectTrigger>
-                <SelectContent>
-                  {customers.map(c => (
-                    <SelectItem key={c.id} value={c.business_name}>{c.business_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onAddressChange={addr => {
+                  setDispatchForm(f => ({ ...f, customer_address: addr }));
+                  if (addr) calculateDistance(addr);
+                }}
+              />
               {dispatchForm.customer_address && (
                 <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
                   <MapPin className="w-3 h-3" /> {dispatchForm.customer_address}
