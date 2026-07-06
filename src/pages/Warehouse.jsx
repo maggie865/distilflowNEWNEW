@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/api/supabaseClient';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ArrowRightLeft, Truck, PackageCheck, Trash2, MapPin, Users, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowRightLeft, Truck, PackageCheck, Trash2, MapPin, Users, Search, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -42,7 +42,6 @@ const EMPTY_DISPATCH = {
   dispatch_date: new Date().toISOString().split('T')[0],
   customer_name: '',
   customer_address: '',
-  quantity_bottles: '',
   transport_method: 'road',
   transport_distance_km: '',
   status: 'dispatched',
@@ -56,7 +55,9 @@ export default function Warehouse() {
 
   const [showDispatch, setShowDispatch] = useState(false);
   const [dispatchForm, setDispatchForm] = useState(EMPTY_DISPATCH);
-  const [selectedWSId, setSelectedWSId] = useState('');
+  const [lineItems, setLineItems] = useState([]);
+  const [newLineWSId, setNewLineWSId] = useState('');
+  const [newLineQty, setNewLineQty] = useState('');
 
   const [deletingWS, setDeletingWS] = useState(null);
   const [calcingDistance, setCalcingDistance] = useState(false);
@@ -102,12 +103,44 @@ export default function Warehouse() {
 
   const sellableGoods = finishedGoods.filter(fg => !fg.product_name?.includes('Tasting'));
   const selectedFG = finishedGoods.find(fg => fg.id === selectedFGId);
-  const selectedWS = warehouseStock.find(ws => ws.id === selectedWSId);
 
   const transferQty = parseInt(transferForm.quantity_bottles) || 0;
-  const dispatchQty = parseInt(dispatchForm.quantity_bottles) || 0;
   const overTransfer = transferQty > (selectedFG?.quantity_bottles || 0);
-  const overDispatch = dispatchQty > (selectedWS?.quantity_bottles || 0);
+
+  // Multi-product dispatch helpers
+  const committedByWS = useMemo(() => {
+    const map = {};
+    for (const li of lineItems) {
+      map[li.wsId] = (map[li.wsId] || 0) + (parseInt(li.quantity) || 0);
+    }
+    return map;
+  }, [lineItems]);
+
+  const getRemainingAvail = (wsId) => {
+    const ws = warehouseStock.find(w => w.id === wsId);
+    if (!ws) return 0;
+    return Math.max(0, (ws.quantity_bottles || 0) - (committedByWS[wsId] || 0));
+  };
+
+  const dispatchTotalBottles = lineItems.reduce((s, li) => s + (parseInt(li.quantity) || 0), 0);
+  const hasOverStock = lineItems.some(li => (parseInt(li.quantity) || 0) > getRemainingAvail(li.wsId));
+
+  const addLineItem = () => {
+    if (!newLineWSId || !newLineQty) return;
+    const qty = parseInt(newLineQty) || 0;
+    if (qty <= 0) return;
+    setLineItems(prev => [...prev, { id: Date.now() + Math.random(), wsId: newLineWSId, quantity: String(qty) }]);
+    setNewLineWSId('');
+    setNewLineQty('');
+  };
+
+  const updateLineItem = (id, field, value) => {
+    setLineItems(prev => prev.map(li => li.id === id ? { ...li, [field]: value } : li));
+  };
+
+  const removeLineItem = (id) => {
+    setLineItems(prev => prev.filter(li => li.id !== id));
+  };
 
   // Transfer-in: move from FinishedGood → WarehouseStock
   const transferMutation = useMutation({
@@ -181,67 +214,70 @@ export default function Warehouse() {
     },
   });
 
-  // Dispatch from warehouse to customer
+  // Dispatch from warehouse to customer (multi-product)
   const dispatchMutation = useMutation({
     mutationFn: async () => {
-      const ws = selectedWS;
-      const lals = ((dispatchQty * (ws.bottle_size_ml || 700)) / 1000) * (ws.abv_percent || 0) / 100;
-      const weight = calcWeightKg(ws.bottle_size_ml, dispatchQty);
       const distance = parseFloat(dispatchForm.transport_distance_km) || 0;
       const method = dispatchForm.transport_method || 'courier';
-      
-      // Calculate CO2e
-      let co2e = 0;
-      if (method === 'road' && distance > 0) {
-        co2e = (distance * weight / 1000) * 0.12;
-      } else if (method === 'courier' && distance > 0) {
-        co2e = (distance * weight / 1000) * 0.15;
-      } else if (method === 'air' && distance > 0) {
-        co2e = (distance * weight / 1000) * 0.55;
-      } else if (method === 'sea' && distance > 0) {
-        co2e = (distance * weight / 1000) * 0.008;
-      }
 
+      for (const li of lineItems) {
+        const ws = warehouseStock.find(w => w.id === li.wsId);
+        if (!ws) continue;
+        const qty = parseInt(li.quantity) || 0;
+        const lals = ((qty * (ws.bottle_size_ml || 700)) / 1000) * (ws.abv_percent || 0) / 100;
+        const weight = calcWeightKg(ws.bottle_size_ml, qty);
 
+        let co2e = 0;
+        if (method === 'road' && distance > 0) {
+          co2e = (distance * weight / 1000) * 0.12;
+        } else if (method === 'courier' && distance > 0) {
+          co2e = (distance * weight / 1000) * 0.15;
+        } else if (method === 'air' && distance > 0) {
+          co2e = (distance * weight / 1000) * 0.55;
+        } else if (method === 'sea' && distance > 0) {
+          co2e = (distance * weight / 1000) * 0.008;
+        }
 
-      // Save dispatch record
-      await db.Dispatch.create({
-        dispatch_date: dispatchForm.dispatch_date,
-        customer_name: dispatchForm.customer_name,
-        customer_address: dispatchForm.customer_address,
-        product_name: ws.product_name,
-        batch_number: ws.batch_number,
-        bottle_size_ml: ws.bottle_size_ml,
-        quantity_bottles: dispatchQty,
-        total_lals: parseFloat(lals.toFixed(4)),
-        parcel_weight_kg: weight,
-        transport_distance_km: distance || undefined,
-        transport_method: method,
-        co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined,
-        status: dispatchForm.status || 'dispatched',
-        notes: dispatchForm.notes || undefined,
-        dispatched_from: 'Auckland 3PL',
-      });
-
-      // Deduct from WarehouseStock
-      const newQty = ws.quantity_bottles - dispatchQty;
-      if (newQty <= 0) {
-        await db.WarehouseStock.delete(ws.id);
-      } else {
-        const newLals = Math.max(0, (ws.total_lals || 0) - lals);
-        await db.WarehouseStock.update(ws.id, {
-          quantity_bottles: newQty,
-          total_lals: parseFloat(newLals.toFixed(4)),
+        await db.Dispatch.create({
+          dispatch_date: dispatchForm.dispatch_date,
+          customer_name: dispatchForm.customer_name,
+          customer_address: dispatchForm.customer_address,
+          product_name: ws.product_name,
+          batch_number: ws.batch_number,
+          bottle_size_ml: ws.bottle_size_ml,
+          quantity_bottles: qty,
+          total_lals: parseFloat(lals.toFixed(4)),
+          parcel_weight_kg: weight,
+          transport_distance_km: distance || undefined,
+          transport_method: method,
+          co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined,
+          status: dispatchForm.status || 'dispatched',
+          notes: dispatchForm.notes || undefined,
+          dispatched_from: 'Auckland 3PL',
         });
+
+        const newQty = ws.quantity_bottles - qty;
+        if (newQty <= 0) {
+          await db.WarehouseStock.delete(ws.id);
+        } else {
+          const newLals = Math.max(0, (ws.total_lals || 0) - lals);
+          await db.WarehouseStock.update(ws.id, {
+            quantity_bottles: newQty,
+            total_lals: parseFloat(newLals.toFixed(4)),
+          });
+        }
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['warehouseStock'] });
+      queryClient.invalidateQueries({ queryKey: ['dispatches'] });
       queryClient.invalidateQueries({ queryKey: ['warehouseDispatches'] });
       setShowDispatch(false);
       setDispatchForm(EMPTY_DISPATCH);
-      setSelectedWSId('');
-      toast.success('Dispatch recorded successfully');
+      setLineItems([]);
+      setNewLineWSId('');
+      setNewLineQty('');
+      toast.success(`${lineItems.length} product(s) dispatched successfully`);
     },
   });
 
@@ -546,46 +582,84 @@ export default function Warehouse() {
       </Dialog>
 
       {/* Dispatch from Warehouse Dialog */}
-      <Dialog open={showDispatch} onOpenChange={v => { setShowDispatch(v); if (!v) { setDispatchForm(EMPTY_DISPATCH); setSelectedWSId(''); setCalcingDistance(false); } }}>
+      <Dialog open={showDispatch} onOpenChange={v => { setShowDispatch(v); if (!v) { setDispatchForm(EMPTY_DISPATCH); setLineItems([]); setNewLineWSId(''); setNewLineQty(''); setCalcingDistance(false); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">Dispatch from Warehouse</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
+            {/* Line items */}
             <div>
-              <Label>Product (from warehouse stock)</Label>
-              <Select value={selectedWSId} onValueChange={setSelectedWSId}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select warehouse stock…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {warehouseStock.map(ws => (
-                    <SelectItem key={ws.id} value={ws.id}>
-                      {ws.product_name} — Batch {ws.batch_number} ({ws.quantity_bottles} btls)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {selectedWS && (
-              <div className="rounded-lg bg-muted px-4 py-3 grid grid-cols-3 gap-3 text-sm">
-                <div><p className="text-xs text-muted-foreground">In Warehouse</p><p className="font-semibold">{selectedWS.quantity_bottles} btls</p></div>
-                <div><p className="text-xs text-muted-foreground">Size</p><p className="font-semibold">{selectedWS.bottle_size_ml}ml</p></div>
-                <div><p className="text-xs text-muted-foreground">Batch</p><p className="font-semibold font-mono text-xs">{selectedWS.batch_number}</p></div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Products</Label>
+                {lineItems.length > 0 && (
+                  <span className="text-xs text-muted-foreground">{dispatchTotalBottles} bottles</span>
+                )}
               </div>
-            )}
 
-            <div>
-              <Label>Quantity (bottles)</Label>
-              <Input
-                type="number" min="1"
-                value={dispatchForm.quantity_bottles}
-                onChange={e => setDispatchForm(f => ({ ...f, quantity_bottles: e.target.value }))}
-                className={`mt-1 ${overDispatch ? 'border-destructive' : ''}`}
-                placeholder="0"
-              />
-              {overDispatch && <p className="text-xs text-destructive mt-1">Exceeds warehouse stock ({selectedWS?.quantity_bottles} bottles)</p>}
+              {lineItems.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {lineItems.map((li) => {
+                    const ws = warehouseStock.find(w => w.id === li.wsId);
+                    const remaining = getRemainingAvail(li.wsId);
+                    const liQty = parseInt(li.quantity) || 0;
+                    const over = liQty > remaining;
+                    return (
+                      <div key={li.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{ws?.product_name || 'Unknown'}</p>
+                          <p className="text-xs text-muted-foreground">{ws?.bottle_size_ml}ml • Batch {ws?.batch_number} • {remaining} available</p>
+                        </div>
+                        <Input
+                          type="number"
+                          min="1"
+                          max={remaining}
+                          value={li.quantity}
+                          onChange={e => updateLineItem(li.id, 'quantity', e.target.value)}
+                          className={`w-20 ${over ? 'border-destructive' : ''}`}
+                        />
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeLineItem(li.id)}>
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {warehouseStock.length > 0 && (
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Select value={newLineWSId} onValueChange={setNewLineWSId}>
+                      <SelectTrigger><SelectValue placeholder="Add product…" /></SelectTrigger>
+                      <SelectContent>
+                        {warehouseStock.map(ws => (
+                          <SelectItem key={ws.id} value={ws.id}>
+                            {ws.product_name} — Batch {ws.batch_number} ({getRemainingAvail(ws.id)} btls)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={newLineQty}
+                    onChange={e => setNewLineQty(e.target.value)}
+                    className="w-20"
+                    placeholder="Qty"
+                  />
+                  <Button variant="outline" size="icon" onClick={addLineItem} disabled={!newLineWSId || !newLineQty}>
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+              {warehouseStock.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No stock available at warehouse</p>
+              )}
+              {hasOverStock && (
+                <p className="text-xs text-destructive mt-1">One or more items exceed available stock</p>
+              )}
             </div>
 
             <div>
@@ -673,10 +747,10 @@ export default function Warehouse() {
 
             <Button
               onClick={() => dispatchMutation.mutate()}
-              disabled={dispatchMutation.isPending || !selectedWSId || !dispatchForm.quantity_bottles || !dispatchForm.customer_name || overDispatch}
+              disabled={dispatchMutation.isPending || lineItems.length === 0 || hasOverStock || !dispatchForm.customer_name}
               className="w-full h-11 font-semibold"
             >
-              {dispatchMutation.isPending ? 'Saving…' : 'Record Dispatch & Deduct Warehouse Stock'}
+              {dispatchMutation.isPending ? 'Saving…' : `Record Dispatch (${dispatchTotalBottles} bottles)`}
             </Button>
           </div>
         </DialogContent>
