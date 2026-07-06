@@ -85,7 +85,7 @@ export default function Sales() {
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
-    queryFn: () => db.Customer.list('business_name', 200),
+    queryFn: () => db.Customer.list('business_name', 2000),
   });
 
   const [currentPage, setCurrentPage] = useState(0);
