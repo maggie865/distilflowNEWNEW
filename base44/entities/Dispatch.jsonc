@@ -68,6 +68,14 @@
       "default": "dispatched",
       "description": "Dispatch status"
     },
+    "dispatched_from": {
+      "type": "string",
+      "enum": [
+        "Bluff",
+        "Auckland 3PL"
+      ],
+      "description": "Where the dispatch originated from"
+    },
     "notes": {
       "type": "string",
       "description": "Additional notes"
