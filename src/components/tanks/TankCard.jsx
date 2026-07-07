@@ -1,7 +1,12 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/AuthContext';
+import { db } from '@/api/supabaseClient';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowRightLeft, MapPin } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { ArrowRightLeft, MapPin, CheckCircle2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const purposeLabels = {
   maceration_dilution: 'Maceration / Dilution',
@@ -24,11 +29,32 @@ const statusStyles = {
 };
 
 export default function TankCard({ tank, onTransfer }) {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const isAdmin = user?.role === 'admin';
+
   const fillPct = tank.capacity_litres > 0
     ? Math.min(100, Math.round((tank.current_volume || 0) / tank.capacity_litres * 100))
     : 0;
 
   const barColor = purposeColors[tank.purpose] || 'bg-primary';
+
+  const toggleReady = useMutation({
+    mutationFn: async (newValue) => {
+      await db.StorageTank.update(tank.id, { is_ready_for_bottling: newValue });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleToggle = (checked) => {
+    toggleReady.mutate(checked);
+  };
+
+  const isFinishingTank = tank.purpose === 'final_product_storage';
+  const canToggleReady = isAdmin && isFinishingTank && tank.status === 'in_use' && (tank.current_volume || 0) > 0;
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 flex flex-col gap-3">
@@ -88,6 +114,34 @@ export default function TankCard({ tank, onTransfer }) {
               <span className="text-muted-foreground">ABV</span>
               <span className="font-medium">{tank.current_abv}%</span>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Ready for Bottling toggle — admin only, finishing tanks only */}
+      {isFinishingTank && (
+        <div className={cn(
+          'flex items-center justify-between rounded-lg border px-3 py-2',
+          tank.is_ready_for_bottling
+            ? 'border-green-300 bg-green-50'
+            : 'border-border bg-muted/30'
+        )}>
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className={cn('w-4 h-4', tank.is_ready_for_bottling ? 'text-green-600' : 'text-muted-foreground')} />
+            <span className="text-xs font-medium">
+              {tank.is_ready_for_bottling ? 'Ready for bottling' : 'Not ready for bottling'}
+            </span>
+          </div>
+          {isAdmin ? (
+            <Switch
+              checked={!!tank.is_ready_for_bottling}
+              onCheckedChange={handleToggle}
+              disabled={!canToggleReady || toggleReady.isPending}
+            />
+          ) : (
+            <span className={cn('text-xs font-semibold', tank.is_ready_for_bottling ? 'text-green-600' : 'text-muted-foreground')}>
+              {tank.is_ready_for_bottling ? '✓' : '—'}
+            </span>
           )}
         </div>
       )}

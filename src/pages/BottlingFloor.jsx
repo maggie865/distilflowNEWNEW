@@ -56,8 +56,12 @@ export default function BottlingFloor() {
     queryFn: () => db.BottlingRun.list('-date', 100),
   });
 
-  // Only tanks that are final_product_storage and in_use (ready to bottle from)
-  const finishingTanks = tanks.filter(t => t.purpose === 'final_product_storage' && t.status === 'in_use');
+  // Only tanks that are final_product_storage, in_use, AND admin-marked as ready for bottling
+  const finishingTanks = tanks.filter(t =>
+    t.purpose === 'final_product_storage' &&
+    t.status === 'in_use' &&
+    t.is_ready_for_bottling === true
+  );
 
   // Batches that have a product in a finishing tank
   const bottleReadyBatches = masterBatches.filter(b => {
@@ -165,7 +169,13 @@ export default function BottlingFloor() {
       const tank = tanks.find(t => t.id === activeRun.tank_id);
       if (tank) {
         const newVolume = Math.max(0, (tank.current_volume || 0) - spiritUsedLitres);
-        await db.StorageTank.update(tank.id, { current_volume: newVolume });
+        // If tank is now empty, clear the bottling-ready flag so it drops off the dropdown
+        const tankUpdates = { current_volume: newVolume };
+        if (newVolume === 0) {
+          tankUpdates.is_ready_for_bottling = false;
+          tankUpdates.status = 'empty';
+        }
+        await db.StorageTank.update(tank.id, tankUpdates);
 
         await db.TankMovement.create({
           date: new Date().toISOString().split('T')[0],
@@ -435,7 +445,7 @@ export default function BottlingFloor() {
                 <SelectContent>
                   {bottleReadyBatches.length === 0 && (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                      No batches in finishing tanks
+                      No tanks marked as ready for bottling
                     </div>
                   )}
                   {bottleReadyBatches.map(b => (

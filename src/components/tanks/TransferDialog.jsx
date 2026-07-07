@@ -82,13 +82,18 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
         newStatus = 'cleaning';
       }
 
-      await db.StorageTank.update(tank.id, {
+      const tankUpdates = {
         current_volume: newVol,
         status: newStatus,
         current_product: isFill && f.product ? f.product : tank.current_product,
         current_batch: isFill && f.batch_number ? f.batch_number : tank.current_batch,
-        current_abv: isFill && abv ? abv : tank.current_abv
-      });
+        current_abv: isFill && abv ? abv : tank.current_abv,
+      };
+      // If tank is now empty, clear bottling-ready flag so it drops off the bottling dropdown
+      if (newVol === 0 && (isTransferOut || isBottling || isEmpty)) {
+        tankUpdates.is_ready_for_bottling = false;
+      }
+      await db.StorageTank.update(tank.id, tankUpdates);
 
       // If transferring out, also fill the destination tank
       if (isTransferOut && f.counterpart_tank) {

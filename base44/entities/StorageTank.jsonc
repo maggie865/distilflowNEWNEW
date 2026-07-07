@@ -56,6 +56,11 @@
       "default": "empty",
       "description": "Current tank status"
     },
+    "is_ready_for_bottling": {
+      "type": "boolean",
+      "default": false,
+      "description": "Admin-marked flag indicating this tank's batch is approved for bottling"
+    },
     "notes": {
       "type": "string",
       "description": "Additional notes"
