@@ -5,6 +5,8 @@ const SHEET_ID = '1LQFdgn4baMP-XRNMThNCHXHRmTzyyFxWvMk9S9xfvps';
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me();
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
     const { accessToken } = await base44.asServiceRole.connectors.getConnection('googlesheets');
 
     const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}`, {
