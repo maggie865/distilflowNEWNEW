@@ -159,8 +159,8 @@ export default function DispatchHub() {
   return (
     <div className="pb-20 md:pb-0">
       <PageHeader title="Sales & Dispatch" subtitle="Record dispatches, track stock by location, and manage deliveries">
-        <Button variant="outline" onClick={() => setShowMap(v => !v)} className="gap-2"><Map className="w-4 h-4" />{showMap ? 'Hide Map' : 'Delivery Map'}</Button>
-        <Button variant="outline" onClick={handleSyncDispatches} disabled={isSyncing} className="gap-2"><Zap className="w-4 h-4" />{isSyncing ? 'Syncing...' : 'Sync Distances'}</Button>
+        <Button variant="outline" onClick={() => setShowMap(v => !v)} className="gap-2 hidden md:inline-flex"><Map className="w-4 h-4" />{showMap ? 'Hide Map' : 'Delivery Map'}</Button>
+        <Button variant="outline" onClick={handleSyncDispatches} disabled={isSyncing} className="gap-2 hidden md:inline-flex"><Zap className="w-4 h-4" />{isSyncing ? 'Syncing...' : 'Sync Distances'}</Button>
         <Button variant="outline" onClick={() => setShowForm(true)} className="gap-2"><Truck className="w-4 h-4" />Wholesale</Button>
         <Button onClick={() => setShowDirectSalesForm(true)} className="gap-2"><Store className="w-4 h-4" />Direct Sale</Button>
       </PageHeader>
