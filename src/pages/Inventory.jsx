@@ -497,7 +497,11 @@ export default function Inventory() {
   const loading3PLDispatches = false;
 
   // Build dispatch totals per batch+product+bottle_size key
+  // Only count Bluff dispatches — 3PL transfers have already reduced FinishedGood.quantity_bottles,
+  // and Auckland 3PL dispatches are tracked against WarehouseStock instead.
   const dispatchedByBatch = allDispatches.reduce((acc, d) => {
+    const isBluff = !(d.dispatched_from || '').includes('Auckland');
+    if (!isBluff) return acc;
     const key = `${d.batch_number}||${d.product_name}||${d.bottle_size_ml || 'unknown'}`;
     acc[key] = (acc[key] || 0) + (d.quantity_bottles || 0);
     return acc;
