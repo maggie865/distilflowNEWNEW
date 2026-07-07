@@ -195,16 +195,23 @@ function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
   const [expanded, setExpanded] = useState({});
 
   // First group by bottle_size_ml, then by product_name within each size
+  // Merge records with the same batch_number into a single row with summed totals
   const bySize = {};
   finishedGoods.filter(g => (g.quantity_bottles || 0) > 0).forEach(g => {
     const sizeKey = g.bottle_size_ml ?? 'no-size';
     if (!bySize[sizeKey]) bySize[sizeKey] = {};
-    
+
     const prodKey = g.product_name || 'Unknown';
     if (!bySize[sizeKey][prodKey]) {
       bySize[sizeKey][prodKey] = { product_name: g.product_name, bottle_size_ml: g.bottle_size_ml, abv_percent: g.abv_percent, batches: [] };
     }
-    bySize[sizeKey][prodKey].batches.push(g);
+    const existing = bySize[sizeKey][prodKey].batches.find(b => b.batch_number === g.batch_number);
+    if (existing) {
+      existing.quantity_bottles += (g.quantity_bottles || 0);
+      existing.total_lals += (g.total_lals || 0);
+    } else {
+      bySize[sizeKey][prodKey].batches.push({ ...g, quantity_bottles: g.quantity_bottles || 0, total_lals: g.total_lals || 0 });
+    }
   });
 
   const sizeOrder = [700, 200]; // Display 700ml first, then 200ml
