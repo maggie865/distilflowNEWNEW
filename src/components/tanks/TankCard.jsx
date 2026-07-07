@@ -54,7 +54,7 @@ export default function TankCard({ tank, onTransfer }) {
   };
 
   const isFinishingTank = tank.purpose === 'final_product_storage';
-  const canToggleReady = isAdmin && isFinishingTank && tank.status === 'in_use' && (tank.current_volume || 0) > 0;
+  const canToggleReady = isAdmin && isFinishingTank;
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 flex flex-col gap-3">
