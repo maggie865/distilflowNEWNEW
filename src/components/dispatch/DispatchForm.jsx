@@ -65,10 +65,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
     }
     return Object.values(map).map(opt => {
       const batchesWithAvail = opt.batches.map(fg => {
-        const dispatched = allDispatches
-          .filter(d => d.product_name === fg.product_name && d.batch_number === fg.batch_number && Number(d.bottle_size_ml) === Number(fg.bottle_size_ml))
-          .reduce((s, d) => s + (d.quantity_bottles || 0), 0);
-        return { ...fg, available: Math.max(0, (fg.quantity_bottles || 0) - dispatched) };
+        return { ...fg, available: fg.quantity_bottles || 0 };
       }).filter(b => b.available > 0);
       batchesWithAvail.sort((a, b) => new Date(a.created_at || a.created_date) - new Date(b.created_at || b.created_date));
       return { ...opt, batches: batchesWithAvail, totalAvailable: batchesWithAvail.reduce((s, b) => s + b.available, 0) };
