@@ -6,6 +6,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import RoleRoute from '@/components/RoleRoute';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
@@ -61,27 +62,31 @@ const AuthenticatedApp = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/receiving" element={<Receiving />} />
-          <Route path="/dilutions" element={<Dilutions />} />
-          <Route path="/distillation" element={<Distillation />} />
-          <Route path="/bottling" element={<Bottling />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/raw-materials" element={<RawMaterials />} />
-          <Route path="/batch-tracker" element={<BatchTracker />} />
-          <Route path="/tanks" element={<Tanks />} />
-          <Route path="/bottling-floor" element={<BottlingFloor />} />
-          <Route path="/dispatch" element={<DispatchHub />} />
-          <Route path="/customers" element={<Customers />} />
-          <Route path="/sns-distillation" element={<SNSDistillation />} />
-          <Route path="/stock-takes" element={<StockTakes />} />
-          <Route path="/suppliers" element={<Suppliers />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/food-recall" element={<FoodRecallManager />} />
-          <Route path="/maintenance" element={<MaintenanceRecords />} />
-          <Route path="/pest-control" element={<PestControl />} />
-          <Route path="/temperature-logs" element={<TemperatureLogs />} />
+          <Route element={<RoleRoute allowedRoles={['admin', 'user']} fallback="/bottling-floor" />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/receiving" element={<Receiving />} />
+            <Route path="/dilutions" element={<Dilutions />} />
+            <Route path="/distillation" element={<Distillation />} />
+            <Route path="/bottling" element={<Bottling />} />
+            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/raw-materials" element={<RawMaterials />} />
+            <Route path="/batch-tracker" element={<BatchTracker />} />
+            <Route path="/tanks" element={<Tanks />} />
+            <Route path="/dispatch" element={<DispatchHub />} />
+            <Route path="/customers" element={<Customers />} />
+            <Route path="/sns-distillation" element={<SNSDistillation />} />
+            <Route path="/stock-takes" element={<StockTakes />} />
+            <Route path="/suppliers" element={<Suppliers />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+          <Route element={<RoleRoute allowedRoles={['admin', 'user', 'crew']} />}>
+            <Route path="/bottling-floor" element={<BottlingFloor />} />
+            <Route path="/food-recall" element={<FoodRecallManager />} />
+            <Route path="/maintenance" element={<MaintenanceRecords />} />
+            <Route path="/pest-control" element={<PestControl />} />
+            <Route path="/temperature-logs" element={<TemperatureLogs />} />
+          </Route>
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

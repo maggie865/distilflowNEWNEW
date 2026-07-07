@@ -3,6 +3,9 @@ import { Link, useLocation } from 'react-router-dom';
 import { Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/AuthContext';
+
+const crewPaths = ['/bottling-floor', '/food-recall', '/maintenance', '/pest-control', '/temperature-logs'];
 
 const navGroups = [
   {
@@ -46,11 +49,17 @@ const navGroups = [
 
 export default function Sidebar() {
   const location = useLocation();
+  const { user } = useAuth();
+  const isCrew = user?.role === 'crew';
   const [expandedGroups, setExpandedGroups] = useState({ Production: true, Planning: true, 'Inwards/Outwards': true });
 
   const toggleGroup = (groupName) => {
     setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
   };
+
+  const visibleGroups = isCrew
+    ? navGroups.map(g => ({ ...g, items: g.items.filter(i => crewPaths.includes(i.path)) })).filter(g => g.items.length > 0)
+    : navGroups;
 
   return (
     <aside className="fixed top-0 left-0 h-full w-[240px] bg-sidebar flex flex-col z-40 border-r border-sidebar-border">
@@ -59,20 +68,22 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
-        <Link
-          to="/"
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-            location.pathname === '/'
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <Home className="w-4 h-4" />
-          Dashboard
-        </Link>
+        {!isCrew && (
+          <Link
+            to="/"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+              location.pathname === '/'
+                ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            )}
+          >
+            <Home className="w-4 h-4" />
+            Dashboard
+          </Link>
+        )}
 
-        {navGroups.map((group) => (
+        {visibleGroups.map((group) => (
           <Collapsible
             key={group.name}
             open={expandedGroups[group.name]}
@@ -107,30 +118,34 @@ export default function Sidebar() {
       </nav>
 
       <div className="px-3 py-3 border-t border-sidebar-border space-y-0.5">
-        <Link
-          to="/reports"
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-            location.pathname === '/reports'
-              ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <FileText className="w-4 h-4" />
-          Reports
-        </Link>
-        <Link
-          to="/settings"
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-            location.pathname === '/settings'
-              ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <Settings className="w-4 h-4" />
-          Settings
-        </Link>
+        {!isCrew && (
+          <>
+            <Link
+              to="/reports"
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                location.pathname === '/reports'
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              )}
+            >
+              <FileText className="w-4 h-4" />
+              Reports
+            </Link>
+            <Link
+              to="/settings"
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                location.pathname === '/settings'
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              )}
+            >
+              <Settings className="w-4 h-4" />
+              Settings
+            </Link>
+          </>
+        )}
       </div>
     </aside>
   );
