@@ -39,7 +39,10 @@ function AdjustDialog({ item, entity, onClose, queryKey }) {
     mutationFn: async () => {
       const newQty = parseFloat(value) || 0;
 
-      const update = isFinished ? { quantity_bottles: newQty } : { quantity: newQty };
+      // For finished goods, the displayed stock is (bottled - dispatched).
+      // The user enters the desired displayed quantity, so we store bottled = newQty + dispatched.
+      const storedQty = isFinished ? newQty + (item._dispatched || 0) : newQty;
+      const update = isFinished ? { quantity_bottles: storedQty } : { quantity: newQty };
 
       // Recalculate LALs if raw material with ABV
       if (!isFinished && item.abv_percent) {
@@ -507,6 +510,8 @@ export default function Inventory() {
       ...g,
       quantity_bottles: remaining,
       total_lals: parseFloat((remaining * lalsPerBottle).toFixed(3)),
+      _bottled: bottled,       // original stored quantity (before dispatch deductions)
+      _dispatched: dispatched,  // total dispatched for this batch
     };
   });
 
@@ -649,11 +654,12 @@ export default function Inventory() {
   const rawMaterialsWithNetStock = allRawMaterials.map(m => {
     const nameKey = (m.name || '').toLowerCase().trim();
     const received = receivedByName[nameKey];
+    const isReceivingOnly = String(m.id || '').startsWith('recv-');
 
-    // For materials that only exist in RawMaterial (manually added), keep their quantity
-    // For materials that exist in Receiving, use received total as the base
-    let netQty = received ? received.quantity : (m.quantity || 0);
-    let netLals = received ? received.lals : (m.lals || 0);
+    // For materials stored in the RawMaterial entity, use the stored quantity directly
+    // (user-maintained via Adjust). For receiving-only materials, compute from received minus consumed.
+    let netQty = isReceivingOnly ? (received?.quantity || 0) : (m.quantity || 0);
+    let netLals = isReceivingOnly ? (received?.lals || 0) : (m.lals || 0);
 
     const nameLower = m.name?.toLowerCase() || '';
 
@@ -661,58 +667,61 @@ export default function Inventory() {
     // m.type may still have raw values like 'botanicals' for receiving-only items
     const effectiveType = (received?.type) || normaliseType(m.type);
 
-    if (effectiveType === 'ethanol') {
-      const isLactonol = nameLower.includes('lactonol');
-      const isEna = nameLower.includes('extra neutral') || nameLower.includes('ena');
-      let consumed = 0;
-      if (isLactonol) {
-        consumed += (ethanolConsumedByLotCode['eth-lactonol'] || 0) + (ethanolConsumedByLotCode['lactonol'] || 0);
-        consumed += rawEthanolConsumedInDilutions;
-      } else if (isEna) {
-        consumed += (ethanolConsumedByLotCode['eth-ena'] || 0) + (ethanolConsumedByLotCode['ena'] || 0);
-      } else {
-        const matched = ['eth-lactonol', 'lactonol', 'eth-ena', 'ena'];
-        consumed += Object.entries(ethanolConsumedByLotCode)
-          .filter(([k]) => !matched.includes(k))
-          .reduce((s, [, v]) => s + v, 0);
+    // Only apply consumption deductions to receiving-only materials.
+    // RawMaterial-entity items use the user-maintained stored quantity directly.
+    if (isReceivingOnly) {
+      if (effectiveType === 'ethanol') {
+        const isLactonol = nameLower.includes('lactonol');
+        const isEna = nameLower.includes('extra neutral') || nameLower.includes('ena');
+        let consumed = 0;
+        if (isLactonol) {
+          consumed += (ethanolConsumedByLotCode['eth-lactonol'] || 0) + (ethanolConsumedByLotCode['lactonol'] || 0);
+          consumed += rawEthanolConsumedInDilutions;
+        } else if (isEna) {
+          consumed += (ethanolConsumedByLotCode['eth-ena'] || 0) + (ethanolConsumedByLotCode['ena'] || 0);
+        } else {
+          const matched = ['eth-lactonol', 'lactonol', 'eth-ena', 'ena'];
+          consumed += Object.entries(ethanolConsumedByLotCode)
+            .filter(([k]) => !matched.includes(k))
+            .reduce((s, [, v]) => s + v, 0);
+        }
+        netLals = Math.max(0, netLals - (consumed * (m.abv_percent || 0) / 100));
+        netQty = Math.max(0, netQty - consumed);
       }
-      netLals = Math.max(0, netLals - (consumed * (m.abv_percent || 0) / 100));
-      netQty = Math.max(0, netQty - consumed);
-    }
 
-    // Deduct botanicals — case-insensitive exact then partial match
-    const normType = effectiveType;
-    if (normType === 'botanical') {
-      // Both sides lowercased — recipe ingredients stored with capitals, received items lowercase
-      const exactConsumed = botanicalConsumedByName[nameLower];
-      if (exactConsumed !== undefined) {
-        netQty = Math.max(0, netQty - exactConsumed);
-      } else {
-        const partialKey = Object.keys(botanicalConsumedByName)
-          .find(k => nameLower.includes(k.toLowerCase()) || k.toLowerCase().includes(nameLower));
-        if (partialKey) {
-          netQty = Math.max(0, netQty - botanicalConsumedByName[partialKey]);
+      // Deduct botanicals — case-insensitive exact then partial match
+      const normType = effectiveType;
+      if (normType === 'botanical') {
+        const exactConsumed = botanicalConsumedByName[nameLower];
+        if (exactConsumed !== undefined) {
+          netQty = Math.max(0, netQty - exactConsumed);
+        } else {
+          const partialKey = Object.keys(botanicalConsumedByName)
+            .find(k => nameLower.includes(k.toLowerCase()) || k.toLowerCase().includes(nameLower));
+          if (partialKey) {
+            netQty = Math.max(0, netQty - botanicalConsumedByName[partialKey]);
+          }
+        }
+      }
+
+      // Deduct packaging — case-insensitive exact then partial match
+      if (normType === 'packaging') {
+        const exactConsumed = packagingConsumedByName[nameLower];
+        if (exactConsumed !== undefined) {
+          netQty = Math.max(0, netQty - exactConsumed);
+        } else {
+          const partialKey = Object.keys(packagingConsumedByName)
+            .find(k => nameLower.includes(k.toLowerCase()) || k.toLowerCase().includes(nameLower));
+          if (partialKey) {
+            netQty = Math.max(0, netQty - packagingConsumedByName[partialKey]);
+          }
         }
       }
     }
 
-    // Deduct packaging — case-insensitive exact then partial match
-    if (normType === 'packaging') {
-      const exactConsumed = packagingConsumedByName[nameLower];
-      if (exactConsumed !== undefined) {
-        netQty = Math.max(0, netQty - exactConsumed);
-      } else {
-        const partialKey = Object.keys(packagingConsumedByName)
-          .find(k => nameLower.includes(k.toLowerCase()) || k.toLowerCase().includes(nameLower));
-        if (partialKey) {
-          netQty = Math.max(0, netQty - packagingConsumedByName[partialKey]);
-        }
-      }
-    }
-
-    netLals = m.abv_percent && m.type === 'ethanol'
+    netLals = m.abv_percent && (m.type === 'ethanol' || effectiveType === 'ethanol')
       ? parseFloat((netQty * m.abv_percent / 100).toFixed(3))
-      : (received ? received.lals : m.lals);
+      : netLals;
 
     return { ...m, quantity: parseFloat(netQty.toFixed(2)), lals: netLals };
   });
