@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Truck, PackageCheck, MapPin, Trash2, Search, Map, Pencil, RotateCcw, Zap, Plus } from 'lucide-react';
+import { Truck, PackageCheck, MapPin, Trash2, Search, Map, Pencil, RotateCcw, Zap, Plus, Store } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
@@ -18,11 +18,13 @@ import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import Pagination from '@/components/shared/Pagination';
 import DispatchForm from '@/components/dispatch/DispatchForm.jsx';
+import DirectSalesForm from '@/components/dispatch/DirectSalesForm.jsx';
 import StockSummary from '@/components/dispatch/StockSummary.jsx';
 import DeliveryMap from '@/components/sales/DeliveryMap';
 
 const DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
 const WAREHOUSE_ADDRESS = '27 Pavillion Drive, Māngere, Auckland 2015, New Zealand';
+const CHANNEL_LABELS = { wholesale: 'Wholesale', cellar_door: 'Cellar Door', shopify: 'Shopify', airpoints: 'Airpoints', website: 'Website', other: 'Other' };
 
 const calcCO2e = (distanceKm, weightKg, method) => {
   if (!distanceKm || !weightKg || !method) return 0;
@@ -32,9 +34,11 @@ const calcCO2e = (distanceKm, weightKg, method) => {
 
 export default function DispatchHub() {
   const [showForm, setShowForm] = useState(false);
+  const [showDirectSalesForm, setShowDirectSalesForm] = useState(false);
   const [search, setSearch] = useState('');
   const [filterSource, setFilterSource] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterChannel, setFilterChannel] = useState('all');
   const [showMap, setShowMap] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
@@ -66,6 +70,11 @@ export default function DispatchHub() {
     .filter(d => { if (!search) return true; const s = search.toLowerCase(); return d.customer_name?.toLowerCase().includes(s) || d.product_name?.toLowerCase().includes(s) || d.batch_number?.toLowerCase().includes(s); })
     .filter(d => filterSource === 'all' || (d.dispatched_from || 'Bluff') === filterSource)
     .filter(d => filterStatus === 'all' || d.status === filterStatus)
+    .filter(d => {
+      if (filterChannel === 'all') return true;
+      if (filterChannel === 'wholesale') return !d.sales_channel || d.sales_channel === 'wholesale';
+      return d.sales_channel === filterChannel;
+    })
     .sort((a, b) => new Date(b.dispatch_date) - new Date(a.dispatch_date));
 
   const handleSearch = (val) => { setSearch(val); setCurrentPage(0); };
@@ -151,7 +160,8 @@ export default function DispatchHub() {
       <PageHeader title="Sales & Dispatch" subtitle="Record dispatches, track stock by location, and manage deliveries">
         <Button variant="outline" onClick={() => setShowMap(v => !v)} className="gap-2"><Map className="w-4 h-4" />{showMap ? 'Hide Map' : 'Delivery Map'}</Button>
         <Button variant="outline" onClick={handleSyncDispatches} disabled={isSyncing} className="gap-2"><Zap className="w-4 h-4" />{isSyncing ? 'Syncing...' : 'Sync Distances'}</Button>
-        <Button onClick={() => setShowForm(true)} className="gap-2"><Plus className="w-4 h-4" />New Dispatch</Button>
+        <Button variant="outline" onClick={() => setShowForm(true)} className="gap-2"><Truck className="w-4 h-4" />Wholesale</Button>
+        <Button onClick={() => setShowDirectSalesForm(true)} className="gap-2"><Store className="w-4 h-4" />Direct Sale</Button>
       </PageHeader>
 
       {showMap && <div className="mb-6"><DeliveryMap dispatches={dispatches} customers={customers} distilleryOrigin={DISTILLERY_ORIGIN} /></div>}
@@ -186,6 +196,10 @@ export default function DispatchHub() {
               <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All sources" /></SelectTrigger>
               <SelectContent><SelectItem value="all">All Sources</SelectItem><SelectItem value="Bluff">Bluff Distillery</SelectItem><SelectItem value="Auckland 3PL">Auckland 3PL</SelectItem></SelectContent>
             </Select>
+            <Select value={filterChannel} onValueChange={v => { setFilterChannel(v); setCurrentPage(0); }}>
+              <SelectTrigger className="w-full sm:w-36"><SelectValue placeholder="All types" /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="wholesale">Wholesale</SelectItem><SelectItem value="cellar_door">Cellar Door</SelectItem><SelectItem value="shopify">Shopify</SelectItem><SelectItem value="airpoints">Airpoints</SelectItem><SelectItem value="website">Website</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent>
+            </Select>
             <Select value={filterStatus} onValueChange={v => { setFilterStatus(v); setCurrentPage(0); }}>
               <SelectTrigger className="w-full sm:w-36"><SelectValue placeholder="All statuses" /></SelectTrigger>
               <SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="dispatched">Dispatched</SelectItem><SelectItem value="delivered">Delivered</SelectItem></SelectContent>
@@ -208,7 +222,11 @@ export default function DispatchHub() {
                 <TableRow key={d.id || i}>
                   <TableCell>{(() => { try { const dt = new Date(d.dispatch_date?.replace(/-/g, '/')); return isNaN(dt) ? d.dispatch_date || '—' : format(dt, 'dd MMM yyyy'); } catch { return d.dispatch_date || '—'; } })()}</TableCell>
                   <TableCell><Badge variant={d.dispatched_from === 'Auckland 3PL' ? 'secondary' : 'outline'} className="text-xs">{d.dispatched_from || 'Bluff'}</Badge></TableCell>
-                  <TableCell className="font-semibold">{d.customer_name}</TableCell>
+                  <TableCell className="font-semibold">
+                    {d.sales_channel && d.sales_channel !== 'wholesale' ? (
+                      <Badge variant="secondary" className="text-xs">{CHANNEL_LABELS[d.sales_channel] || d.sales_channel}</Badge>
+                    ) : d.customer_name}
+                  </TableCell>
                   <TableCell>{d.product_name}</TableCell>
                   <TableCell className="font-mono text-xs">{d.batch_number}</TableCell>
                   <TableCell className="font-semibold">{d.quantity_bottles}</TableCell>
@@ -244,6 +262,7 @@ export default function DispatchHub() {
       </Card>
 
       <DispatchForm open={showForm} onClose={() => setShowForm(false)} finishedGoods={finishedGoods} warehouseStock={warehouseStock} customers={customers} allDispatches={allDispatches} />
+      <DirectSalesForm open={showDirectSalesForm} onClose={() => setShowDirectSalesForm(false)} finishedGoods={finishedGoods} allDispatches={allDispatches} />
 
       <Dialog open={!!editingDispatch} onOpenChange={v => !v && setEditingDispatch(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">

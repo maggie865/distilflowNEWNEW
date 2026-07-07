@@ -13,7 +13,7 @@
     },
     "customer_address": {
       "type": "string",
-      "description": "Delivery address"
+      "description": "Delivery address or postcode"
     },
     "product_name": {
       "type": "string",
@@ -75,6 +75,23 @@
         "Auckland 3PL"
       ],
       "description": "Where the dispatch originated from"
+    },
+    "sales_channel": {
+      "type": "string",
+      "enum": [
+        "wholesale",
+        "cellar_door",
+        "shopify",
+        "airpoints",
+        "website",
+        "other"
+      ],
+      "default": "wholesale",
+      "description": "Sales channel for this dispatch"
+    },
+    "order_reference": {
+      "type": "string",
+      "description": "Order reference number (for direct sales)"
     },
     "notes": {
       "type": "string",
