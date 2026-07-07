@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Truck, PackageCheck, MapPin, Trash2, Search, Map, Pencil, RotateCcw, Zap, Plus, Store } from 'lucide-react';
+import { Truck, PackageCheck, MapPin, Trash2, Search, Map, Pencil, RotateCcw, ArrowRightLeft, Plus, Store } from 'lucide-react';
 import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -21,6 +21,7 @@ import Pagination from '@/components/shared/Pagination';
 import DispatchForm from '@/components/dispatch/DispatchForm.jsx';
 import DirectSalesForm from '@/components/dispatch/DirectSalesForm.jsx';
 import StockSummary from '@/components/dispatch/StockSummary.jsx';
+import TransferTo3PLDialog from '@/components/dispatch/TransferTo3PLDialog.jsx';
 import DeliveryMap from '@/components/sales/DeliveryMap';
 
 const DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
@@ -41,7 +42,7 @@ export default function DispatchHub() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterChannel, setFilterChannel] = useState('all');
   const [showMap, setShowMap] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [showTransfer3PL, setShowTransfer3PL] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const PAGE_SIZE = 50;
 
@@ -79,17 +80,6 @@ export default function DispatchHub() {
     .sort((a, b) => new Date(b.dispatch_date) - new Date(a.dispatch_date));
 
   const handleSearch = (val) => { setSearch(val); setCurrentPage(0); };
-
-  const handleSyncDispatches = async () => {
-    setIsSyncing(true);
-    try {
-      const res = await base44.functions.invoke('syncDispatchesWithCustomerAddresses', {});
-      queryClient.invalidateQueries({ queryKey: ['dispatches'] });
-      queryClient.invalidateQueries({ queryKey: ['dispatches-all'] });
-      setCurrentPage(0);
-      toast.success(res.data.message);
-    } catch { toast.error('Failed to sync dispatches'); } finally { setIsSyncing(false); }
-  };
 
   const editMutation = useMutation({
     mutationFn: async (data) => {
@@ -160,7 +150,7 @@ export default function DispatchHub() {
     <div className="pb-20 md:pb-0">
       <PageHeader title="Sales & Dispatch" subtitle="Record dispatches, track stock by location, and manage deliveries">
         <Button variant="outline" onClick={() => setShowMap(v => !v)} className="gap-2 hidden md:inline-flex"><Map className="w-4 h-4" />{showMap ? 'Hide Map' : 'Delivery Map'}</Button>
-        <Button variant="outline" onClick={handleSyncDispatches} disabled={isSyncing} className="gap-2 hidden md:inline-flex"><Zap className="w-4 h-4" />{isSyncing ? 'Syncing...' : 'Sync Distances'}</Button>
+        <Button onClick={() => setShowTransfer3PL(true)} className="gap-2"><ArrowRightLeft className="w-4 h-4" />Transfer to 3PL</Button>
         <Button variant="outline" onClick={() => setShowForm(true)} className="gap-2"><Truck className="w-4 h-4" />Wholesale</Button>
         <Button onClick={() => setShowDirectSalesForm(true)} className="gap-2"><Store className="w-4 h-4" />Direct Sale</Button>
       </PageHeader>
@@ -306,6 +296,7 @@ export default function DispatchHub() {
 
       <DispatchForm open={showForm} onClose={() => setShowForm(false)} finishedGoods={finishedGoods} warehouseStock={warehouseStock} customers={customers} allDispatches={allDispatches} />
       <DirectSalesForm open={showDirectSalesForm} onClose={() => setShowDirectSalesForm(false)} finishedGoods={finishedGoods} allDispatches={allDispatches} />
+      <TransferTo3PLDialog open={showTransfer3PL} onClose={() => setShowTransfer3PL(false)} finishedGoods={finishedGoods} />
 
       <Dialog open={!!editingDispatch} onOpenChange={v => !v && setEditingDispatch(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
