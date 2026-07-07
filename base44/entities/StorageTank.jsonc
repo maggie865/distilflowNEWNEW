@@ -76,11 +76,7 @@
       "created_by_id": "{{user.id}}"
     },
     "read": {},
-    "update": {
-      "created_by_id": "{{user.id}}"
-    },
-    "delete": {
-      "created_by_id": "{{user.id}}"
-    }
+    "update": {},
+    "delete": {}
   }
 }
