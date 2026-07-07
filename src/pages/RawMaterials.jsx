@@ -144,7 +144,7 @@ export default function RawMaterials() {
 
   const { data: rawMaterialsBase = [], isLoading } = useQuery({
     queryKey: ['rawMaterials'],
-    queryFn: () => db.RawMaterial.list('name', 200),
+    queryFn: () => db.RawMaterial.list('name', 2000),
   });
 
   const { data: allReceivings = [] } = useQuery({
