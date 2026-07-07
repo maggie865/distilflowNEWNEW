@@ -296,7 +296,7 @@ export default function DispatchHub() {
 
       <DispatchForm open={showForm} onClose={() => setShowForm(false)} finishedGoods={finishedGoods} warehouseStock={warehouseStock} customers={customers} allDispatches={allDispatches} />
       <DirectSalesForm open={showDirectSalesForm} onClose={() => setShowDirectSalesForm(false)} finishedGoods={finishedGoods} allDispatches={allDispatches} />
-      <TransferTo3PLDialog open={showTransfer3PL} onClose={() => setShowTransfer3PL(false)} finishedGoods={finishedGoods} />
+      <TransferTo3PLDialog open={showTransfer3PL} onClose={() => setShowTransfer3PL(false)} finishedGoods={finishedGoods} allDispatches={allDispatches} />
 
       <Dialog open={!!editingDispatch} onOpenChange={v => !v && setEditingDispatch(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
