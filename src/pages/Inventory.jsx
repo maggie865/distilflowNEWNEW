@@ -12,10 +12,11 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Warehouse, Wine, Package, Pencil, Trash2, SlidersHorizontal, ChevronDown, ChevronRight, Bell, AlertTriangle } from 'lucide-react';
+import { Warehouse, Wine, Package, Pencil, Trash2, SlidersHorizontal, ChevronDown, ChevronRight, Bell, AlertTriangle, ClipboardCheck } from 'lucide-react';
 import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
+import StockReconciliation from '@/components/inventory/StockReconciliation';
 
 const typeColors = {
   ethanol: 'bg-amber-100 text-amber-800',
@@ -786,6 +787,10 @@ export default function Inventory() {
             <Bell className="w-3.5 h-3.5" />
             Low Stock Alerts
           </TabsTrigger>
+          <TabsTrigger value="reconcile" className="flex items-center gap-1.5">
+            <ClipboardCheck className="w-3.5 h-3.5" />
+            Reconcile
+          </TabsTrigger>
           <TabsTrigger value="debug" className="text-amber-600 font-bold">🔍 Debug</TabsTrigger>
         </TabsList>
 
@@ -940,6 +945,10 @@ export default function Inventory() {
         {/* Low Stock Alerts */}
         <TabsContent value="alerts">
           <LowStockAlerts rawMaterials={rawMaterialsWithNetStock} thresholds={thresholds} />
+        </TabsContent>
+
+        <TabsContent value="reconcile">
+          <StockReconciliation />
         </TabsContent>
 
         <TabsContent value="debug">
