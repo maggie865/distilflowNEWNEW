@@ -10,21 +10,19 @@
     "action": {
       "type": "string",
       "enum": [
-        "fill",
-        "empty",
         "transfer_in",
         "transfer_out",
-        "bottling_draw"
+        "bottling_draw",
+        "dilution",
+        "cleaning",
+        "adjustment",
+        "disposal"
       ],
-      "description": "Type of movement"
+      "description": "Type of tank movement"
     },
     "tank_name": {
       "type": "string",
-      "description": "Tank this movement applies to"
-    },
-    "counterpart_tank": {
-      "type": "string",
-      "description": "Other tank involved in a transfer (source or destination)"
+      "description": "Name of the tank involved"
     },
     "volume_litres": {
       "type": "number",
@@ -32,7 +30,7 @@
     },
     "abv": {
       "type": "number",
-      "description": "ABV % of liquid moved"
+      "description": "ABV of the liquid moved"
     },
     "lals": {
       "type": "number",
@@ -44,23 +42,11 @@
     },
     "batch_number": {
       "type": "string",
-      "description": "Batch or lot number for traceability"
-    },
-    "ethanol_lot": {
-      "type": "string",
-      "description": "Ethanol supplier lot number"
-    },
-    "botanical_lot": {
-      "type": "string",
-      "description": "Botanical supplier lot number"
+      "description": "Batch number"
     },
     "operator": {
       "type": "string",
       "description": "Person who performed the movement"
-    },
-    "co2e_kg": {
-      "type": "number",
-      "description": "CO2e emissions in kg for transport (e.g., to 3PL)"
     },
     "notes": {
       "type": "string",
@@ -70,16 +56,13 @@
   "required": [
     "date",
     "action",
-    "tank_name",
-    "volume_litres"
+    "tank_name"
   ],
   "rls": {
     "create": {
       "created_by_id": "{{user.id}}"
     },
-    "read": {
-      "created_by_id": "{{user.id}}"
-    },
+    "read": {},
     "update": {
       "created_by_id": "{{user.id}}"
     },
