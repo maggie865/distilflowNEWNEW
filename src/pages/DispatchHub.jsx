@@ -20,7 +20,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import Pagination from '@/components/shared/Pagination';
 import DispatchForm from '@/components/dispatch/DispatchForm.jsx';
 import DirectSalesForm from '@/components/dispatch/DirectSalesForm.jsx';
-import StockSummary from '@/components/dispatch/StockSummary.jsx';
+import StockLocationDialog from '@/components/dispatch/StockLocationDialog.jsx';
 import TransferTo3PLDialog from '@/components/dispatch/TransferTo3PLDialog.jsx';
 import DeliveryMap from '@/components/sales/DeliveryMap';
 
@@ -43,6 +43,7 @@ export default function DispatchHub() {
   const [filterChannel, setFilterChannel] = useState('all');
   const [showMap, setShowMap] = useState(false);
   const [showTransfer3PL, setShowTransfer3PL] = useState(false);
+  const [stockLocation, setStockLocation] = useState(null);
   const [currentPage, setCurrentPage] = useState(0);
   const PAGE_SIZE = 50;
 
@@ -157,13 +158,11 @@ export default function DispatchHub() {
 
       {showMap && <div className="mb-6"><DeliveryMap dispatches={dispatches} customers={customers} distilleryOrigin={DISTILLERY_ORIGIN} /></div>}
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
           { label: 'Total Dispatched', value: totalBottlesDispatched.toLocaleString(), sub: 'bottles', icon: PackageCheck, color: 'text-primary', bg: 'bg-accent border-accent-foreground/10' },
           { label: 'Total LALs Sold', value: totalLalsDispatched.toFixed(2), sub: 'litres abs. alcohol', icon: Truck, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
           { label: 'Total CO2e', value: totalCO2e.toFixed(1), sub: 'kg emissions', icon: Truck, color: 'text-green-600', bg: 'bg-green-50 border-green-200' },
-          { label: 'Bluff Stock', value: bluffBottles.toLocaleString(), sub: 'bottles at distillery', icon: PackageCheck, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
-          { label: '3PL Stock', value: warehouseBottles.toLocaleString(), sub: 'bottles at Auckland', icon: PackageCheck, color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200' },
         ].map(({ label, value, sub, icon: Icon, color, bg }) => (
           <div key={label} className={`rounded-xl border p-4 flex flex-col gap-1 ${bg}`}>
             <div className="flex items-center gap-2"><Icon className={`w-4 h-4 ${color}`} /><span className="text-xs font-medium text-muted-foreground">{label}</span></div>
@@ -171,9 +170,33 @@ export default function DispatchHub() {
             <p className="text-xs text-muted-foreground">{sub}</p>
           </div>
         ))}
+        <button
+          onClick={() => setStockLocation('Bluff')}
+          className="rounded-xl border p-4 flex flex-col gap-1 text-left bg-amber-50 border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
+        >
+          <div className="flex items-center gap-2"><PackageCheck className="w-4 h-4 text-amber-600" /><span className="text-xs font-medium text-muted-foreground">Bluff Stock</span></div>
+          <p className="text-2xl font-bold font-display text-amber-600">{bluffBottles.toLocaleString()}</p>
+          <p className="text-xs text-muted-foreground">bottles at distillery — click to view</p>
+        </button>
+        <button
+          onClick={() => setStockLocation('3PL')}
+          className="rounded-xl border p-4 flex flex-col gap-1 text-left bg-purple-50 border-purple-200 hover:bg-purple-100 transition-colors cursor-pointer"
+        >
+          <div className="flex items-center gap-2"><PackageCheck className="w-4 h-4 text-purple-600" /><span className="text-xs font-medium text-muted-foreground">3PL Stock</span></div>
+          <p className="text-2xl font-bold font-display text-purple-600">{warehouseBottles.toLocaleString()}</p>
+          <p className="text-xs text-muted-foreground">bottles at Auckland — click to view</p>
+        </button>
       </div>
 
-      <div className="mb-6"><StockSummary finishedGoods={finishedGoods} warehouseStock={warehouseStock} /></div>
+      {stockLocation && (
+        <StockLocationDialog
+          location={stockLocation}
+          finishedGoods={finishedGoods}
+          warehouseStock={warehouseStock}
+          onClose={() => setStockLocation(null)}
+          onTransfer={(batch) => { setStockLocation(null); setShowTransfer3PL(true); }}
+        />
+      )}
 
       <Card className="p-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
