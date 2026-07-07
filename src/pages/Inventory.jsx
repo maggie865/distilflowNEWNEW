@@ -33,17 +33,11 @@ const typeColors = {
 function AdjustDialog({ item, entity, onClose, queryKey }) {
   const qc = useQueryClient();
   const isFinished = entity === 'FinishedGood';
-  const [mode, setMode] = useState('set'); // 'set' | 'add' | 'subtract'
   const [value, setValue] = useState('');
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const current = isFinished ? (item.quantity_bottles || 0) : (item.quantity || 0);
-      let newQty;
-      const v = parseFloat(value);
-      if (mode === 'set') newQty = v;
-      else if (mode === 'add') newQty = current + v;
-      else newQty = Math.max(0, current - v);
+      const newQty = parseFloat(value) || 0;
 
       const update = isFinished ? { quantity_bottles: newQty } : { quantity: newQty };
 
@@ -73,19 +67,8 @@ function AdjustDialog({ item, entity, onClose, queryKey }) {
             {' — current: '}<span className="font-semibold">{isFinished ? item.quantity_bottles : item.quantity} {isFinished ? 'bottles' : item.unit}</span>
           </p>
           <div className="space-y-1">
-            <Label>Adjustment type</Label>
-            <Select value={mode} onValueChange={setMode}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="set">Set to exact value</SelectItem>
-                <SelectItem value="add">Add to current</SelectItem>
-                <SelectItem value="subtract">Subtract from current</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label>Value</Label>
-            <Input type="number" min="0" step="0.001" value={value} onChange={e => setValue(e.target.value)} placeholder="Enter amount" />
+            <Label>New quantity</Label>
+            <Input type="number" min="0" step="0.001" value={value} onChange={e => setValue(e.target.value)} placeholder="Enter new total quantity" />
           </div>
         </div>
         <DialogFooter>
