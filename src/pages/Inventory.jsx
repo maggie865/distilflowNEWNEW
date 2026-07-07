@@ -652,6 +652,8 @@ export default function Inventory() {
         lals: receivedByName[k].lals,
         unit: receivedByName[k].unit || 'units',
         abv_percent: receivedByName[k].abv_percent,
+        supplier: sample?.supplier_name || '',
+        batch_number: sample?.batch_number || '',
         _fromReceiving: true,
       };
     });
