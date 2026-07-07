@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/api/supabaseClient';
 import { Card } from '@/components/ui/card';
@@ -19,6 +19,8 @@ import BottlingRunTracker from '@/components/bottling/BottlingRunTracker';
 
 const BOTTLE_SIZES = [200, 700];
 
+const ACTIVE_RUN_KEY = 'bottling_active_run';
+
 export default function BottlingFloor() {
   const [activeRun, setActiveRun] = useState(null);
   const [showNewRun, setShowNewRun] = useState(false);
@@ -35,6 +37,28 @@ export default function BottlingFloor() {
   const [approvingBatch, setApprovingBatch] = useState(null);
 
   const queryClient = useQueryClient();
+
+  // Restore an in-progress bottling run after a reload / session timeout
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(ACTIVE_RUN_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.batch_code) {
+          setActiveRun(parsed);
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }, []);
+
+  // Persist the active run so it survives reloads
+  useEffect(() => {
+    if (activeRun) {
+      localStorage.setItem(ACTIVE_RUN_KEY, JSON.stringify(activeRun));
+    } else {
+      localStorage.removeItem(ACTIVE_RUN_KEY);
+    }
+  }, [activeRun]);
 
   const { data: masterBatches = [] } = useQuery({
     queryKey: ['masterBatches'],
@@ -245,6 +269,7 @@ export default function BottlingFloor() {
       queryClient.invalidateQueries({ queryKey: ['bottlingFloorRuns'] });
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
+      localStorage.removeItem(ACTIVE_RUN_KEY);
       setActiveRun(null);
       resetForm();
       toast.success('Run complete — stock updated!');

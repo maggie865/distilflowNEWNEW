@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,12 +8,42 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Plus, Minus, Check, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 
+const DRAFT_KEY = (run) => `bottling_draft_${run?.batch_code}_${run?.tank_id}`;
+
 export default function BottlingRunTracker({ run, onComplete, onCancel, isCompleting }) {
   const [started, setStarted] = useState(false);
   const [caseCount, setCaseCount] = useState(0);
   const [showFinish, setShowFinish] = useState(false);
   const [extraBottles, setExtraBottles] = useState('0');
   const [tastingBottles, setTastingBottles] = useState('0');
+
+  // Load any saved draft on mount so progress survives reloads/timeouts
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY(run));
+      if (saved) {
+        const draft = JSON.parse(saved);
+        if (typeof draft.caseCount === 'number') setCaseCount(draft.caseCount);
+        if (typeof draft.extraBottles === 'string') setExtraBottles(draft.extraBottles);
+        if (typeof draft.tastingBottles === 'string') setTastingBottles(draft.tastingBottles);
+        if (draft.started) {
+          setStarted(true);
+          toast.info('Resumed your previous bottling run');
+        }
+      }
+    } catch (e) { /* ignore corrupt draft */ }
+  }, [run]);
+
+  // Auto-save progress to localStorage on every change
+  useEffect(() => {
+    if (!run) return;
+    localStorage.setItem(DRAFT_KEY(run), JSON.stringify({
+      started,
+      caseCount,
+      extraBottles,
+      tastingBottles,
+    }));
+  }, [run, started, caseCount, extraBottles, tastingBottles]);
 
   const bottlesPerCase = run?.bottles_per_case || 6;
   const bottlesMl = run?.bottle_size_ml || 700;
@@ -28,6 +58,7 @@ export default function BottlingRunTracker({ run, onComplete, onCancel, isComple
       toast.error('No bottles recorded yet');
       return;
     }
+    localStorage.removeItem(DRAFT_KEY(run));
     onComplete({
       cases: caseCount,
       extraBottles: extraCount,
@@ -96,7 +127,7 @@ export default function BottlingRunTracker({ run, onComplete, onCancel, isComple
         )}
 
         <div className="flex gap-3">
-          <Button variant="outline" className="flex-1 h-12" onClick={onCancel}>
+          <Button variant="outline" className="flex-1 h-12" onClick={() => { localStorage.removeItem(DRAFT_KEY(run)); onCancel(); }}>
             <ArrowLeft className="w-4 h-4 mr-2" />Cancel
           </Button>
           <Button
