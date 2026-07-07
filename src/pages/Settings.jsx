@@ -119,9 +119,7 @@ function PestControlMapSettings() {
     queryFn: () => base44.entities.AppSettings.list('key', 100),
   });
 
-  const mapImageUrl = (typeof localStorage !== 'undefined' ? localStorage.getItem('pest_map_image') : null)
-    || settings.find(s => s.key === 'pest_map_image')?.value
-    || null;
+  const mapImageUrl = settings.find(s => s.key === 'pest_map_image')?.value || null;
   const mapSettingId = settings.find(s => s.key === 'pest_map_image')?.id || null;
 
   const handleUpload = async (e) => {
@@ -135,20 +133,13 @@ function PestControlMapSettings() {
       if (!uploadedUrl || typeof uploadedUrl !== 'string') {
         throw new Error('Unexpected upload response: ' + JSON.stringify(result).slice(0, 200));
       }
-      // Save to localStorage — works immediately across all pages
-      localStorage.setItem('pest_map_image', uploadedUrl);
-      // Also try AppSettings entity as a backup
-      try {
-        if (mapSettingId) {
-          await base44.entities.AppSettings.update(mapSettingId, { key: 'pest_map_image', value: uploadedUrl });
-        } else {
-          await base44.entities.AppSettings.create({ key: 'pest_map_image', value: uploadedUrl });
-        }
-        qc.invalidateQueries({ queryKey: ['appSettings'] });
-      } catch {
-        // AppSettings save failed — localStorage is the fallback, that's fine
+      // Save to shared AppSettings entity so all users see the floor plan
+      if (mapSettingId) {
+        await base44.entities.AppSettings.update(mapSettingId, { key: 'pest_map_image', value: uploadedUrl });
+      } else {
+        await base44.entities.AppSettings.create({ key: 'pest_map_image', value: uploadedUrl });
       }
-      qc.invalidateQueries({ queryKey: ['pestMapImage'] });
+      qc.invalidateQueries({ queryKey: ['appSettings'] });
       toast.success('Floor plan saved — go to Pest Control to see it on the map');
     } catch (err) {
       toast.error('Upload failed: ' + err.message);
@@ -160,12 +151,10 @@ function PestControlMapSettings() {
 
   const handleRemove = async () => {
     if (!confirm('Remove the floor plan image?')) return;
-    localStorage.removeItem('pest_map_image');
     if (mapSettingId) {
       try { await base44.entities.AppSettings.delete(mapSettingId); } catch {}
     }
     qc.invalidateQueries({ queryKey: ['appSettings'] });
-    qc.invalidateQueries({ queryKey: ['pestMapImage'] });
     toast.success('Floor plan removed');
   };
 

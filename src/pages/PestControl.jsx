@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
@@ -40,17 +40,13 @@ export default function PestControl() {
   const [draggingTrap, setDraggingTrap] = useState(null);
   const qc = useQueryClient();
 
-  // Read floor plan URL from localStorage (set in Settings → Pest Map)
-  const [mapImageUrl, setMapImageUrl] = useState(() =>
-    typeof localStorage !== 'undefined' ? localStorage.getItem('pest_map_image') : null
-  );
+  // Fetch floor plan URL from shared AppSettings so all users see it
+  const { data: appSettings = [] } = useQuery({
+    queryKey: ['appSettings'],
+    queryFn: () => base44.entities.AppSettings.list('key', 100),
+  });
 
-  // Re-check localStorage when tab becomes visible (in case Settings was just updated)
-  useEffect(() => {
-    const check = () => setMapImageUrl(localStorage.getItem('pest_map_image'));
-    window.addEventListener('focus', check);
-    return () => window.removeEventListener('focus', check);
-  }, []);
+  const mapImageUrl = appSettings.find(s => s.key === 'pest_map_image')?.value || null;
 
   const { data: traps = [] } = useQuery({
     queryKey: ['pestTraps'],
