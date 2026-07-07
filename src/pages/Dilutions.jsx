@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Calculator, FlaskConical, Droplets, Pencil, Search } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -652,7 +653,7 @@ export default function Dilutions() {
             </SelectContent>
           </Select>
         </div>
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -725,6 +726,46 @@ export default function Dilutions() {
             </TableBody>
           </Table>
         </div>
+        <MobileCardGrid>
+          {isLoading ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
+          ) : dilutions.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">No dilutions recorded</p>
+          ) : dilutions.filter(d => {
+            const isHearts = d.notes?.includes('[Heads Dilution]') || parseFloat(d.input_abv) === 79;
+            const s = search.toLowerCase();
+            const matchSearch = !s || d.batch_number?.toLowerCase().includes(s);
+            const matchType = filterType === 'all' || (filterType === 'hearts' && isHearts) || (filterType === 'ethanol' && !isHearts);
+            return matchSearch && matchType;
+          }).map(d => {
+            const isHearts = d.notes?.includes('[Heads Dilution]') || parseFloat(d.input_abv) === 79;
+            return (
+              <MobileCard
+                key={d.id}
+                title={d.batch_number || 'Dilution'}
+                subtitle={`${d.date ? format(new Date(d.date), 'MMM d, yyyy') : '—'}`}
+                badge={
+                  <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${isHearts ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {isHearts ? <Droplets className="w-3 h-3" /> : <FlaskConical className="w-3 h-3" />}
+                    {isHearts ? 'Hearts' : 'Ethanol'}
+                  </span>
+                }
+                accent={<span className="text-sm font-semibold">{d.output_abv?.toFixed(1)}%</span>}
+                actions={
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => setEditingDilution({ ...d })}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                }
+              >
+                <MobileDetailRow label="Input" value={`${d.input_ethanol_volume}L @ ${d.input_abv}%`} />
+                <MobileDetailRow label="Input LALs" value={d.input_lals?.toFixed(3)} />
+                <MobileDetailRow label="Water Added" value={`${d.water_added}L`} />
+                <MobileDetailRow label="Output Vol" value={d.output_volume?.toFixed(2) ? `${d.output_volume.toFixed(2)}L` : '—'} />
+                <MobileDetailRow label="Output ABV" value={d.output_abv?.toFixed(2) ? `${d.output_abv.toFixed(2)}%` : '—'} highlight />
+                <MobileDetailRow label="Output LALs" value={d.output_lals?.toFixed(3)} highlight />
+                <MobileDetailRow label="Status" value={<StatusBadge status={d.status} />} />
+              </MobileCard>
+            );
+          })}
+        </MobileCardGrid>
         <Pagination currentPage={currentPage} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
       </Card>
 

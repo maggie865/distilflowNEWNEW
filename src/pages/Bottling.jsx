@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Search } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -224,7 +225,7 @@ export default function Bottling() {
             </SelectContent>
           </Select>
         </div>
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -267,6 +268,32 @@ export default function Bottling() {
             </TableBody>
           </Table>
         </div>
+        <MobileCardGrid>
+          {isLoading ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
+          ) : runs.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">No bottling runs</p>
+          ) : runs.filter(r => {
+            const s = search.toLowerCase();
+            const matchSearch = !s || r.batch_number?.toLowerCase().includes(s) || r.product_name?.toLowerCase().includes(s);
+            const matchStatus = filterStatus === 'all' || r.status === filterStatus;
+            return matchSearch && matchStatus;
+          }).map(r => (
+            <MobileCard
+              key={r.id}
+              title={r.product_name}
+              subtitle={`${r.batch_number} • ${r.date ? format(new Date(r.date), 'MMM d, yyyy') : '—'}`}
+              badge={<StatusBadge status={r.status} />}
+              accent={<span className="text-lg font-bold text-primary">{r.bottles_produced}</span>}
+            >
+              <MobileDetailRow label="Batch" value={r.batch_number} />
+              <MobileDetailRow label="Volume" value={`${r.input_volume}L @ ${r.input_abv}%`} />
+              <MobileDetailRow label="Bottle Size" value={`${r.bottle_size_ml}ml`} highlight />
+              <MobileDetailRow label="Input LALs" value={r.input_lals?.toFixed(3)} />
+              <MobileDetailRow label="LALs/Bottle" value={r.lals_per_bottle ? r.lals_per_bottle.toFixed(4) : '—'} />
+            </MobileCard>
+          ))}
+        </MobileCardGrid>
       </Card>
     </div>
   );

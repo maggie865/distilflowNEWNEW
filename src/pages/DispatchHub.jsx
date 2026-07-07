@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Truck, PackageCheck, MapPin, Trash2, Search, Map, Pencil, RotateCcw, Zap, Plus, Store } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
@@ -206,7 +207,7 @@ export default function DispatchHub() {
             </Select>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <Table className="text-sm">
             <TableHeader>
               <TableRow>
@@ -258,6 +259,48 @@ export default function DispatchHub() {
             </TableBody>
           </Table>
         </div>
+        <MobileCardGrid>
+          {filtered.length === 0 ? (
+            <p className="text-center py-10 text-muted-foreground text-sm">No dispatches found</p>
+          ) : filtered.map((d, i) => (
+            <MobileCard
+              key={d.id || i}
+              title={d.sales_channel && d.sales_channel !== 'wholesale' ? (CHANNEL_LABELS[d.sales_channel] || d.sales_channel) : (d.customer_name || '—')}
+              subtitle={`${d.product_name} • ${(() => { try { const dt = new Date(d.dispatch_date?.replace(/-/g, '/')); return isNaN(dt) ? d.dispatch_date || '—' : format(dt, 'dd MMM yyyy'); } catch { return d.dispatch_date || '—'; } })()}`}
+              badge={
+                <>
+                  <Badge variant={d.dispatched_from === 'Auckland 3PL' ? 'secondary' : 'outline'} className="text-xs">{d.dispatched_from || 'Bluff'}</Badge>
+                  <StatusBadge status={d.status} />
+                </>
+              }
+              accent={<span className="text-lg font-bold text-primary">{d.quantity_bottles}</span>}
+              actions={
+                <>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => {
+                    setEditingDispatch(d);
+                    setEditForm({
+                      status: d.status, notes: d.notes || '', dispatch_date: d.dispatch_date, product_name: d.product_name || '',
+                      batch_number: d.batch_number || '', quantity_bottles: d.quantity_bottles || '', bottle_size_ml: d.bottle_size_ml || '',
+                      total_lals: d.total_lals || '', parcel_weight_kg: d.parcel_weight_kg || '', transport_distance_km: d.transport_distance_km || '',
+                      transport_method: d.transport_method || 'road', customer_name: d.customer_name || '', customer_address: d.customer_address || '',
+                      dispatched_from: d.dispatched_from || 'Bluff',
+                    });
+                  }}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-amber-600" onClick={() => setReturningDispatch(d)}><RotateCcw className="w-3.5 h-3.5" /> Return</Button>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => setDeletingDispatch(d)}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
+                </>
+              }
+            >
+              <MobileDetailRow label="Product" value={d.product_name} />
+              <MobileDetailRow label="Batch" value={d.batch_number} />
+              <MobileDetailRow label="Bottles" value={d.quantity_bottles} highlight />
+              <MobileDetailRow label="LALs" value={typeof d.total_lals === 'number' ? d.total_lals.toFixed(3) : d.total_lals} />
+              <MobileDetailRow label="Distance" value={d.transport_distance_km ? `${d.transport_distance_km} km` : '—'} />
+              <MobileDetailRow label="Method" value={d.transport_method || '—'} />
+              <MobileDetailRow label="CO2e" value={d.co2e_kg ? `${parseFloat(d.co2e_kg).toFixed(2)} kg` : '—'} highlight />
+            </MobileCard>
+          ))}
+        </MobileCardGrid>
         <Pagination currentPage={currentPage} totalCount={totalDispatchCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
       </Card>
 

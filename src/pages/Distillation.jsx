@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Calculator, FlaskConical, AlertTriangle, CheckCircle2, Pencil, Search } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -893,7 +894,7 @@ export default function Distillation() {
             </SelectContent>
           </Select>
         </div>
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -940,6 +941,36 @@ export default function Distillation() {
             </TableBody>
           </Table>
         </div>
+        <MobileCardGrid>
+          {isLoading ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">Loading…</p>
+          ) : runs.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">No distillation runs yet</p>
+          ) : runs.filter(r => {
+            const s = search.toLowerCase();
+            const matchSearch = !s || r.batch_number?.toLowerCase().includes(s) || r.product_name?.toLowerCase().includes(s);
+            const matchStatus = filterStatus === 'all' || r.status === filterStatus;
+            return matchSearch && matchStatus;
+          }).map(r => (
+            <MobileCard
+              key={r.id}
+              title={r.product_name}
+              subtitle={`${r.batch_number} • ${r.date ? format(new Date(r.date), 'MMM d, yyyy') : '—'}`}
+              badge={<StatusBadge status={r.status} />}
+              accent={<span className="text-sm font-semibold">{r.output_lals?.toFixed(2) ?? '—'} LALs</span>}
+              actions={
+                <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEdit(r)}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+              }
+            >
+              <MobileDetailRow label="Batch" value={r.batch_number} />
+              {r.sub_batch_code && <MobileDetailRow label="Sub-batch" value={r.sub_batch_code} />}
+              <MobileDetailRow label="Input" value={r.input_volume ? `${r.input_volume}L @ ${r.input_abv}%` : '—'} />
+              <MobileDetailRow label="Hearts" value={r.hearts_volume ? `${r.hearts_volume}L` : '—'} highlight />
+              <MobileDetailRow label="Output LALs" value={r.output_lals?.toFixed(3) ?? '—'} highlight />
+              {r.maceration_date && <MobileDetailRow label="Maceration" value={format(new Date(r.maceration_date), 'MMM d, yyyy')} />}
+            </MobileCard>
+          ))}
+        </MobileCardGrid>
       </Card>
 
       <CompleteDistillationDialog

@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, Users, MapPin, Pencil, Zap } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
@@ -109,6 +110,7 @@ export default function Customers() {
       </div>
 
       <Card className="p-4">
+        <div className="hidden md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -149,6 +151,27 @@ export default function Customers() {
             ))}
           </TableBody>
         </Table>
+        </div>
+        <MobileCardGrid>
+          {customers.length === 0 ? (
+            <p className="text-center py-10 text-muted-foreground text-sm">No customers yet</p>
+          ) : customers.map(c => (
+            <MobileCard
+              key={c.id}
+              title={c.business_name}
+              subtitle={c.delivery_address}
+              badge={<span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><MapPin className="w-3 h-3" /> Address</span>}
+              actions={
+                <>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => { setEditingCustomer(c); setEditForm({ business_name: c.business_name, delivery_address: c.delivery_address }); }}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => setDeletingCustomer(c)}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
+                </>
+              }
+            >
+              <MobileDetailRow label="Delivery Address" value={c.delivery_address} />
+            </MobileCard>
+          ))}
+        </MobileCardGrid>
         <Pagination currentPage={currentPage} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
       </Card>
 

@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import Pagination from '@/components/shared/Pagination';
@@ -304,7 +305,7 @@ export default function RawMaterials() {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -382,6 +383,34 @@ export default function RawMaterials() {
             </TableBody>
           </Table>
         </div>
+        <MobileCardGrid>
+          {isLoading ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
+          ) : filtered.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">{materials.length === 0 ? 'No materials yet' : 'No results match your search'}</p>
+          ) : filtered.map(m => (
+            <MobileCard
+              key={m.id}
+              title={m.name}
+              subtitle={m._fromReceiving ? 'from receivals' : undefined}
+              badge={<Badge variant="secondary" className={typeColors[m.type] || typeColors.other}>{m.type}</Badge>}
+              accent={<span className={`text-sm font-bold ${(m.quantity || 0) === 0 ? 'text-destructive' : ''}`}>{m.quantity ?? 0} {m.unit}</span>}
+              actions={
+                !m._fromReceiving ? (
+                  <>
+                    <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => setEditItem(m)}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                    <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => setDeleteItem(m)}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
+                  </>
+                ) : undefined
+              }
+            >
+              <MobileDetailRow label="Lot Code" value={m.batch_number || '—'} />
+              {m.type === 'ethanol' && <MobileDetailRow label="ABV / LALs" value={`${m.abv_percent ?? '—'}% / ${m.lals?.toFixed(2) ?? '—'}`} />}
+              <MobileDetailRow label="Supplier" value={m.supplier || '—'} />
+              {m.cost_per_unit != null && <MobileDetailRow label="Cost/Unit" value={`$${m.cost_per_unit.toFixed(2)}`} />}
+            </MobileCard>
+          ))}
+        </MobileCardGrid>
         <Pagination currentPage={currentPage} totalCount={allFiltered.length} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
       </Card>
 

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Thermometer, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -146,7 +147,7 @@ export default function TemperatureLogs() {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -201,6 +202,34 @@ export default function TemperatureLogs() {
             </TableBody>
           </Table>
         </div>
+        <MobileCardGrid>
+          {isLoading ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
+          ) : filteredLogs.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">No logs match these filters</p>
+          ) : filteredLogs.map(l => (
+            <MobileCard
+              key={l.id}
+              title={l.unit_name}
+              subtitle={`${l.date ? format(new Date(l.date), 'MMM d, yyyy') : '—'} • ${l.time || '—'} • ${l.recorded_by || '—'}`}
+              badge={
+                l.in_range === false ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-destructive/10 text-destructive"><AlertTriangle className="w-3 h-3" /> Out</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-3 h-3" /> OK</span>
+                )
+              }
+              accent={<span className={`text-2xl font-bold ${l.in_range === false ? 'text-destructive' : 'text-emerald-600'}`}>{l.temperature_c}°</span>}
+              actions={
+                <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => { if (confirm('Delete this log entry?')) deleteMutation.mutate(l.id); }}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
+              }
+            >
+              <MobileDetailRow label="Unit Type" value={(l.unit_type || '').replace('_', ' ')} />
+              <MobileDetailRow label="Safe Range" value={`${l.min_safe_c}° – ${l.max_safe_c}°`} />
+              {l.corrective_action && <MobileDetailRow label="Action Taken" value={l.corrective_action} />}
+            </MobileCard>
+          ))}
+        </MobileCardGrid>
       </Card>
 
       <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) setForm(BLANK); }}>

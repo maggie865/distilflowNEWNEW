@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Plus, ClipboardCheck, CheckCircle2, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -192,7 +193,7 @@ export default function StockTakes() {
                 </Button>
               </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -240,6 +241,41 @@ export default function StockTakes() {
                 </TableBody>
               </Table>
             </div>
+            <MobileCardGrid>
+              {lines.map(line => (
+                <div key={line.id} className={`rounded-xl border p-3 ${line.variance != null && Math.abs(line.variance) > 0.001 ? 'bg-amber-50/50 border-amber-200' : 'bg-card'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-semibold text-sm">{line.material_name}</p>
+                    <span className="text-xs text-muted-foreground">{line.unit}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      placeholder="Count…"
+                      defaultValue={line.counted_quantity ?? ''}
+                      className="h-8 flex-1 text-sm"
+                      onBlur={e => {
+                        const val = e.target.value;
+                        if (val !== String(line.counted_quantity ?? '')) {
+                          updateLineMutation.mutate({ lineId: line.id, counted: val });
+                        }
+                      }}
+                    />
+                    <div className="flex items-center gap-1 text-xs">
+                      <VarianceIcon variance={line.variance} />
+                      {line.counted_quantity != null && (
+                        <span className={varianceColor(line.variance)}>
+                          {line.variance > 0 ? '+' : ''}{line.variance?.toFixed(3)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">System: {line.system_quantity?.toFixed(3) ?? '—'} {line.unit}</p>
+                </div>
+              ))}
+            </MobileCardGrid>
           </Card>
         );
       })()}
@@ -307,7 +343,8 @@ export default function StockTakes() {
               </button>
 
               {isExpanded && lines.length > 0 && (
-                <div className="border-t border-border overflow-x-auto">
+                <div className="border-t border-border">
+                  <div className="hidden md:block overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -340,9 +377,33 @@ export default function StockTakes() {
                         </TableRow>
                       ))}
                     </TableBody>
-                  </Table>
-                </div>
-              )}
+                    </Table>
+                    </div>
+                    <MobileCardGrid>
+                    {lines.map(line => (
+                     <MobileCard
+                       key={line.id}
+                       title={line.material_name}
+                       subtitle={`${line.unit} · ${line.system_quantity?.toFixed(3) ?? '—'} system`}
+                       accent={
+                         <div className="flex items-center gap-1 text-sm">
+                           <VarianceIcon variance={line.variance} />
+                           {line.counted_quantity != null && (
+                             <span className={varianceColor(line.variance)}>
+                               {line.variance > 0 ? '+' : ''}{line.variance?.toFixed(3)}
+                             </span>
+                           )}
+                         </div>
+                       }
+                     >
+                       <MobileDetailRow label="System Qty" value={`${line.system_quantity?.toFixed(3) ?? '—'} ${line.unit}`} />
+                       <MobileDetailRow label="Counted" value={line.counted_quantity != null ? `${line.counted_quantity.toFixed(3)} ${line.unit}` : '—'} highlight />
+                       {line.notes && <MobileDetailRow label="Notes" value={line.notes} />}
+                     </MobileCard>
+                    ))}
+                    </MobileCardGrid>
+                    </div>
+                    )}
             </Card>
           );
         })}

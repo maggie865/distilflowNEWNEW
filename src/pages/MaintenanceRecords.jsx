@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Wrench, AlertTriangle, CheckCircle2, Clock, Pencil, Trash2 } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format, isPast, isToday, addDays } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -121,7 +122,7 @@ export default function MaintenanceRecords() {
       )}
 
       <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -163,6 +164,33 @@ export default function MaintenanceRecords() {
             </TableBody>
           </Table>
         </div>
+        <MobileCardGrid>
+          {isLoading ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
+          ) : records.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">No maintenance records yet</p>
+          ) : records.map(r => (
+            <MobileCard
+              key={r.id}
+              title={r.equipment_name}
+              subtitle={`${r.date ? format(new Date(r.date), 'MMM d, yyyy') : '—'} • ${r.maintenance_type}`}
+              badge={statusBadge(r)}
+              accent={r.next_due_date ? <span className="text-xs text-muted-foreground">{format(new Date(r.next_due_date), 'MMM d')}</span> : null}
+              actions={
+                <>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEdit(r)}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => { if (confirm('Delete?')) deleteMutation.mutate(r.id); }}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
+                </>
+              }
+            >
+              <MobileDetailRow label="Type" value={r.maintenance_type} />
+              <MobileDetailRow label="Performed by" value={r.performed_by || '—'} />
+              <MobileDetailRow label="Next due" value={r.next_due_date ? format(new Date(r.next_due_date), 'MMM d, yyyy') : '—'} />
+              {r.cost != null && <MobileDetailRow label="Cost" value={`$${r.cost.toFixed(2)}`} />}
+              {r.description && <MobileDetailRow label="Description" value={r.description} />}
+            </MobileCard>
+          ))}
+        </MobileCardGrid>
       </Card>
 
       <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setEditingId(null); setForm(BLANK); } }}>

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Pencil, Trash2, RefreshCw, MapPin } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import Pagination from '@/components/shared/Pagination';
@@ -228,7 +229,7 @@ export default function Suppliers() {
       </Dialog>
 
       <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -288,6 +289,31 @@ export default function Suppliers() {
             </TableBody>
           </Table>
         </div>
+        <MobileCardGrid>
+          {suppliersQuery.isLoading ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
+          ) : data.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">No suppliers yet</p>
+          ) : data.map(s => (
+            <MobileCard
+              key={s.id}
+              title={s.business_name}
+              subtitle={s.address}
+              badge={<span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><MapPin className="w-3 h-3" /> Map</span>}
+              actions={
+                <>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEdit(s)}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => { if (confirm('Delete this supplier?')) deleteMutation.mutate(s.id); }}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
+                </>
+              }
+            >
+              <MobileDetailRow label="Address" value={s.address} />
+              <MobileDetailRow label="Email" value={s.contact_email || '—'} />
+              <MobileDetailRow label="Phone" value={s.contact_phone || '—'} />
+              <MobileDetailRow label="Goods" value={s.goods_types?.length > 0 ? s.goods_types.join(', ') : '—'} />
+            </MobileCard>
+          ))}
+        </MobileCardGrid>
         <Pagination currentPage={currentPage} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
       </Card>
     </div>

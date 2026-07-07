@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Bug, MapPin, ClipboardList, Trash2, Pencil } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -253,7 +254,7 @@ export default function PestControl() {
 
         <TabsContent value="logs">
           <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -291,6 +292,30 @@ export default function PestControl() {
                 </TableBody>
               </Table>
             </div>
+            <MobileCardGrid>
+              {logsLoading ? (
+                <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
+              ) : logs.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground text-sm">No inspections logged yet</p>
+              ) : logs.map(l => (
+                <MobileCard
+                  key={l.id}
+                  title={l.trap_id || '—'}
+                  subtitle={l.date ? format(new Date(l.date), 'MMM d, yyyy') : '—'}
+                  badge={
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${ACTIVITY_COLORS[l.activity] || 'bg-gray-100 text-gray-600'}`}>
+                      {(l.activity || '').replace('_', ' ')}
+                    </span>
+                  }
+                >
+                  <MobileDetailRow label="Pest" value={l.pest_type || '—'} />
+                  <MobileDetailRow label="Quantity" value={l.quantity || '—'} />
+                  <MobileDetailRow label="Bait Used" value={l.bait_used || '—'} />
+                  <MobileDetailRow label="Inspected by" value={l.inspected_by || '—'} />
+                  {l.notes && <MobileDetailRow label="Notes" value={l.notes} />}
+                </MobileCard>
+              ))}
+            </MobileCardGrid>
           </Card>
         </TabsContent>
       </Tabs>

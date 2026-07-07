@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Warehouse, Wine, Package, Pencil, Trash2, SlidersHorizontal, ChevronDown, ChevronRight, Bell, AlertTriangle } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 
@@ -784,7 +785,7 @@ export default function Inventory() {
         {/* Raw Materials */}
         <TabsContent value="raw">
           <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -824,13 +825,39 @@ export default function Inventory() {
                 </TableBody>
               </Table>
             </div>
+            <MobileCardGrid>
+              {loadingRaw ? (
+                <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
+              ) : nonPackagingRaw.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground text-sm">No raw materials in stock</p>
+              ) : nonPackagingRaw.map(m => (
+                <MobileCard
+                  key={m.id}
+                  title={m.name}
+                  subtitle={m.supplier || '—'}
+                  badge={<Badge variant="secondary" className={typeColors[m.type] || typeColors.other}>{m.type}</Badge>}
+                  accent={<span className="text-sm font-bold">{m.quantity} {m.unit}</span>}
+                  actions={
+                    <>
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => open('adjust', m, 'RawMaterial', 'rawMaterials')}><SlidersHorizontal className="w-3.5 h-3.5" /> Adjust</Button>
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => open('edit', m, 'RawMaterial', 'rawMaterials')}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                      <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={() => open('delete', m, 'RawMaterial', 'rawMaterials')}><Trash2 className="w-3.5 h-3.5" /></Button>
+                    </>
+                  }
+                >
+                  <MobileDetailRow label="ABV" value={m.abv_percent ? `${m.abv_percent}%` : '—'} />
+                  <MobileDetailRow label="LALs" value={m.lals ? m.lals.toFixed(3) : '—'} highlight />
+                  <MobileDetailRow label="Batch" value={m.batch_number || '—'} />
+                </MobileCard>
+              ))}
+            </MobileCardGrid>
           </Card>
         </TabsContent>
 
         {/* Packaging */}
         <TabsContent value="packaging">
           <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -868,6 +895,30 @@ export default function Inventory() {
                 </TableBody>
               </Table>
             </div>
+            <MobileCardGrid>
+              {loadingRaw ? (
+                <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
+              ) : packagingItems.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground text-sm">No packaging items in stock</p>
+              ) : packagingItems.map(m => (
+                <MobileCard
+                  key={m.id}
+                  title={m.name}
+                  subtitle={m.supplier || '—'}
+                  accent={<span className="text-sm font-bold">{m.quantity} {m.unit}</span>}
+                  actions={
+                    <>
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => open('adjust', m, 'RawMaterial', 'rawMaterials')}><SlidersHorizontal className="w-3.5 h-3.5" /> Adjust</Button>
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => open('edit', m, 'RawMaterial', 'rawMaterials')}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                      <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={() => open('delete', m, 'RawMaterial', 'rawMaterials')}><Trash2 className="w-3.5 h-3.5" /></Button>
+                    </>
+                  }
+                >
+                  <MobileDetailRow label="Batch" value={m.batch_number || '—'} />
+                  <MobileDetailRow label="Notes" value={m.notes || '—'} />
+                </MobileCard>
+              ))}
+            </MobileCardGrid>
           </Card>
         </TabsContent>
 

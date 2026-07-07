@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Upload, Loader2, FileText, Pencil, ExternalLink, Trash2, MapPin, Eye, Search } from 'lucide-react';
+import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
@@ -512,7 +513,7 @@ export default function Receiving() {
             </SelectContent>
           </Select>
         </div>
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -575,6 +576,34 @@ export default function Receiving() {
             </TableBody>
           </Table>
         </div>
+        <MobileCardGrid>
+          {isLoading ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
+          ) : data.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground text-sm">No receivings yet</p>
+          ) : data.map(r => (
+            <MobileCard
+              key={r.id}
+              title={r.material_name}
+              subtitle={`${r.date_received ? format(new Date(r.date_received), 'MMM d, yyyy') : '—'} • ${r.material_type}`}
+              badge={r.packing_slip_url ? <span className="inline-flex items-center gap-1 text-xs text-green-600"><FileText className="w-3 h-3" /> Slip</span> : null}
+              accent={<span className="text-sm font-semibold">{r.quantity} {r.unit}</span>}
+              actions={
+                <>
+                  {r.packing_slip_url && <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => setViewingSlip(r.packing_slip_url)}><Eye className="w-3.5 h-3.5" /> Slip</Button>}
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEdit(r)}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => { if (confirm('Delete this receiving record?')) deleteMutation.mutate(r); }}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
+                </>
+              }
+            >
+              <MobileDetailRow label="Supplier" value={r.supplier_name || '—'} />
+              <MobileDetailRow label="Batch" value={r.batch_number || '—'} />
+              <MobileDetailRow label="Distance" value={r.transport_distance_km ? `${r.transport_distance_km} km` : '—'} />
+              <MobileDetailRow label="CO2e" value={r.co2e_kg ? `${r.co2e_kg.toFixed(3)} kg` : '—'} highlight />
+              {r.lals != null && <MobileDetailRow label="LALs" value={r.lals.toFixed(3)} highlight />}
+            </MobileCard>
+          ))}
+        </MobileCardGrid>
       </Card>
 
       {/* Packing Slip Viewer */}
