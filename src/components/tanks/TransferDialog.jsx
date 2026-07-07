@@ -13,6 +13,7 @@ const ACTIONS = [
 { value: 'fill', label: 'Fill (incoming product)' },
 { value: 'transfer_out', label: 'Transfer out to another tank' },
 { value: 'bottling_draw', label: 'Bottling draw (removing for bottling)' },
+{ value: 'adjust', label: 'Set exact volume (adjust)' },
 { value: 'empty', label: 'Empty (drain / discard)' },
 { value: 'cleaning', label: 'Mark as Cleaning' }];
 
@@ -37,6 +38,18 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
+  // When action changes, auto-populate volume for 'empty' (uses full tank volume)
+  const handleActionChange = (v) => {
+    if (v === 'empty') {
+      setForm((p) => ({ ...p, action: v, volume_litres: String(tank?.current_volume || 0) }));
+    } else if (form.action === 'empty' && v !== 'empty') {
+      // Leaving empty mode — clear the auto-filled volume
+      setForm((p) => ({ ...p, action: v, volume_litres: '' }));
+    } else {
+      set('action', v);
+    }
+  };
+
   const lals = form.volume_litres && form.abv ?
   (parseFloat(form.volume_litres) * parseFloat(form.abv) / 100).toFixed(3) :
   null;
@@ -50,6 +63,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
       const isBottling = f.action === 'bottling_draw';
       const isEmpty = f.action === 'empty';
       const isCleaning = f.action === 'cleaning';
+      const isAdjust = f.action === 'adjust';
 
       // Log movement for this tank
       await db.TankMovement.create({
@@ -75,6 +89,9 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
       if (isFill) {
         newVol = Math.min(newVol + vol, tank.capacity_litres);
         newStatus = 'in_use';
+      } else if (isAdjust) {
+        newVol = Math.min(Math.max(0, vol), tank.capacity_litres);
+        newStatus = newVol === 0 ? 'empty' : 'in_use';
       } else if (isTransferOut || isBottling || isEmpty) {
         newVol = Math.max(0, newVol - vol);
         newStatus = newVol === 0 ? 'empty' : 'in_use';
@@ -90,7 +107,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
         current_abv: isFill && abv ? abv : tank.current_abv,
       };
       // If tank is now empty, clear bottling-ready flag so it drops off the bottling dropdown
-      if (newVol === 0 && (isTransferOut || isBottling || isEmpty)) {
+      if (newVol === 0 && (isTransferOut || isBottling || isEmpty || isAdjust)) {
         tankUpdates.is_ready_for_bottling = false;
       }
       await db.StorageTank.update(tank.id, tankUpdates);
@@ -152,7 +169,7 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Label>Action</Label>
-              <Select value={form.action} onValueChange={(v) => set('action', v)}>
+              <Select value={form.action} onValueChange={handleActionChange}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {ACTIONS.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
@@ -166,7 +183,8 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
             {form.action !== 'cleaning' &&
             <div>
                 <Label>Volume (L)</Label>
-                <Input type="number" step="0.1" value={form.volume_litres} onChange={(e) => set('volume_litres', e.target.value)} required />
+                <Input type="number" step="0.1" value={form.volume_litres} onChange={(e) => set('volume_litres', e.target.value)} disabled={form.action === 'empty'} required />
+                {form.action === 'empty' && <p className="text-xs text-muted-foreground mt-1">Auto-set to full tank volume — tank will be drained completely</p>}
               </div>
             }
           </div>
@@ -225,6 +243,12 @@ export default function TransferDialog({ tank, allTanks, open, onOpenChange }) {
             <Textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} />
           </div>
 
+          {tank?.current_volume > 0 && form.action !== 'empty' && (
+            <Button type="button" variant="outline" className="w-full text-destructive hover:text-destructive" disabled={mutation.isPending}
+              onClick={() => { handleActionChange('empty'); }}>
+              Drain Tank Completely
+            </Button>
+          )}
           <Button type="submit" className="w-full" disabled={mutation.isPending}>
             {mutation.isPending ? 'Saving...' : 'Confirm'}
           </Button>
