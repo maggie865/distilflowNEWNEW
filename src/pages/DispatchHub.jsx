@@ -82,6 +82,39 @@ export default function DispatchHub() {
 
   const handleSearch = (val) => { setSearch(val); setCurrentPage(0); };
 
+  const depleteStock = async (dispatch) => {
+    const is3PL = (dispatch.dispatched_from || '').includes('Auckland');
+    const qty = dispatch.quantity_bottles || 0;
+    const lals = dispatch.total_lals || 0;
+    if (is3PL) {
+      const existing = await db.WarehouseStock.filter({ product_name: dispatch.product_name, batch_number: dispatch.batch_number });
+      if (existing.length > 0) {
+        const ws = existing[0];
+        const newQty = (ws.quantity_bottles || 0) - qty;
+        const newLals = parseFloat(((ws.total_lals || 0) - lals).toFixed(4));
+        if (newQty <= 0) await db.WarehouseStock.delete(ws.id);
+        else await db.WarehouseStock.update(ws.id, { quantity_bottles: newQty, total_lals: newLals });
+      }
+    } else {
+      const allFG = await db.FinishedGood.list('product_name', 1000);
+      const fg = allFG.find(g => g.product_name === dispatch.product_name && g.batch_number === dispatch.batch_number && Number(g.bottle_size_ml) === Number(dispatch.bottle_size_ml));
+      if (fg) {
+        const newQty = (fg.quantity_bottles || 0) - qty;
+        const newLals = parseFloat(((fg.total_lals || 0) - lals).toFixed(4));
+        if (newQty <= 0) await db.FinishedGood.delete(fg.id);
+        else await db.FinishedGood.update(fg.id, { quantity_bottles: newQty, total_lals: newLals });
+      }
+    }
+  };
+
+  const stockFieldsChanged = (orig, data) => {
+    return orig.batch_number !== data.batch_number ||
+      orig.product_name !== data.product_name ||
+      Number(orig.bottle_size_ml) !== Number(data.bottle_size_ml) ||
+      Number(orig.quantity_bottles) !== Number(data.quantity_bottles) ||
+      (orig.dispatched_from || 'Bluff') !== (data.dispatched_from || 'Bluff');
+  };
+
   const editMutation = useMutation({
     mutationFn: async (data) => {
       let co2e = data.co2e_kg || editingDispatch.co2e_kg || 0;
@@ -90,9 +123,23 @@ export default function DispatchHub() {
       const method = data.transport_method || editingDispatch.transport_method;
       if (distance && weight && method) co2e = calcCO2e(distance, weight, method);
       const cleanData = Object.fromEntries(Object.entries({ ...data, co2e_kg: co2e }).filter(([, v]) => v !== ''));
+
+      // If stock-relevant fields changed, return stock to old batch and deplete from new batch
+      if (stockFieldsChanged(editingDispatch, data)) {
+        await restoreStock(editingDispatch);
+        await depleteStock(data);
+      }
+
       await db.Dispatch.update(editingDispatch.id, cleanData);
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['dispatches'] }); queryClient.invalidateQueries({ queryKey: ['dispatches-all'] }); setEditingDispatch(null); toast.success('Dispatch updated'); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['dispatches-all'] });
+      queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
+      queryClient.invalidateQueries({ queryKey: ['warehouseStock'] });
+      setEditingDispatch(null);
+      toast.success('Dispatch updated');
+    },
     onError: () => toast.error('Failed to save changes'),
   });
 
