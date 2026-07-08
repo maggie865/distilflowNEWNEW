@@ -11,6 +11,8 @@ import { FileSpreadsheet, Loader2, TrendingDown, PackageCheck, ArrowDownToLine, 
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
+import InventoryReport from '@/components/reports/InventoryReport';
+import CostOfGoodsReport from '@/components/reports/CostOfGoodsReport';
 
 function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent border-accent-foreground/10', icon: Icon }) {
   return (
@@ -44,6 +46,8 @@ export default function Reports() {
   const { data: bottlingRuns = [] } = useQuery({ queryKey: ['bottlingRuns'], queryFn: () => db.BottlingRun.list('-date', 200) });
   const { data: dilutions = [] } = useQuery({ queryKey: ['dilutions'], queryFn: () => db.Dilution.list('-date', 500) });
   const { data: tankMovements = [] } = useQuery({ queryKey: ['tankMovements'], queryFn: () => db.TankMovement.list('-date', 500) });
+  const { data: tanks = [] } = useQuery({ queryKey: ['storageTanks'], queryFn: () => db.StorageTank.list('name', 100) });
+  const { data: recipes = [] } = useQuery({ queryKey: ['recipes'], queryFn: () => db.Recipe.list('name', 100) });
 
   // Date range
   const rangeStart = startDate ? parseISO(startDate) : startOfMonth(new Date());
@@ -278,234 +282,23 @@ export default function Reports() {
 
         {/* ── INVENTORY SNAPSHOT ── */}
         <TabsContent value="overview" className="space-y-6">
-          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Current Stock (Live)</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <StatCard label="Distillery Bottles" value={totalDistilleryBottles.toLocaleString()} sub="on-site" icon={PackageCheck} color="text-primary" bg="bg-accent border-accent-foreground/10" />
-            <StatCard label="Distillery LALs" value={totalDistilleryLals.toFixed(2)} sub="finished goods" icon={PackageCheck} color="text-primary" bg="bg-accent border-accent-foreground/10" />
-            <StatCard label="3PL Bottles" value={totalWarehouseBottles.toLocaleString()} sub="at Auckland 3PL" icon={Building2} color="text-blue-600" bg="bg-blue-50 border-blue-200" />
-            <StatCard label="3PL LALs" value={totalWarehouseLals.toFixed(2)} sub="at Auckland 3PL" icon={Building2} color="text-blue-600" bg="bg-blue-50 border-blue-200" />
-            <StatCard label="Ethanol LALs" value={totalEthanolLals.toFixed(2)} sub="raw stock" icon={PackageCheck} color="text-amber-600" bg="bg-amber-50 border-amber-200" />
-          </div>
-
-          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mt-4">6-Month Trend</h3>
-          <Card className="p-4">
-            <h4 className="text-sm font-semibold mb-4">Inbound LALs vs Dispatched Bottles vs Wastage LALs</h4>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="received" name="Received (LALs)" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="dispatched" name="Dispatched (Bottles)" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="wasted" name="Wasted (LALs)" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </Card>
-
-          {/* Raw Materials Table */}
-          <Card className="p-4">
-            <h4 className="text-sm font-semibold mb-4">Raw Materials (Current Stock)</h4>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Material</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead>LALs</TableHead>
-                  <TableHead>Supplier</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rawMaterialsNetStock.length === 0 ? (
-                 <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No raw materials</TableCell></TableRow>
-                ) : rawMaterialsNetStock.map(m => (
-                  <TableRow key={m.id}>
-                    <TableCell className="font-medium text-sm">{m.name}</TableCell>
-                    <TableCell className="text-sm capitalize">{m.type}</TableCell>
-                    <TableCell className="text-sm font-semibold">{m.quantity}</TableCell>
-                    <TableCell className="text-sm">{m.unit}</TableCell>
-                    <TableCell className="text-sm">{m.lals ? m.lals.toFixed(3) : '—'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{m.supplier || '—'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-          </TabsContent>
+          <InventoryReport
+            rawMaterialsNetStock={rawMaterialsNetStock}
+            finishedGoodsWithStock={finishedGoodsWithStock}
+            warehouseStock={warehouseStock}
+            tanks={tanks}
+          />
+        </TabsContent>
 
           {/* ── COST OF GOODS ── */}
           <TabsContent value="cogs" className="space-y-6">
-          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Cost of Goods — Current Inventory</h3>
-          <div className="grid md:grid-cols-2 gap-6">
-            <Card className="p-6">
-              <h4 className="text-sm font-semibold mb-4">COGS Breakdown by Category</h4>
-              {cogBreakdown.length > 0 ? (
-                <>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie
-                        data={cogBreakdown}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, value }) => `${name}: $${value.toFixed(0)}`}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {cogBreakdown.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COGS_COLORS[index % COGS_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="mt-4 space-y-2">
-                    {cogBreakdown.map((item, i) => (
-                      <div key={item.name} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COGS_COLORS[i] }}></div>
-                          <span className="text-muted-foreground">{item.name}</span>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-semibold">${item.value.toFixed(2)}</p>
-                          <p className="text-xs text-muted-foreground">{item.items} item{item.items !== 1 ? 's' : ''}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">No cost data available</p>
-              )}
-            </Card>
-
-            <Card className="p-6">
-              <h4 className="text-sm font-semibold mb-4">Summary</h4>
-              <div className="space-y-4">
-                <div className="rounded-lg border border-border p-4">
-                  <p className="text-xs text-muted-foreground mb-1">Total COGS Value</p>
-                  <p className="text-3xl font-bold font-display">${totalCogsValue.toFixed(2)}</p>
-                  <p className="text-xs text-muted-foreground mt-2">All on-hand inventory</p>
-                </div>
-                <div className="space-y-2">
-                  {cogBreakdown.map((item) => (
-                    <div key={item.name} className="flex justify-between text-sm border-b pb-2">
-                      <span className="text-muted-foreground">{item.name}</span>
-                      <span className="font-semibold">{((item.value / totalCogsValue) * 100).toFixed(1)}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          <Card className="p-4">
-             <h4 className="text-sm font-semibold mb-4">Raw Materials Cost Detail</h4>
-             <div className="overflow-x-auto">
-               <Table>
-                 <TableHeader>
-                   <TableRow>
-                     <TableHead>Material</TableHead>
-                     <TableHead>Type</TableHead>
-                     <TableHead>Qty</TableHead>
-                     <TableHead>Unit</TableHead>
-                     <TableHead>Cost / Unit</TableHead>
-                     <TableHead>Total Cost</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   {rawMaterialsNetStock.filter(m => m.cost_per_unit && m.quantity).length === 0 ? (
-                     <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No cost data recorded</TableCell></TableRow>
-                   ) : rawMaterialsNetStock.filter(m => m.cost_per_unit && m.quantity).map(m => (
-                     <TableRow key={m.id}>
-                       <TableCell className="font-medium text-sm">{m.name}</TableCell>
-                       <TableCell className="text-sm capitalize">{m.type}</TableCell>
-                       <TableCell className="text-sm">{m.quantity}</TableCell>
-                       <TableCell className="text-sm">{m.unit}</TableCell>
-                       <TableCell className="text-sm">${m.cost_per_unit?.toFixed(2)}</TableCell>
-                       <TableCell className="text-sm font-semibold">${(m.quantity * m.cost_per_unit).toFixed(2)}</TableCell>
-                     </TableRow>
-                   ))}
-                 </TableBody>
-               </Table>
-             </div>
-           </Card>
-
-           <Card className="p-4">
-             <h4 className="text-sm font-semibold mb-4">Finished Goods Inventory Value</h4>
-             <div className="overflow-x-auto">
-               <Table>
-                 <TableHeader>
-                   <TableRow>
-                     <TableHead>Product</TableHead>
-                     <TableHead>Batch</TableHead>
-                     <TableHead>Bottles</TableHead>
-                     <TableHead>LALs</TableHead>
-                     <TableHead>Cost / LAL</TableHead>
-                     <TableHead>Total Value</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   {finishedGoodsWithStock.filter(fg => fg.total_lals > 0).length === 0 ? (
-                     <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No finished goods in inventory</TableCell></TableRow>
-                   ) : finishedGoodsWithStock.filter(fg => fg.total_lals > 0).map(fg => (
-                     <TableRow key={fg.id}>
-                       <TableCell className="font-medium text-sm">{fg.product_name}</TableCell>
-                       <TableCell className="font-mono text-xs">{fg.batch_number}</TableCell>
-                       <TableCell className="text-sm">{fg.quantity_bottles}</TableCell>
-                       <TableCell className="text-sm">{fg.total_lals?.toFixed(3)}</TableCell>
-                       <TableCell className="text-sm">${avgEthanolCostPerLal?.toFixed(2)}</TableCell>
-                       <TableCell className="text-sm font-semibold">${((fg.total_lals || 0) * avgEthanolCostPerLal).toFixed(2)}</TableCell>
-                     </TableRow>
-                   ))}
-                   <TableRow className="font-semibold bg-accent/20">
-                     <TableCell colSpan={5} className="text-right">Subtotal:</TableCell>
-                     <TableCell className="text-sm">${finishedGoodsCost.toFixed(2)}</TableCell>
-                   </TableRow>
-                 </TableBody>
-               </Table>
-             </div>
-           </Card>
-
-           <Card className="p-4">
-             <h4 className="text-sm font-semibold mb-4">Tank Stock Value (In-Progress Runs)</h4>
-             <div className="overflow-x-auto">
-               <Table>
-                 <TableHeader>
-                   <TableRow>
-                     <TableHead>Product</TableHead>
-                     <TableHead>Batch</TableHead>
-                     <TableHead>Status</TableHead>
-                     <TableHead>Output LALs</TableHead>
-                     <TableHead>Cost / LAL</TableHead>
-                     <TableHead>Total Value</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   {distillationRuns.filter(r => r.status !== 'completed' && r.output_lals).length === 0 ? (
-                     <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No in-progress tank stock</TableCell></TableRow>
-                   ) : distillationRuns.filter(r => r.status !== 'completed' && r.output_lals).map(r => (
-                     <TableRow key={r.id}>
-                       <TableCell className="font-medium text-sm">{r.product_name}</TableCell>
-                       <TableCell className="font-mono text-xs">{r.batch_number}</TableCell>
-                       <TableCell className="text-sm capitalize">{r.status}</TableCell>
-                       <TableCell className="text-sm">{r.output_lals?.toFixed(3)}</TableCell>
-                       <TableCell className="text-sm">${avgEthanolCostPerLal?.toFixed(2)}</TableCell>
-                       <TableCell className="text-sm font-semibold">${((r.output_lals || 0) * avgEthanolCostPerLal).toFixed(2)}</TableCell>
-                     </TableRow>
-                   ))}
-                   <TableRow className="font-semibold bg-accent/20">
-                     <TableCell colSpan={5} className="text-right">Subtotal:</TableCell>
-                     <TableCell className="text-sm">${tankStockCost.toFixed(2)}</TableCell>
-                   </TableRow>
-                 </TableBody>
-               </Table>
-             </div>
-           </Card>
+            <CostOfGoodsReport
+              rawMaterialsNetStock={rawMaterialsNetStock}
+              rawMaterials={rawMaterials}
+              finishedGoodsWithStock={finishedGoodsWithStock}
+              tanks={tanks}
+              recipes={recipes}
+            />
           </TabsContent>
 
           {/* ── MOVEMENTS ── */}
