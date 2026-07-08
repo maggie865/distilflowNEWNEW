@@ -194,6 +194,16 @@ export default function DispatchHub() {
     onSuccess: () => { invalidateAll(); setDeletingDispatch(null); toast.success('Dispatch deleted and stock restored'); },
   });
 
+  const recalcMutation = useMutation({
+    mutationFn: async () => { return await base44.functions.invoke('recalculateFinishedGoodStock', {}); },
+    onSuccess: (res) => {
+      invalidateAll();
+      const d = res?.data || res;
+      toast.success(`Stock recalculated: ${d.records_updated} updated, ${d.records_deleted} removed`);
+    },
+    onError: () => toast.error('Failed to recalculate stock'),
+  });
+
   return (
     <div className="pb-20 md:pb-0">
       <PageHeader title="Sales & Dispatch" subtitle="Record dispatches, track stock by location, and manage deliveries">
@@ -201,6 +211,7 @@ export default function DispatchHub() {
         <Button onClick={() => setShowTransfer3PL(true)} className="gap-2"><ArrowRightLeft className="w-4 h-4" />Transfer to 3PL</Button>
         <Button variant="outline" onClick={() => setShowForm(true)} className="gap-2"><Truck className="w-4 h-4" />Wholesale</Button>
         <Button onClick={() => setShowDirectSalesForm(true)} className="gap-2"><Store className="w-4 h-4" />Direct Sale</Button>
+        <Button variant="outline" onClick={() => recalcMutation.mutate()} disabled={recalcMutation.isPending} className="gap-2"><RotateCcw className="w-4 h-4" />{recalcMutation.isPending ? 'Recalculating...' : 'Recalc Stock'}</Button>
       </PageHeader>
 
       {showMap && <div className="mb-6"><DeliveryMap dispatches={dispatches} customers={customers} distilleryOrigin={DISTILLERY_ORIGIN} /></div>}
