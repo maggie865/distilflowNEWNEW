@@ -76,8 +76,11 @@ export default function StockTakes() {
 
   // Update a single line's counted quantity
   const updateLineMutation = useMutation({
-    mutationFn: ({ lineId, counted }) =>
-      db.StockTakeLine.update(lineId, { counted_quantity: counted !== '' ? parseFloat(counted) : null }),
+    mutationFn: ({ lineId, counted, systemQuantity }) => {
+      const countedNum = counted !== '' ? parseFloat(counted) : null;
+      const variance = countedNum != null ? parseFloat((countedNum - systemQuantity).toFixed(3)) : null;
+      return db.StockTakeLine.update(lineId, { counted_quantity: countedNum, variance });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stockTakeLines'] });
     },
@@ -221,7 +224,7 @@ export default function StockTakes() {
                           onBlur={e => {
                             const val = e.target.value;
                             if (val !== String(line.counted_quantity ?? '')) {
-                              updateLineMutation.mutate({ lineId: line.id, counted: val });
+                              updateLineMutation.mutate({ lineId: line.id, counted: val, systemQuantity: line.system_quantity });
                             }
                           }}
                         />
@@ -259,7 +262,7 @@ export default function StockTakes() {
                       onBlur={e => {
                         const val = e.target.value;
                         if (val !== String(line.counted_quantity ?? '')) {
-                          updateLineMutation.mutate({ lineId: line.id, counted: val });
+                          updateLineMutation.mutate({ lineId: line.id, counted: val, systemQuantity: line.system_quantity });
                         }
                       }}
                     />

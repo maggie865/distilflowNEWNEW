@@ -1,0 +1,72 @@
+{
+  "name": "StockTakeLine",
+  "type": "object",
+  "properties": {
+    "stock_take_id": {
+      "type": "string",
+      "description": "ID of the parent StockTake record"
+    },
+    "raw_material_id": {
+      "type": "string",
+      "description": "ID of the associated RawMaterial record"
+    },
+    "material_name": {
+      "type": "string",
+      "description": "Name of the material being counted (denormalized)"
+    },
+    "unit": {
+      "type": "string",
+      "description": "Unit of measurement (litres, kg, units)"
+    },
+    "system_quantity": {
+      "type": "number",
+      "description": "System-recorded quantity at time of stock take"
+    },
+    "counted_quantity": {
+      "type": "number",
+      "description": "Physically counted quantity (null if not yet counted)"
+    },
+    "variance": {
+      "type": "number",
+      "description": "Difference between counted and system quantity"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Notes about this line item (e.g. reason for variance)"
+    }
+  },
+  "required": [
+    "stock_take_id",
+    "material_name"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {},
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}
