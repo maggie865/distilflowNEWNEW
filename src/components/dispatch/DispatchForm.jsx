@@ -67,7 +67,14 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
       const batchesWithAvail = opt.batches.map(fg => {
         return { ...fg, available: fg.quantity_bottles || 0 };
       }).filter(b => b.available > 0);
-      batchesWithAvail.sort((a, b) => new Date(a.created_at || a.created_date) - new Date(b.created_at || b.created_date));
+      batchesWithAvail.sort((a, b) => {
+        const an = (a.batch_number || '').match(/\d+/g)?.join('.') || '';
+        const bn = (b.batch_number || '').match(/\d+/g)?.join('.') || '';
+        if (an && bn) return an.localeCompare(bn, undefined, { numeric: true });
+        if (an) return -1;
+        if (bn) return 1;
+        return new Date(a.created_date) - new Date(b.created_date);
+      });
       return { ...opt, batches: batchesWithAvail, totalAvailable: batchesWithAvail.reduce((s, b) => s + b.available, 0) };
     }).filter(opt => opt.totalAvailable > 0);
   }, [sellableGoods, allDispatches]);
