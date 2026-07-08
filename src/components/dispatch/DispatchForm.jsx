@@ -114,7 +114,10 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
   }, 0);
   const hasOverStock = lineItems.some(li => {
     const key = dispatchedFrom === 'Bluff' ? li.productKey : li.wsId;
-    return (parseInt(li.quantity) || 0) > getRemainingAvail(key);
+    const totalAvail = dispatchedFrom === 'Bluff'
+      ? (bluffProductOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === key)?.totalAvailable || 0)
+      : (threePLProductOptions.find(w => w.id === key)?.available || 0);
+    return (committedByProduct[key] || 0) > totalAvail;
   });
   const canSubmit = lineItems.length > 0 && !hasOverStock && totalBottles > 0 && !!form.customer_name;
 
