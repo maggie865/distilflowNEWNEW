@@ -63,6 +63,7 @@ Deno.serve(async (req) => {
         const currentBottles = existing.quantity_bottles || 0;
         if (currentBottles !== correctBottles) {
           adjustments.push({
+            action: existing.id ? (correctBottles <= 0 ? 'delete' : 'update') : 'update',
             id: existing.id,
             product_name: prod.product_name,
             batch_number: prod.batch_number,
@@ -73,19 +74,41 @@ Deno.serve(async (req) => {
             new_lals: correctLals,
           });
         }
+      } else if (correctBottles > 0) {
+        // FinishedGood record was deleted when stock hit 0 — recreate it
+        adjustments.push({
+          action: 'create',
+          id: null,
+          product_name: prod.product_name,
+          batch_number: prod.batch_number,
+          bottle_size_ml: prod.bottle_size_ml,
+          old_bottles: 0,
+          new_bottles: correctBottles,
+          old_lals: 0,
+          new_lals: correctLals,
+        });
       }
     }
 
     // Apply adjustments
     let updated = 0;
     let deleted = 0;
+    let created = 0;
     for (const adj of adjustments) {
-      const existing = fgMap[`${adj.product_name}|||${adj.batch_number}|||${adj.bottle_size_ml}`];
-      if (adj.new_bottles <= 0) {
-        await base44.asServiceRole.entities.FinishedGood.delete(existing.id);
+      if (adj.action === 'create') {
+        await base44.asServiceRole.entities.FinishedGood.create({
+          product_name: adj.product_name,
+          batch_number: adj.batch_number,
+          bottle_size_ml: adj.bottle_size_ml,
+          quantity_bottles: adj.new_bottles,
+          total_lals: adj.new_lals,
+        });
+        created++;
+      } else if (adj.action === 'delete') {
+        await base44.asServiceRole.entities.FinishedGood.delete(adj.id);
         deleted++;
       } else {
-        await base44.asServiceRole.entities.FinishedGood.update(existing.id, {
+        await base44.asServiceRole.entities.FinishedGood.update(adj.id, {
           quantity_bottles: adj.new_bottles,
           total_lals: adj.new_lals,
         });
@@ -99,6 +122,7 @@ Deno.serve(async (req) => {
       adjustments_made: adjustments.length,
       records_updated: updated,
       records_deleted: deleted,
+      records_created: created,
       adjustments: adjustments,
     });
   } catch (error) {
