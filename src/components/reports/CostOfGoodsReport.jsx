@@ -19,7 +19,7 @@ function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent b
 
 const COGS_COLORS = ['#8B5CF6', '#F97316', '#06B6D4', '#10B981', '#3B82F6', '#F59E0B'];
 
-export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, finishedGoodsWithStock, tanks, recipes }) {
+export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, finishedGoodsWithStock, tanks, recipes, distillationRuns }) {
   const avgEthanolCostPerLal = useMemo(() => {
     const ethanolMats = rawMaterialsNetStock.filter(m => m.type === 'ethanol' && m.cost_per_unit);
     if (ethanolMats.length === 0) return 3.5;
@@ -141,18 +141,40 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
     return 0;
   };
 
+  // Build a batch-number → product-name lookup from distillation runs
+  const batchToProduct = useMemo(() => {
+    const lookup = {};
+    (distillationRuns || []).forEach(dr => {
+      const batchKey = (dr.batch_number || '').toLowerCase().trim();
+      if (batchKey && dr.product_name) lookup[batchKey] = dr.product_name;
+    });
+    return lookup;
+  }, [distillationRuns]);
+
   const tankStockCosts = useMemo(() => {
     return tanks
       .filter(t => t.current_volume > 0 && t.status !== 'empty')
       .map(t => {
         const lals = (t.current_volume || 0) * (t.current_abv || 0) / 100;
         const ethanolCost = lals * avgEthanolCostPerLal;
-        const botanicalPerLitre = findBotanicalCostPerLitre(t.current_product);
+        // Resolve product name: try current_product first; if no recipe match, look up via batch number
+        let productName = t.current_product;
+        let botanicalPerLitre = findBotanicalCostPerLitre(productName);
+        if (botanicalPerLitre === 0 && t.current_batch) {
+          const batchProduct = batchToProduct[(t.current_batch || '').toLowerCase().trim()];
+          if (batchProduct) {
+            const batchCost = findBotanicalCostPerLitre(batchProduct);
+            if (batchCost > 0) {
+              productName = batchProduct;
+              botanicalPerLitre = batchCost;
+            }
+          }
+        }
         const botanicalCost = (t.current_volume || 0) * botanicalPerLitre;
         const cost = ethanolCost + botanicalCost;
-        return { ...t, lals, ethanolCost, botanicalCost, cost };
+        return { ...t, lals, ethanolCost, botanicalCost, cost, resolvedProduct: productName };
       });
-  }, [tanks, avgEthanolCostPerLal, findBotanicalCostPerLitre]);
+  }, [tanks, avgEthanolCostPerLal, findBotanicalCostPerLitre, batchToProduct]);
 
   const totalTankCost = tankStockCosts.reduce((s, t) => s + t.cost, 0);
   const totalTankEthanolCost = tankStockCosts.reduce((s, t) => s + t.ethanolCost, 0);
@@ -324,7 +346,7 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
               ) : tankStockCosts.map(t => (
                 <TableRow key={t.id}>
                   <TableCell className="font-medium text-sm">{t.name}</TableCell>
-                  <TableCell className="text-sm">{t.current_product || '—'}</TableCell>
+                  <TableCell className="text-sm">{t.resolvedProduct || t.current_product || '—'}</TableCell>
                   <TableCell className="text-sm font-mono text-xs">{t.current_batch || '—'}</TableCell>
                   <TableCell className="text-sm">{(t.current_volume || 0).toFixed(2)}</TableCell>
                   <TableCell className="text-sm">{t.current_abv ? `${t.current_abv}%` : '—'}</TableCell>

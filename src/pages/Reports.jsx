@@ -203,6 +203,7 @@ export default function Reports() {
               finishedGoodsWithStock={finishedGoodsWithStock}
               tanks={tanks}
               recipes={recipes}
+              distillationRuns={distillationRuns}
             />
           </TabsContent>
 
