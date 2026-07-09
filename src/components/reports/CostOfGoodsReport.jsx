@@ -21,12 +21,12 @@ const COGS_COLORS = ['#8B5CF6', '#F97316', '#06B6D4', '#10B981', '#3B82F6', '#F5
 
 export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, finishedGoodsWithStock, tanks, recipes }) {
   const avgEthanolCostPerLal = useMemo(() => {
-    const ethanolMats = rawMaterials.filter(m => m.type === 'ethanol' && m.cost_per_unit);
+    const ethanolMats = rawMaterialsNetStock.filter(m => m.type === 'ethanol' && m.cost_per_unit);
     if (ethanolMats.length === 0) return 3.5;
     const totalLals = ethanolMats.reduce((s, m) => s + (m.quantity || 0) * (m.abv_percent || 0) / 100, 0);
     const totalCost = ethanolMats.reduce((s, m) => s + (m.quantity || 0) * (m.cost_per_unit || 0), 0);
     return totalLals > 0 ? totalCost / totalLals : ethanolMats.reduce((avg, m, _, arr) => avg + m.cost_per_unit / arr.length, 0);
-  }, [rawMaterials]);
+  }, [rawMaterialsNetStock]);
 
   const materialCostLookup = useMemo(() => {
     const lookup = {};
