@@ -120,12 +120,14 @@ export function useRawMaterialsNetStock() {
       if (!acc[key]) acc[key] = {
         quantity: 0,
         lals: 0,
+        totalCost: 0,
         unit: r.unit,
         type: normaliseType(r.material_type),
         abv_percent: r.abv_percent,
       };
       acc[key].quantity += r.quantity || 0;
       acc[key].lals += r.lals || 0;
+      acc[key].totalCost += (r.quantity || 0) * (r.cost_per_unit || 0);
       return acc;
     }, {});
 
@@ -135,14 +137,17 @@ export function useRawMaterialsNetStock() {
       .filter(k => !rawMaterialNames.includes(k))
       .map(k => {
         const sample = allReceivings.find(r => (r.material_name || '').toLowerCase().trim() === k);
+        const recv = receivedByName[k];
+        const avgCost = recv.quantity > 0 ? recv.totalCost / recv.quantity : 0;
         return {
           id: 'recv-' + k,
           name: sample?.material_name || k,
-          type: receivedByName[k].type || 'other',
-          quantity: receivedByName[k].quantity,
-          lals: receivedByName[k].lals,
-          unit: receivedByName[k].unit || 'units',
-          abv_percent: receivedByName[k].abv_percent,
+          type: recv.type || 'other',
+          quantity: recv.quantity,
+          lals: recv.lals,
+          unit: recv.unit || 'units',
+          abv_percent: recv.abv_percent,
+          cost_per_unit: avgCost > 0 ? avgCost : undefined,
           supplier: sample?.supplier_name || '',
           batch_number: sample?.batch_number || '',
           _fromReceiving: true,

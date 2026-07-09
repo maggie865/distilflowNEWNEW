@@ -30,13 +30,13 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
 
   const materialCostLookup = useMemo(() => {
     const lookup = {};
-    for (const m of rawMaterials) {
+    for (const m of rawMaterialsNetStock) {
       if (m.cost_per_unit) {
         lookup[m.name?.toLowerCase().trim()] = m.cost_per_unit;
       }
     }
     return lookup;
-  }, [rawMaterials]);
+  }, [rawMaterialsNetStock]);
 
   const findCostPerUnit = (name) => {
     if (!name) return 0;
@@ -108,17 +108,53 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
   const totalFinishedBotanicalCost = finishedGoodsCosts.reduce((s, f) => s + f.botanicalCost, 0);
   const totalFinishedPackagingCost = finishedGoodsCosts.reduce((s, f) => s + f.packagingCost, 0);
 
+  // Botanical cost per litre of output spirit, by product name
+  const botanicalCostPerLitreByProduct = useMemo(() => {
+    const lookup = {};
+    const spiritRecipes = (recipes || []).filter(r => r.recipe_type === 'spirit');
+    spiritRecipes.forEach(recipe => {
+      if (!recipe.ingredients?.length) return;
+      const baseVol = recipe.base_ethanol_volume || 300;
+      const yieldPct = recipe.expected_yield_percent || 85;
+      const outputVol = baseVol * yieldPct / 100;
+      let totalBotanicalCost = 0;
+      recipe.ingredients.forEach(ing => {
+        const cpu = findCostPerUnit(ing.name);
+        if (cpu) totalBotanicalCost += (ing.quantity || 0) * cpu;
+      });
+      if (outputVol > 0) {
+        lookup[(recipe.name || '').toLowerCase().trim()] = totalBotanicalCost / outputVol;
+      }
+    });
+    return lookup;
+  }, [recipes, findCostPerUnit]);
+
+  const findBotanicalCostPerLitre = (productName) => {
+    if (!productName) return 0;
+    const lower = productName.toLowerCase().trim();
+    if (botanicalCostPerLitreByProduct[lower]) return botanicalCostPerLitreByProduct[lower];
+    for (const [key, cost] of Object.entries(botanicalCostPerLitreByProduct)) {
+      if (key.includes(lower) || lower.includes(key)) return cost;
+    }
+    return 0;
+  };
+
   const tankStockCosts = useMemo(() => {
     return tanks
       .filter(t => t.current_volume > 0 && t.status !== 'empty')
       .map(t => {
         const lals = (t.current_volume || 0) * (t.current_abv || 0) / 100;
-        const cost = lals * avgEthanolCostPerLal;
-        return { ...t, lals, cost };
+        const ethanolCost = lals * avgEthanolCostPerLal;
+        const botanicalPerLitre = findBotanicalCostPerLitre(t.current_product);
+        const botanicalCost = (t.current_volume || 0) * botanicalPerLitre;
+        const cost = ethanolCost + botanicalCost;
+        return { ...t, lals, ethanolCost, botanicalCost, cost };
       });
-  }, [tanks, avgEthanolCostPerLal]);
+  }, [tanks, avgEthanolCostPerLal, findBotanicalCostPerLitre]);
 
   const totalTankCost = tankStockCosts.reduce((s, t) => s + t.cost, 0);
+  const totalTankEthanolCost = tankStockCosts.reduce((s, t) => s + t.ethanolCost, 0);
+  const totalTankBotanicalCost = tankStockCosts.reduce((s, t) => s + t.botanicalCost, 0);
 
   const unusedEthanolCosts = rawMaterialsNetStock
     .filter(m => m.type === 'ethanol' && (m.lals || 0) > 0)
@@ -264,7 +300,7 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
       {/* Tank Stock Value */}
       <Card className="p-4">
         <h4 className="text-sm font-semibold mb-4 flex items-center gap-2"><Droplets className="w-4 h-4 text-cyan-600" /> Tank Stock Value</h4>
-        <p className="text-xs text-muted-foreground mb-3">Spirit in tanks valued at average ethanol cost per LAL ({money(avgEthanolCostPerLal)}/LAL)</p>
+        <p className="text-xs text-muted-foreground mb-3">Spirit in tanks valued at ethanol cost per LAL ({money(avgEthanolCostPerLal)}/LAL) plus botanical costs from matching recipes</p>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -275,13 +311,14 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
                 <TableHead>Volume (L)</TableHead>
                 <TableHead>ABV %</TableHead>
                 <TableHead>LALs</TableHead>
-                <TableHead>Cost / LAL</TableHead>
+                <TableHead>Ethanol Cost</TableHead>
+                <TableHead>Botanical Cost</TableHead>
                 <TableHead>Total Value</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {tankStockCosts.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-4 text-muted-foreground text-sm">No spirit in tanks</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-4 text-muted-foreground text-sm">No spirit in tanks</TableCell></TableRow>
               ) : tankStockCosts.map(t => (
                 <TableRow key={t.id}>
                   <TableCell className="font-medium text-sm">{t.name}</TableCell>
@@ -290,12 +327,15 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
                   <TableCell className="text-sm">{(t.current_volume || 0).toFixed(2)}</TableCell>
                   <TableCell className="text-sm">{t.current_abv ? `${t.current_abv}%` : '—'}</TableCell>
                   <TableCell className="text-sm">{t.lals.toFixed(3)}</TableCell>
-                  <TableCell className="text-sm">{money(avgEthanolCostPerLal)}</TableCell>
+                  <TableCell className="text-sm">{money(t.ethanolCost)}</TableCell>
+                  <TableCell className="text-sm">{money(t.botanicalCost)}</TableCell>
                   <TableCell className="text-sm font-semibold">{money(t.cost)}</TableCell>
                 </TableRow>
               ))}
               <TableRow className="font-bold bg-cyan-50/50">
-                <TableCell colSpan={7}>Total Tank Stock</TableCell>
+                <TableCell colSpan={6}>Total Tank Stock</TableCell>
+                <TableCell className="text-sm">{money(totalTankEthanolCost)}</TableCell>
+                <TableCell className="text-sm">{money(totalTankBotanicalCost)}</TableCell>
                 <TableCell className="text-sm">{money(totalTankCost)}</TableCell>
               </TableRow>
             </TableBody>
