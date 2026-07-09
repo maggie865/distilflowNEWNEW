@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/api/supabaseClient';
 import { base44 } from '@/api/base44Client';
+import { useRawMaterialsNetStock } from '@/hooks/useRawMaterialsNetStock';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -142,66 +143,7 @@ export default function RawMaterials() {
   const [currentPage, setCurrentPage] = useState(0);
   const queryClient = useQueryClient();
 
-  const { data: rawMaterialsBase = [], isLoading } = useQuery({
-    queryKey: ['rawMaterials'],
-    queryFn: () => db.RawMaterial.list('name', 2000),
-  });
-
-  const { data: allReceivings = [] } = useQuery({
-    queryKey: ['receivings'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 2000),
-  });
-
-  // Normalise material type from Receiving records (handles 'Ethanol', 'Botanicals', etc.)
-  const normaliseType = (t) => {
-    const lower = (t || '').toLowerCase().trim();
-    if (lower.startsWith('botanical')) return 'botanical';
-    if (lower === 'ethanol') return 'ethanol';
-    if (lower === 'packaging') return 'packaging';
-    if (lower === 'grain') return 'grain';
-    if (lower === 'sugar') return 'sugar';
-    if (lower === 'water') return 'water';
-    if (lower === 'flavoring' || lower === 'flavouring') return 'flavoring';
-    return 'other';
-  };
-
-  // Aggregate received quantities per material name
-  const receivedByName = allReceivings.reduce((acc, r) => {
-    const key = (r.material_name || '').toLowerCase().trim();
-    if (!acc[key]) acc[key] = {
-      name: r.material_name,
-      type: normaliseType(r.material_type),
-      quantity: 0,
-      lals: 0,
-      unit: r.unit,
-      abv_percent: r.abv_percent,
-      supplier: r.supplier_name,
-      batch_number: r.batch_number,
-    };
-    acc[key].quantity += r.quantity || 0;
-    acc[key].lals += r.lals || 0;
-    return acc;
-  }, {});
-
-  // Items in Receiving but NOT in RawMaterial entity — surface them as read-only rows
-  const rawMaterialNames = rawMaterialsBase.map(m => (m.name || '').toLowerCase().trim());
-  const receivingOnlyItems = Object.entries(receivedByName)
-    .filter(([k]) => !rawMaterialNames.includes(k))
-    .map(([k, v]) => ({
-      id: 'recv-' + k,
-      name: v.name || k,
-      type: v.type,
-      quantity: parseFloat(v.quantity.toFixed(2)),
-      lals: v.lals,
-      unit: v.unit || 'units',
-      abv_percent: v.abv_percent,
-      supplier: v.supplier || '',
-      batch_number: v.batch_number || '',
-      _fromReceiving: true,
-    }));
-
-  // Merge: RawMaterial entity rows first, then receiving-only rows
-  const materials = [...rawMaterialsBase, ...receivingOnlyItems];
+  const { rawMaterialsWithNetStock: materials, isLoading } = useRawMaterialsNetStock();
 
   const createMutation = useMutation({
     mutationFn: (data) => db.RawMaterial.create(data),

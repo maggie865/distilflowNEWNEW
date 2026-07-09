@@ -1,7 +1,7 @@
 import { useState } from 'react';
-// Net stock is computed dynamically from production records — no static deductions needed
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import { useRawMaterialsNetStock } from '@/hooks/useRawMaterialsNetStock';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -450,10 +450,18 @@ function LowStockAlerts({ rawMaterials, thresholds }) {
 export default function Inventory() {
   const [dialog, setDialog] = useState(null); // { type: 'adjust'|'edit'|'delete', item, entity, queryKey }
 
-  const { data: rawMaterials = [], isLoading: loadingRaw } = useQuery({
-    queryKey: ['rawMaterials'],
-    queryFn: () => base44.entities.RawMaterial.list('name', 100),
-  });
+  const {
+    rawMaterialsWithNetStock: rawMaterialsWithNetStockFromHook,
+    isLoading: loadingRaw,
+    spiritRecipes,
+    packagingRecipes,
+    botanicalConsumedByName,
+    packagingConsumedByName,
+    receivedByName,
+    totalBottlesBottled700,
+    totalBottlesBottled200,
+  } = useRawMaterialsNetStock();
+  const rawMaterials = rawMaterialsWithNetStockFromHook;
 
   const { data: distillationRuns = [] } = useQuery({
     queryKey: ['distillationRuns'],
@@ -523,220 +531,8 @@ export default function Inventory() {
     };
   });
 
-  // Total litres of each ethanol type consumed across all distillation runs
-  // Use input_volume (actual litres charged to still) directly
-  const ethanolConsumedByLotCode = distillationRuns
-    .filter(r => r.input_volume)
-    .reduce((acc, r) => {
-      const lot = (r.ethanol_lot_code || '').toLowerCase();
-      acc[lot] = (acc[lot] || 0) + (r.input_volume || 0);
-      return acc;
-    }, {});
-
-  // Dilution runs that consume raw ethanol directly (non-hearts, input_abv !== 79)
-  const rawEthanolConsumedInDilutions = dilutions
-    .filter(d => d.input_abv !== 79 && d.input_ethanol_volume)
-    .reduce((s, d) => s + (d.input_ethanol_volume || 0), 0);
-
-  // ── Recipe-driven deductions ─────────────────────────────────────────────────
-  // Uses your actual saved recipes — ingredient names must match receiving item names exactly
-
-  const spiritRecipes = recipes.filter(r => r.recipe_type === 'spirit');
-  const packagingRecipes = recipes.filter(r => r.recipe_type === 'packaging');
-
-  // botanicalConsumedByName: { exact ingredient name (lowercase) -> total kg consumed }
-  // For each spirit recipe, find distillation runs matching that product name,
-  // then scale ingredient quantities by (run input LALs / recipe base LALs)
-  const botanicalConsumedByName = {};
-  spiritRecipes.forEach(recipe => {
-    if (!recipe.ingredients?.length) return;
-    const baseVol = recipe.base_ethanol_volume || 300;
-    const baseAbv = recipe.base_ethanol_abv || 55;
-    const baseLals = baseVol * baseAbv / 100;
-    const matchingRuns = distillationRuns.filter(r =>
-      r.input_volume &&
-      (r.product_name || '').toLowerCase().trim() === (recipe.name || '').toLowerCase().trim()
-    );
-    matchingRuns.forEach(run => {
-      const runLals = run.input_lals || (run.input_volume * (run.input_abv || baseAbv) / 100);
-      const scale = baseLals > 0 ? runLals / baseLals : 1;
-      recipe.ingredients.forEach(ing => {
-        const key = (ing.name || '').toLowerCase().trim();
-        if (!key) return;
-        botanicalConsumedByName[key] = (botanicalConsumedByName[key] || 0) + (ing.quantity || 0) * scale;
-      });
-    });
-  });
-
-  // packagingConsumedByName: { exact packaging name (lowercase) -> total units consumed }
-  // Match packaging recipes to bottling runs by bottle_size_ml extracted from recipe name
-  // e.g. "700ml London Dry Gin Bottle" matches bottling runs with bottle_size_ml === 700
-  const packagingConsumedByName = {};
-  packagingRecipes.forEach(recipe => {
-    if (!recipe.packaging?.length) return;
-    const recipeName = (recipe.name || '').toLowerCase();
-
-    // Extract bottle size from recipe name (looks for '700ml', '200ml' etc.)
-    const sizeMatch = recipeName.match(/(\d+)\s*ml/);
-    const recipeSizeMl = sizeMatch ? parseInt(sizeMatch[1]) : null;
-
-    let matchingBottles = 0;
-    if (recipeSizeMl) {
-      // Match by bottle size
-      matchingBottles = bottlingRuns
-        .filter(r => r.bottle_size_ml === recipeSizeMl)
-        .reduce((s, r) => s + (r.bottles_produced || 0), 0);
-    } else {
-      // Fallback: match by product name
-      matchingBottles = bottlingRuns
-        .filter(r => (r.product_name || '').toLowerCase().trim() === recipeName)
-        .reduce((s, r) => s + (r.bottles_produced || 0), 0);
-    }
-
-    if (matchingBottles === 0) return;
-    recipe.packaging.forEach(pkg => {
-      const key = (pkg.name || '').toLowerCase().trim();
-      if (!key) return;
-      packagingConsumedByName[key] = (packagingConsumedByName[key] || 0) + (pkg.quantity || 1) * matchingBottles;
-    });
-  });
-
-  // Total bottles per size (still needed for finished goods display)
-  const totalBottlesBottled700 = bottlingRuns
-    .filter(r => r.bottle_size_ml === 700)
-    .reduce((s, r) => s + (r.bottles_produced || 0), 0);
-  const totalBottlesBottled200 = bottlingRuns
-    .filter(r => r.bottle_size_ml === 200)
-    .reduce((s, r) => s + (r.bottles_produced || 0), 0);
-
-  // Build received quantities per material name from Receiving records
-  // Normalise material_type: 'Botanicals' -> 'botanical', 'Packaging' -> 'packaging' etc.
-  const normaliseType = (t) => {
-    const lower = (t || '').toLowerCase().trim();
-    if (lower.startsWith('botanical')) return 'botanical';
-    if (lower === 'ethanol') return 'ethanol';
-    if (lower === 'packaging') return 'packaging';
-    if (lower === 'grain') return 'grain';
-    if (lower === 'sugar') return 'sugar';
-    if (lower === 'water') return 'water';
-    if (lower === 'flavoring' || lower === 'flavouring') return 'flavoring';
-    return 'other';
-  };
-
-  const receivedByName = allReceivings.reduce((acc, r) => {
-    const key = (r.material_name || '').toLowerCase().trim();
-    if (!acc[key]) acc[key] = {
-      quantity: 0,
-      lals: 0,
-      unit: r.unit,
-      type: normaliseType(r.material_type),
-      abv_percent: r.abv_percent,
-    };
-    acc[key].quantity += r.quantity || 0;
-    acc[key].lals += r.lals || 0;
-    return acc;
-  }, {});
-
-  // Build a merged list: start from Receiving records for materials not in RawMaterial
-  const receivingMaterialNames = Object.keys(receivedByName);
-  const rawMaterialNames = rawMaterials.map(m => (m.name || '').toLowerCase().trim());
-  const receivingOnlyMaterials = receivingMaterialNames
-    .filter(k => !rawMaterialNames.includes(k))
-    .map(k => {
-      const sample = allReceivings.find(r => (r.material_name || '').toLowerCase().trim() === k);
-      return {
-        id: 'recv-' + k,
-        name: sample?.material_name || k,
-        type: receivedByName[k].type || 'other',
-        quantity: receivedByName[k].quantity,
-        lals: receivedByName[k].lals,
-        unit: receivedByName[k].unit || 'units',
-        abv_percent: receivedByName[k].abv_percent,
-        supplier: sample?.supplier_name || '',
-        batch_number: sample?.batch_number || '',
-        _fromReceiving: true,
-      };
-    });
-
-  const allRawMaterials = [...rawMaterials, ...receivingOnlyMaterials];
-
-  // Apply net-stock to raw materials
-  const rawMaterialsWithNetStock = allRawMaterials.map(m => {
-    const nameKey = (m.name || '').toLowerCase().trim();
-    const received = receivedByName[nameKey];
-    const isReceivingOnly = String(m.id || '').startsWith('recv-');
-
-    // For materials stored in the RawMaterial entity, use the stored quantity directly
-    // (user-maintained via Adjust). For receiving-only materials, compute from received minus consumed.
-    let netQty = isReceivingOnly ? (received?.quantity || 0) : (m.quantity || 0);
-    let netLals = isReceivingOnly ? (received?.lals || 0) : (m.lals || 0);
-
-    const nameLower = m.name?.toLowerCase() || '';
-
-    // Use normalised type — receivedByName already has normalised types via normaliseType()
-    // m.type may still have raw values like 'botanicals' for receiving-only items
-    const effectiveType = (received?.type) || normaliseType(m.type);
-
-    // Track total consumed so the Adjust dialog can account for it
-    let consumedQty = 0;
-
-    if (effectiveType === 'ethanol') {
-      const isLactonol = nameLower.includes('lactonol');
-      const isEna = nameLower.includes('extra neutral') || nameLower.includes('ena');
-      if (isLactonol) {
-        consumedQty += (ethanolConsumedByLotCode['eth-lactonol'] || 0) + (ethanolConsumedByLotCode['lactonol'] || 0);
-        consumedQty += rawEthanolConsumedInDilutions;
-      } else if (isEna) {
-        consumedQty += (ethanolConsumedByLotCode['eth-ena'] || 0) + (ethanolConsumedByLotCode['ena'] || 0);
-      } else {
-        const matched = ['eth-lactonol', 'lactonol', 'eth-ena', 'ena'];
-        consumedQty += Object.entries(ethanolConsumedByLotCode)
-          .filter(([k]) => !matched.includes(k))
-          .reduce((s, [, v]) => s + v, 0);
-      }
-      netLals = Math.max(0, netLals - (consumedQty * (m.abv_percent || 0) / 100));
-      netQty = Math.max(0, netQty - consumedQty);
-    }
-
-    // Deduct botanicals — case-insensitive exact then partial match
-    const normType = effectiveType;
-    if (normType === 'botanical') {
-      const exactConsumed = botanicalConsumedByName[nameLower];
-      if (exactConsumed !== undefined) {
-        consumedQty = exactConsumed;
-        netQty = Math.max(0, netQty - exactConsumed);
-      } else {
-        const partialKey = Object.keys(botanicalConsumedByName)
-          .find(k => nameLower.includes(k.toLowerCase()) || k.toLowerCase().includes(nameLower));
-        if (partialKey) {
-          consumedQty = botanicalConsumedByName[partialKey];
-          netQty = Math.max(0, netQty - consumedQty);
-        }
-      }
-    }
-
-    // Deduct packaging — case-insensitive exact then partial match
-    if (normType === 'packaging') {
-      const exactConsumed = packagingConsumedByName[nameLower];
-      if (exactConsumed !== undefined) {
-        consumedQty = exactConsumed;
-        netQty = Math.max(0, netQty - exactConsumed);
-      } else {
-        const partialKey = Object.keys(packagingConsumedByName)
-          .find(k => nameLower.includes(k.toLowerCase()) || k.toLowerCase().includes(nameLower));
-        if (partialKey) {
-          consumedQty = packagingConsumedByName[partialKey];
-          netQty = Math.max(0, netQty - consumedQty);
-        }
-      }
-    }
-
-    netLals = m.abv_percent && (m.type === 'ethanol' || effectiveType === 'ethanol')
-      ? parseFloat((netQty * m.abv_percent / 100).toFixed(3))
-      : netLals;
-
-    return { ...m, quantity: parseFloat(netQty.toFixed(2)), lals: netLals, _consumed: consumedQty };
-  });
+  // Net stock is now computed via the shared useRawMaterialsNetStock hook
+  const rawMaterialsWithNetStock = rawMaterialsWithNetStockFromHook;
 
   const packagingItems = rawMaterialsWithNetStock.filter(m => m.type?.toLowerCase() === 'packaging');
   const nonPackagingRaw = rawMaterialsWithNetStock.filter(m => m.type?.toLowerCase() !== 'packaging');
