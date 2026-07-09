@@ -52,11 +52,13 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
     return finishedGoodsWithStock
       .filter(fg => fg.quantity_bottles > 0)
       .map(fg => {
-        const recipe = recipes?.find(r =>
-          r.name === fg.product_name ||
-          fg.product_name?.toLowerCase().includes(r.name?.toLowerCase()) ||
-          r.name?.toLowerCase().includes(fg.product_name?.toLowerCase())
-        );
+        const recipe = (recipes || [])
+          .filter(r => r.recipe_type === 'spirit' && r.base_ethanol_volume)
+          .find(r =>
+            r.name === fg.product_name ||
+            fg.product_name?.toLowerCase().includes(r.name?.toLowerCase()) ||
+            r.name?.toLowerCase().includes(fg.product_name?.toLowerCase())
+          );
 
         let ethanolCost = 0;
         let botanicalCost = 0;
