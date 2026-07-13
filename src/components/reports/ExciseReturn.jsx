@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Copy, CheckCircle2, AlertTriangle, FileText } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
+import { getExciseRate } from '@/lib/exciseRates';
 
 function ExciseRow({ label, value, sub, highlight, indent, displayValue }) {
   return (
@@ -76,8 +77,14 @@ export default function ExciseReturn({
     queryFn: () => base44.entities.AppSettings.list('-created_date', 5000),
   });
 
-  const exciseRate = parseFloat(appSettings.find(s => s.key === 'excise_rate_per_lal')?.value) || 57.96;
   const companyName = appSettings.find(s => s.key === 'company_name')?.value || '';
+
+  // Excise rate is date-aware: uses the NZ Customs rate applicable to the selected month
+  const [selectedYear, selectedMonthNum] = selectedMonth.split('-').map(Number);
+  const monthStartDate = new Date(selectedYear, selectedMonthNum - 1, 1);
+  const rateInfo = getExciseRate(monthStartDate);
+  const exciseRate = rateInfo.rate;
+  const rateLabel = rateInfo.label;
 
   // --- Current total LALs (all stock locations) ---
   const currentFinishedLALs = finishedGoods.reduce((s, g) => s + (g.total_lals || 0), 0);
@@ -133,8 +140,10 @@ export default function ExciseReturn({
   // 5. Total excise payable LALs
   const totalTaxableLals = bluffDispatchLals + net3PLTaxableLals;
 
-  // Excise due
-  const exciseDue = totalTaxableLals * exciseRate;
+  // Excise due (GST exclusive + GST inclusive at 15%)
+  const exciseDueGSTExcl = totalTaxableLals * exciseRate;
+  const gstAmount = exciseDueGSTExcl * 0.15;
+  const exciseDueGSTIncl = exciseDueGSTExcl + gstAmount;
 
   // --- Non-taxable categories (for info only) ---
   const standard3PLDispatchLals = monthDispatches
@@ -182,18 +191,22 @@ export default function ExciseReturn({
     const text = [
       `EXCISE RETURN — ${monthLabel.toUpperCase()}`,
       `Company: ${companyName}`,
+      `Category: Spirits containing more than 23% vol.`,
       ``,
-      `LALs Produced:                  ${lalsProduced.toFixed(3)}`,
-      `Direct Distillery Dispatches:   ${bluffDispatchLals.toFixed(3)}  (incl. ${lalsSamples.toFixed(3)} samples)`,
-      `3PL Transfers:                  ${transferLals.toFixed(3)}`,
-      `Less Duty Free:                (${dutyFreeFrom3PL.toFixed(3)})`,
-      `Less Export/Overseas:          (${exportFrom3PL.toFixed(3)})`,
-      `Net Taxable LALs:               ${totalTaxableLals.toFixed(3)}`,
-      `Excise Rate:                    $${exciseRate.toFixed(2)}/LAL`,
-      `Excise Due:                     $${exciseDue.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `Net Taxable LALs:         ${totalTaxableLals.toFixed(3)} LALs`,
+      `Excise Rate:              $${exciseRate.toFixed(3)} per LAL (GST excl.)`,
+      `Excise Due (GST excl.):   $${exciseDueGSTExcl.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `GST (15%):                $${gstAmount.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `Total Excise (GST incl.): $${exciseDueGSTIncl.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       ``,
-      `Wastage:                        ${lalsWasted.toFixed(3)} LALs`,
-      `Closing Stock:                  ${closingLALs.toFixed(3)}`,
+      `--- Breakdown ---`,
+      `Direct Distillery Dispatches:  ${bluffDispatchLals.toFixed(3)}  (incl. ${lalsSamples.toFixed(3)} samples)`,
+      `3PL Transfers:                 ${transferLals.toFixed(3)}`,
+      `Less Duty Free:               (${dutyFreeFrom3PL.toFixed(3)})`,
+      `Less Export/Overseas:         (${exportFrom3PL.toFixed(3)})`,
+      ``,
+      `Wastage:                       ${lalsWasted.toFixed(3)} LALs`,
+      `Closing Stock:                 ${closingLALs.toFixed(3)}`,
     ].join('\n');
 
     navigator.clipboard.writeText(text).then(() => {
@@ -253,11 +266,24 @@ export default function ExciseReturn({
           <ExciseRow label="TOTAL EXCISE PAYABLE LALs" value={totalTaxableLals} sub="Bluff dispatches + Net 3PL taxable" highlight />
           <div className="flex items-center justify-between px-4 py-3">
             <p className="text-sm font-medium">Excise Rate</p>
-            <p className="text-sm font-mono">${exciseRate.toFixed(2)} / LAL</p>
+            <p className="text-sm font-mono">${exciseRate.toFixed(3)} per LAL <span className="text-muted-foreground">({rateLabel})</span></p>
           </div>
-          <div className="flex items-center justify-between px-4 py-4 bg-primary/5">
-            <p className="text-sm font-bold">EXCISE DUE</p>
-            <p className="text-xl font-bold font-mono text-primary">${exciseDue.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          <div className="px-4 py-3 bg-primary/5 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold">EXCISE DUE</p>
+                <p className="text-xs text-muted-foreground">GST excl.</p>
+              </div>
+              <p className="text-xl font-bold font-mono text-primary">${exciseDueGSTExcl.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">GST (15%)</p>
+              <p className="text-sm font-mono">${gstAmount.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="flex items-center justify-between border-t border-primary/10 pt-1.5">
+              <p className="text-sm font-medium">Total (GST incl.)</p>
+              <p className="text-base font-bold font-mono">${exciseDueGSTIncl.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            </div>
           </div>
 
           {/* For information only section */}
