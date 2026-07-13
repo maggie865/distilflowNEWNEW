@@ -8,8 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Calculator, FlaskConical, AlertTriangle, CheckCircle2, Pencil, Search } from 'lucide-react';
+import { Plus, Calculator, FlaskConical, AlertTriangle, CheckCircle2, Pencil, Search, Trash2 } from 'lucide-react';
 import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -52,6 +53,7 @@ export default function Distillation() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [deletingRun, setDeletingRun] = useState(null);
   const queryClient = useQueryClient();
 
   const { data: masterBatches = [] } = useQuery({
@@ -435,6 +437,124 @@ export default function Distillation() {
       queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
       setOpen(false);
       toast.success('Distillation run updated');
+    },
+  });
+
+  const deleteRunMutation = useMutation({
+    mutationFn: async (run) => {
+      const today = new Date().toISOString().split('T')[0];
+
+      // 1. Reverse destination tank credit (hearts output)
+      if (run.destination_tank_id && run.hearts_volume) {
+        const tank = await base44.entities.StorageTank.get(run.destination_tank_id);
+        const newVol = Math.max(0, (tank.current_volume || 0) - (run.hearts_volume || 0));
+        const newAbv = newVol > 0
+          ? ((tank.current_volume * tank.current_abv) - (run.hearts_volume * run.hearts_abv)) / newVol
+          : tank.current_abv;
+        await base44.entities.StorageTank.update(run.destination_tank_id, {
+          current_volume: parseFloat(newVol.toFixed(3)),
+          current_abv: parseFloat(Math.max(0, newAbv).toFixed(2)),
+          status: newVol <= 0 ? 'empty' : tank.status,
+        });
+        await base44.entities.TankMovement.create({
+          date: today,
+          action: 'distillation_reversed',
+          tank_name: tank.name,
+          volume_litres: run.hearts_volume,
+          lals: run.hearts_lals || 0,
+          batch_number: run.batch_number,
+          notes: `Reversal: distillation run deleted (${run.date})`,
+        });
+      }
+
+      // 2. Restore source tank volumes (source_tank_ids not stored — match by current_batch)
+      const sourceTanks = allTanks.filter(t => t.current_batch === run.batch_number && t.purpose !== 'final_product_storage');
+      if (sourceTanks.length > 0 && run.input_volume) {
+        const restorePerTank = run.input_volume / sourceTanks.length;
+        for (const tank of sourceTanks) {
+          const newVol = (tank.current_volume || 0) + restorePerTank;
+          await base44.entities.StorageTank.update(tank.id, {
+            current_volume: parseFloat(newVol.toFixed(3)),
+            status: 'in_use',
+          });
+          await base44.entities.TankMovement.create({
+            date: today,
+            action: 'distillation_reversed',
+            tank_name: tank.name,
+            volume_litres: parseFloat(restorePerTank.toFixed(3)),
+            lals: run.input_lals || 0,
+            batch_number: run.batch_number,
+            notes: `Reversal: input volume restored to source tank (${run.date})`,
+          });
+        }
+      }
+
+      // 3. Restore ethanol raw material quantities
+      if (run.ethanol_lot_code && run.input_lals) {
+        const volAt96 = run.input_lals / 0.96;
+        const matchingEthanol = ethanolMaterials
+          .filter(m => m.batch_number === run.ethanol_lot_code)
+          .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        if (matchingEthanol.length > 0) {
+          const lot = matchingEthanol[0];
+          await base44.entities.RawMaterial.update(lot.id, {
+            quantity: parseFloat(((lot.quantity || 0) + volAt96).toFixed(3)),
+            lals: parseFloat(((lot.lals || 0) + run.input_lals).toFixed(4)),
+          });
+        }
+      }
+
+      // 3b. Restore botanical lots (best-effort using recipe scaling)
+      if (run.product_name && run.input_volume) {
+        const recipe = recipes.find(r => r.name === run.product_name);
+        if (recipe?.ingredients?.length && recipe.base_ethanol_volume) {
+          const ratio = run.input_volume / recipe.base_ethanol_volume;
+          for (const ing of recipe.ingredients) {
+            const restoreQty = ing.quantity * ratio;
+            const ingNameLower = (ing.name || '').toLowerCase();
+            const matching = rawMaterials.filter(m => (m.name || '').toLowerCase() === ingNameLower);
+            if (matching.length > 0) {
+              const lot = matching.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
+              await base44.entities.RawMaterial.update(lot.id, {
+                quantity: parseFloat(((lot.quantity || 0) + restoreQty).toFixed(4)),
+              });
+            }
+          }
+        }
+      }
+
+      // 4. Delete linked WastageRecord
+      const allWastage = await base44.entities.WastageRecord.list('-date', 5000);
+      const linkedWastage = allWastage.filter(w => w.source === 'distillation' && w.run_id === run.id);
+      for (const w of linkedWastage) {
+        await base44.entities.WastageRecord.delete(w.id);
+      }
+
+      // 5. Delete linked SubBatch
+      if (run.sub_batch_code) {
+        const subBatches = await base44.entities.SubBatch.filter({ sub_batch_code: run.sub_batch_code });
+        const linkedSub = subBatches.find(sb => sb.master_batch_code === run.batch_number);
+        if (linkedSub) {
+          await base44.entities.SubBatch.delete(linkedSub.id);
+        }
+      }
+
+      // 6. Delete the DistillationRun record
+      await base44.entities.DistillationRun.delete(run.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['distillationRuns'] });
+      queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+      queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
+      queryClient.invalidateQueries({ queryKey: ['rawMaterials-ethanol'] });
+      queryClient.invalidateQueries({ queryKey: ['wastage'] });
+      queryClient.invalidateQueries({ queryKey: ['subBatches'] });
+      queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
+      setDeletingRun(null);
+      toast.success('Distillation run deleted and inventory reversed');
+    },
+    onError: () => {
+      toast.error('Failed to delete run — some changes may have been partially applied. Check tank volumes manually.');
     },
   });
 
@@ -1022,9 +1142,19 @@ export default function Distillation() {
                   <TableCell className="text-sm font-medium">{r.output_lals?.toFixed(3) ?? '—'}</TableCell>
                   <TableCell><StatusBadge status={r.status} /></TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(r)}>
-                      <Pencil className="w-3.5 h-3.5" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(r)}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => setDeletingRun(r)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -1044,7 +1174,10 @@ export default function Distillation() {
               badge={<StatusBadge status={r.status} />}
               accent={<span className="text-sm font-semibold">{r.output_lals?.toFixed(2) ?? '—'} LALs</span>}
               actions={
-                <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEdit(r)}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                <>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEdit(r)}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => setDeletingRun(r)}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
+                </>
               }
             >
               <MobileDetailRow label="Batch" value={r.batch_number} />
@@ -1074,6 +1207,27 @@ export default function Distillation() {
           if (batch.product_name && !form.product_name) set('product_name', batch.product_name);
         }}
       />
+
+      <AlertDialog open={!!deletingRun} onOpenChange={v => !v && setDeletingRun(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Distillation Run?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reverse all tank changes, raw material deductions, and wastage records from this run. Are you sure?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => deleteRunMutation.mutate(deletingRun)}
+              disabled={deleteRunMutation.isPending}
+            >
+              {deleteRunMutation.isPending ? 'Deleting…' : 'Delete & Reverse'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
         </TabsContent>
       </Tabs>

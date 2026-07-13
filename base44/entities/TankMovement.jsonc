@@ -15,6 +15,7 @@
         "bottling_draw",
         "dilution",
         "distillation_fill",
+        "distillation_reversed",
         "cleaning",
         "adjustment",
         "disposal",
