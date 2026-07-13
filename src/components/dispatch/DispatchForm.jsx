@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/api/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,8 +12,8 @@ import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import CustomerAutocomplete from '@/components/sales/CustomerAutocomplete.jsx';
 
-const DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
-const WAREHOUSE_ADDRESS = '27 Pavillion Drive, Māngere, Auckland 2015, New Zealand';
+const DEFAULT_DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
+const DEFAULT_WAREHOUSE_ADDRESS = '27 Pavillion Drive, Māngere, Auckland 2015, New Zealand';
 
 const calcWeightKg = (bottleSizeMl, numBottles) => {
   if (!numBottles) return 0;
@@ -50,7 +50,15 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
   const [newLineBatchId, setNewLineBatchId] = useState('');
 
   const queryClient = useQueryClient();
-  const originAddress = dispatchedFrom === 'Bluff' ? DISTILLERY_ORIGIN : WAREHOUSE_ADDRESS;
+
+  const { data: appSettings = [] } = useQuery({
+    queryKey: ['appSettings'],
+    queryFn: () => base44.entities.AppSettings.list('key', 100),
+  });
+  const distilleryAddress = appSettings.find(s => s.key === 'distillery_address')?.value || DEFAULT_DISTILLERY_ORIGIN;
+  const warehouseAddress = appSettings.find(s => s.key === 'warehouse_address')?.value || DEFAULT_WAREHOUSE_ADDRESS;
+
+  const originAddress = dispatchedFrom === 'Bluff' ? distilleryAddress : warehouseAddress;
 
   const sellableGoods = useMemo(
     () => finishedGoods.filter(fg => !fg.product_name?.includes('Tasting')),

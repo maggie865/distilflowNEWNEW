@@ -1,3 +1,5 @@
+import { useQuery } from '@tanstack/react-query';
+import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -18,6 +20,13 @@ function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent b
 }
 
 export default function CarbonReport({ receiving, dispatches, warehouseStock, startDate, endDate }) {
+  const { data: appSettings = [] } = useQuery({
+    queryKey: ['appSettings'],
+    queryFn: () => base44.entities.AppSettings.list('key', 100),
+  });
+  const distilleryAddress = appSettings.find(s => s.key === 'distillery_address')?.value || '250 Ocean Beach Road, Bluff, New Zealand';
+  const warehouseAddress = appSettings.find(s => s.key === 'warehouse_address')?.value || '27 Pavillion Drive, Māngere, Auckland 2015, New Zealand';
+
   const rangeStart = startDate ? parseISO(startDate) : startOfMonth(new Date());
   const rangeEnd = endDate ? parseISO(endDate) : new Date();
   const rangeEndInclusive = new Date(rangeEnd);

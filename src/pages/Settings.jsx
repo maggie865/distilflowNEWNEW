@@ -13,6 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Plus, Trash2, Settings as SettingsIcon, User, Cylinder, FlaskConical, MapPin, Upload, Download, FileText, CheckCircle2, XCircle, Loader2, AlertTriangle, ChevronDown, ChevronRight, LayoutDashboard } from 'lucide-react';
 import DashboardLinkManager from '@/components/settings/DashboardLinkManager';
 import RecipeManager from '@/components/settings/RecipeManager';
+import LocationSettings from '@/components/settings/LocationSettings';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
@@ -364,6 +365,8 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+
+          <LocationSettings />
 
           <Card className="border-destructive/50">
             <CardHeader>
