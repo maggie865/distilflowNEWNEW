@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle } from 'lucide-react';
+import { Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, Building2, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
@@ -24,6 +24,7 @@ const navGroups = [
       { label: 'Batch Tracker', icon: FlaskConical, path: '/batch-tracker' },
       { label: 'Raw Materials', icon: Droplets, path: '/raw-materials' },
       { label: 'Inventory', icon: Warehouse, path: '/inventory' },
+      { label: 'Warehouse (3PL)', icon: Building2, path: '/warehouse' },
       { label: 'Stock Takes', icon: ClipboardList, path: '/stock-takes' },
     ]
   },

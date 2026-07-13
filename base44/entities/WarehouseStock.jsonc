@@ -44,6 +44,10 @@
       "type": "number",
       "description": "CO2e emissions in kg for this 3PL transfer"
     },
+    "packing_slip_number": {
+      "type": "string",
+      "description": "Packing slip number for this transfer batch"
+    },
     "notes": {
       "type": "string",
       "description": "Additional notes"

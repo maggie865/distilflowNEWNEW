@@ -18,6 +18,7 @@ import Dilutions from '@/pages/Dilutions';
 import Distillation from '@/pages/Distillation';
 import Bottling from '@/pages/Bottling';
 import Inventory from '@/pages/Inventory';
+import Warehouse from '@/pages/Warehouse';
 import RawMaterials from '@/pages/RawMaterials';
 import BatchTracker from '@/pages/BatchTracker';
 import Tanks from '@/pages/Tanks';
@@ -69,6 +70,7 @@ const AuthenticatedApp = () => {
             <Route path="/distillation" element={<Distillation />} />
             <Route path="/bottling" element={<Bottling />} />
             <Route path="/inventory" element={<Inventory />} />
+            <Route path="/warehouse" element={<Warehouse />} />
             <Route path="/raw-materials" element={<RawMaterials />} />
             <Route path="/batch-tracker" element={<BatchTracker />} />
             <Route path="/tanks" element={<Tanks />} />

@@ -69,6 +69,14 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
       if (hasInvalid) throw new Error('Fix quantity errors before transferring');
       if (validRows.length === 0) throw new Error('Add at least one item to transfer');
 
+      // Generate packing slip number
+      const allSettings = await base44.entities.AppSettings.list('-created_date', 5000);
+      const lastNumSetting = allSettings.find(s => s.key === 'last_packing_slip_number');
+      const lastNum = lastNumSetting ? parseInt(lastNumSetting.value) || 0 : 0;
+      const newNum = lastNum + 1;
+      const psYear = new Date().getFullYear();
+      const packingSlipNumber = `PS-${psYear}-${String(newNum).padStart(4, '0')}`;
+
       for (const row of validRows) {
         const fg = bluffStock.find(g => g.id === row.fgId);
         const transferQty = parseInt(row.qty);
@@ -97,6 +105,7 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
             transfer_date: transferDate,
             co2e_kg: parseFloat(((ws.co2e_kg || 0) + batchCo2e).toFixed(3)),
             transport_distance_km: parseFloat(transferDistance),
+            packing_slip_number: packingSlipNumber,
           });
         } else {
           await base44.entities.WarehouseStock.create({
@@ -110,16 +119,26 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
             transfer_date: transferDate,
             co2e_kg: parseFloat(batchCo2e.toFixed(3)),
             transport_distance_km: parseFloat(transferDistance),
+            packing_slip_number: packingSlipNumber,
           });
         }
       }
+
+      // Save the new packing slip number back to AppSettings
+      if (lastNumSetting) {
+        await base44.entities.AppSettings.update(lastNumSetting.id, { value: String(newNum) });
+      } else {
+        await base44.entities.AppSettings.create({ key: 'last_packing_slip_number', value: String(newNum) });
+      }
+
+      return { packingSlipNumber };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['finishedGoods'] });
       qc.invalidateQueries({ queryKey: ['warehouseStock'] });
       qc.invalidateQueries({ queryKey: ['dispatches'] });
       qc.invalidateQueries({ queryKey: ['dispatches-all'] });
-      toast.success(`${totalBottles} bottles across ${validRows.length} batch(es) transferred to Auckland 3PL`);
+      toast.success(`${totalBottles} bottles across ${validRows.length} batch(es) transferred to Auckland 3PL — Packing Slip ${data?.packingSlipNumber || ''}`);
       setRows([{ fgId: '', qty: '' }]);
       setTransferDate(() => new Date().toISOString().split('T')[0]);
       setTransferDistance('1500');
