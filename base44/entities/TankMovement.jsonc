@@ -18,7 +18,8 @@
         "cleaning",
         "adjustment",
         "disposal",
-        "dilution_reversed"
+        "dilution_reversed",
+        "sns_run_reversed"
       ],
       "description": "Type of tank movement"
     },

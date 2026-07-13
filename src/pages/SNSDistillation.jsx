@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Pencil, Trash2, Calculator, Zap } from 'lucide-react';
 import { format } from 'date-fns';
@@ -39,6 +40,7 @@ export default function SNSDistillation() {
   const [form, setForm] = useState(BLANK_FORM);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [deletingRun, setDeletingRun] = useState(null);
   const queryClient = useQueryClient();
 
   const { data: snsRuns = [] } = useQuery({
@@ -69,6 +71,93 @@ export default function SNSDistillation() {
   const destinationTank = tanks.find(t => t.id === form.destination_tank_id);
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+  // Delete SNS run — reverses all tank changes
+  const deleteRunMutation = useMutation({
+    mutationFn: async (run) => {
+      const inputVolume = run.input_volume || 0;
+      const inputAbv = run.input_abv || 0;
+      const heartsVolume = run.hearts_volume || 0;
+      const heartsAbv = run.hearts_abv || 0;
+      const today = new Date().toISOString().split('T')[0];
+
+      // 1. Reverse hearts credit on destination tanks (reverse order — last filled, first removed)
+      const destTankIds = run.destination_tank_ids || [];
+      let remainingToReverse = heartsVolume;
+      for (let i = destTankIds.length - 1; i >= 0; i--) {
+        if (remainingToReverse <= 0) break;
+        const tankId = destTankIds[i];
+        const destTank = tanks.find(t => t.id === tankId);
+        if (!destTank) continue;
+
+        const volumeToRemove = Math.min(destTank.current_volume || 0, remainingToReverse);
+        if (volumeToRemove > 0) {
+          const newVolume = (destTank.current_volume || 0) - volumeToRemove;
+          const updates = { current_volume: newVolume };
+          if (newVolume === 0) {
+            updates.current_abv = 0;
+            updates.current_product = '';
+            updates.status = 'empty';
+          }
+          await db.StorageTank.update(tankId, updates);
+
+          await db.TankMovement.create({
+            date: today,
+            action: 'sns_run_reversed',
+            tank_name: destTank.name,
+            volume_litres: volumeToRemove,
+            abv: heartsAbv,
+            lals: parseFloat(((volumeToRemove * heartsAbv) / 100).toFixed(4)),
+            product: 'High ABV Ethanol (SNS)',
+            batch_number: run.id,
+            notes: `SNS run reversal — removed hearts from destination tank (run dated ${run.date})`,
+          });
+
+          remainingToReverse -= volumeToRemove;
+        }
+      }
+
+      // 2. Return input volume to source tank with weighted-average ABV recalculation
+      const sourceTank = tanks.find(t => t.id === run.source_tank_id);
+      if (sourceTank) {
+        const currentVol = sourceTank.current_volume || 0;
+        const currentAbv = sourceTank.current_abv || 0;
+        const newVolume = currentVol + inputVolume;
+        const newAbv = newVolume > 0
+          ? ((currentVol * currentAbv) + (inputVolume * inputAbv)) / newVolume
+          : 0;
+
+        await db.StorageTank.update(run.source_tank_id, {
+          current_volume: newVolume,
+          current_abv: parseFloat(newAbv.toFixed(2)),
+          current_product: newVolume > 0 ? (sourceTank.current_product || 'Heads & Tails') : '',
+          status: 'in_use',
+        });
+
+        await db.TankMovement.create({
+          date: today,
+          action: 'sns_run_reversed',
+          tank_name: sourceTank.name,
+          volume_litres: inputVolume,
+          abv: inputAbv,
+          lals: parseFloat(((inputVolume * inputAbv) / 100).toFixed(4)),
+          product: sourceTank.current_product || 'Heads & Tails',
+          batch_number: run.id,
+          notes: `SNS run reversal — returned input volume to source tank (run dated ${run.date})`,
+        });
+      }
+
+      // 3. Delete the SNS run record
+      await db.SNSRun.delete(run.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['snsRuns'] });
+      queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+      queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
+      setDeletingRun(null);
+      toast.success('SNS run deleted and tank changes reversed');
+    },
+  });
 
   const pagedSnsRuns = snsRuns.slice((page - 1) * pageSize, page * pageSize);
 
@@ -438,6 +527,29 @@ export default function SNSDistillation() {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deletingRun} onOpenChange={v => !v && setDeletingRun(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete SNS Run?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reverse all tank volume changes from this SNS run. Are you sure?
+              <p className="mt-2 font-medium text-destructive">This cannot be undone.</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => deleteRunMutation.mutate(deletingRun)}
+              disabled={deleteRunMutation.isPending}
+            >
+              {deleteRunMutation.isPending ? 'Deleting…' : 'Delete & Reverse'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
@@ -475,15 +587,25 @@ export default function SNSDistillation() {
                     <TableCell className="text-sm">{run.dumped_volume?.toFixed(2) || '—'}</TableCell>
                     <TableCell><StatusBadge status={run.status} /></TableCell>
                     <TableCell>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => handleEdit(run)}
-                        className="gap-2"
-                      >
-                        <Pencil className="w-3 h-3" />
-                        Edit
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(run)}
+                          className="gap-1"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          onClick={() => setDeletingRun(run)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                     </TableRow>
                 );
