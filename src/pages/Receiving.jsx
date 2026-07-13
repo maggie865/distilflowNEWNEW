@@ -303,12 +303,18 @@ export default function Receiving() {
       const payload = buildPayload(data);
       await base44.entities.Receiving.update(editingId, payload);
 
-      // If quantity changed, sync linked RawMaterial
+      // If quantity or cost changed, sync linked RawMaterial
       const original = receivingsQuery.data?.find(r => r.id === editingId);
-      if (original && parseFloat(data.quantity) !== original.quantity) {
+      const newCost = data.cost_per_unit ? parseFloat(data.cost_per_unit) : null;
+      const costChanged = original && newCost !== (original.cost_per_unit ?? null);
+      const qtyChanged = original && parseFloat(data.quantity) !== original.quantity;
+      if (qtyChanged || costChanged) {
         const linked = await base44.entities.RawMaterial.filter({ receiving_id: editingId });
         for (const rm of linked) {
-          await base44.entities.RawMaterial.update(rm.id, { quantity: parseFloat(data.quantity) });
+          const update = {};
+          if (qtyChanged) update.quantity = parseFloat(data.quantity);
+          if (costChanged) update.cost_per_unit = newCost ?? undefined;
+          await base44.entities.RawMaterial.update(rm.id, update);
         }
       }
     },
@@ -439,6 +445,10 @@ export default function Receiving() {
               <div>
                 <Label>Quantity</Label>
                 <Input type="number" step="0.01" value={form.quantity} onChange={e => set('quantity', e.target.value)} required />
+              </div>
+              <div>
+                <Label>Cost per unit (excl. GST)</Label>
+                <Input type="number" step="0.01" value={form.cost_per_unit} onChange={e => set('cost_per_unit', e.target.value)} placeholder="e.g. 2.50" />
               </div>
               <div>
                 <Label>Unit</Label>
