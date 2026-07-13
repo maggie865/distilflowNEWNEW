@@ -55,8 +55,8 @@ export default function DispatchHub() {
 
   const queryClient = useQueryClient();
 
-  const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => db.FinishedGood.list('-created_at', 200) });
-  const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => db.WarehouseStock.list('-date_transferred_in', 200) });
+  const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => db.FinishedGood.list('-created_at', 2000) });
+  const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => db.WarehouseStock.list('-date_transferred_in', 2000) });
   const { data: allDispatches = [] } = useQuery({ queryKey: ['dispatches-all'], queryFn: () => db.Dispatch.list('-dispatch_date', 5000) });
   const { data: customers = [] } = useQuery({ queryKey: ['customers'], queryFn: () => db.Customer.list('business_name', 2000) });
   const { data: dispatchPage = { data: [], count: 0 } } = useQuery({ queryKey: ['dispatches', currentPage], queryFn: () => db.Dispatch.listPage('-dispatch_date', PAGE_SIZE, currentPage * PAGE_SIZE) });
@@ -375,7 +375,7 @@ export default function DispatchHub() {
         <Pagination currentPage={currentPage} totalCount={totalDispatchCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
       </Card>
 
-      <DispatchForm open={showForm} onClose={() => setShowForm(false)} finishedGoods={finishedGoods} warehouseStock={warehouseStock} customers={customers} allDispatches={allDispatches} />
+      <DispatchForm open={showForm} onClose={() => setShowForm(false)} finishedGoods={finishedGoods} warehouseStock={warehouseStock} customers={customers} />
       <DirectSalesForm open={showDirectSalesForm} onClose={() => setShowDirectSalesForm(false)} finishedGoods={finishedGoods} allDispatches={allDispatches} />
       <TransferTo3PLDialog open={showTransfer3PL} onClose={() => setShowTransfer3PL(false)} finishedGoods={finishedGoods} allDispatches={allDispatches} />
 

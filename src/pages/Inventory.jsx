@@ -39,13 +39,8 @@ function AdjustDialog({ item, entity, onClose, queryKey }) {
     mutationFn: async () => {
       const newQty = parseFloat(value) || 0;
 
-      // For finished goods, the displayed stock is (bottled - dispatched).
-      // The user enters the desired displayed quantity, so we store bottled = newQty + dispatched.
-      // For raw materials, the displayed stock is (stored - consumed).
-      // The user enters the desired displayed quantity, so we store qty = newQty + consumed.
-      const storedQty = isFinished
-        ? newQty + (item._dispatched || 0)
-        : newQty + (item._consumed || 0);
+      // quantity_bottles / quantity is already the correct displayed stock — store directly.
+      const storedQty = newQty;
       const update = isFinished ? { quantity_bottles: storedQty } : { quantity: storedQty };
 
       // Recalculate LALs if raw material with ABV
@@ -480,7 +475,7 @@ export default function Inventory() {
 
   const { data: finishedGoods = [], isLoading: loadingFinished } = useQuery({
     queryKey: ['finishedGoods'],
-    queryFn: () => base44.entities.FinishedGood.list('product_name', 100),
+    queryFn: () => base44.entities.FinishedGood.list('product_name', 2000),
   });
 
   const { data: thresholds = [] } = useQuery({
@@ -498,47 +493,15 @@ export default function Inventory() {
     queryFn: () => base44.entities.Recipe.list('name', 50),
   });
 
-  const { data: allDispatches = [], isLoading: loadingDispatches } = useQuery({
-    queryKey: ['dispatches'],
-    queryFn: () => base44.entities.Dispatch.list('-dispatch_date', 2000),
-  });
-  const loading3PLDispatches = false;
-
-  // Build dispatch totals per batch+product+bottle_size key
-  // Only count Bluff dispatches — 3PL transfers have already reduced FinishedGood.quantity_bottles,
-  // and Auckland 3PL dispatches are tracked against WarehouseStock instead.
-  const dispatchedByBatch = allDispatches.reduce((acc, d) => {
-    const isBluff = !(d.dispatched_from || '').includes('Auckland');
-    if (!isBluff) return acc;
-    const key = `${d.batch_number}||${d.product_name}||${d.bottle_size_ml || 'unknown'}`;
-    acc[key] = (acc[key] || 0) + (d.quantity_bottles || 0);
-    return acc;
-  }, {});
-
-  // Compute live remaining stock per FinishedGood record
-  const finishedGoodsWithStock = finishedGoods.map(g => {
-    const key = `${g.batch_number}||${g.product_name}||${g.bottle_size_ml || 'unknown'}`;
-    const dispatched = dispatchedByBatch[key] || 0;
-    const bottled = g.quantity_bottles || 0;
-    const remaining = Math.max(0, bottled - dispatched);
-    const lalsPerBottle = bottled > 0 && g.total_lals ? g.total_lals / bottled : 0;
-    return {
-      ...g,
-      quantity_bottles: remaining,
-      total_lals: parseFloat((remaining * lalsPerBottle).toFixed(3)),
-      _bottled: bottled,       // original stored quantity (before dispatch deductions)
-      _dispatched: dispatched,  // total dispatched for this batch
-    };
-  });
-
-  // Net stock is now computed via the shared useRawMaterialsNetStock hook
+  // quantity_bottles on each FinishedGood record is already the correct post-dispatch figure.
+  // No dispatch subtraction is needed here — doing so would double-count.
   const rawMaterialsWithNetStock = rawMaterialsWithNetStockFromHook;
 
   const packagingItems = rawMaterialsWithNetStock.filter(m => m.type?.toLowerCase() === 'packaging');
   const nonPackagingRaw = rawMaterialsWithNetStock.filter(m => m.type?.toLowerCase() !== 'packaging');
   const totalEthanolLALs = rawMaterialsWithNetStock.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
-  const totalBottles = finishedGoodsWithStock.reduce((s, g) => s + (g.quantity_bottles || 0), 0);
-  const totalFinishedLALs = finishedGoodsWithStock.reduce((s, g) => s + (g.total_lals || 0), 0);
+  const totalBottles = finishedGoods.reduce((s, g) => s + (g.quantity_bottles || 0), 0);
+  const totalFinishedLALs = finishedGoods.reduce((s, g) => s + (g.total_lals || 0), 0);
 
   const open = (type, item, entity, queryKey) => setDialog({ type, item, entity, queryKey });
   const close = () => setDialog(null);
@@ -737,8 +700,8 @@ export default function Inventory() {
         {/* Finished Goods */}
         <TabsContent value="finished">
           <FinishedGoodsTable
-            finishedGoods={finishedGoodsWithStock}
-            loading={loadingFinished || loadingDispatches || loading3PLDispatches}
+            finishedGoods={finishedGoods}
+            loading={loadingFinished}
             onOpen={open}
           />
         </TabsContent>

@@ -38,7 +38,7 @@ const EMPTY_FORM = {
   notes: '',
 };
 
-export default function DispatchForm({ open, onClose, finishedGoods = [], warehouseStock = [], customers = [], allDispatches = [] }) {
+export default function DispatchForm({ open, onClose, finishedGoods = [], warehouseStock = [], customers = [] }) {
   const [dispatchedFrom, setDispatchedFrom] = useState('Bluff');
   const [form, setForm] = useState(EMPTY_FORM);
   const [lineItems, setLineItems] = useState([]);
@@ -77,7 +77,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
       });
       return { ...opt, batches: batchesWithAvail, totalAvailable: batchesWithAvail.reduce((s, b) => s + b.available, 0) };
     }).filter(opt => opt.totalAvailable > 0);
-  }, [sellableGoods, allDispatches]);
+  }, [sellableGoods]);
 
   // 3PL: individual WarehouseStock records
   const threePLProductOptions = useMemo(
