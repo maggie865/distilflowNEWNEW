@@ -15,6 +15,7 @@ import Pagination from '@/components/ui/Pagination';
 import InventoryReport from '@/components/reports/InventoryReport';
 import CostOfGoodsReport from '@/components/reports/CostOfGoodsReport';
 import ExciseReturn from '@/components/reports/ExciseReturn';
+import MovementsReport from '@/components/reports/MovementsReport';
 import { useRawMaterialsNetStock } from '@/hooks/useRawMaterialsNetStock';
 
 function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent border-accent-foreground/10', icon: Icon }) {
@@ -225,76 +226,20 @@ export default function Reports() {
 
           {/* ── MOVEMENTS ── */}
           <TabsContent value="movements" className="space-y-6">
-          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">{monthLabel} — Stock Movements</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="Received (lines)" value={monthReceiving.length} sub="inbound receipts" icon={ArrowDownToLine} color="text-green-600" bg="bg-green-50 border-green-200" />
-            <StatCard label="Inbound LALs" value={monthReceiving.filter(r => r.lals).reduce((s, r) => s + r.lals, 0).toFixed(2)} sub="ethanol received" icon={ArrowDownToLine} color="text-green-600" bg="bg-green-50 border-green-200" />
-            <StatCard label="Distillery Dispatches" value={distilleryDispatches.length} sub={`${distilleryDispatches.reduce((s, d) => s + (d.quantity_bottles || 0), 0)} bottles`} icon={ArrowUpFromLine} color="text-primary" bg="bg-accent border-accent-foreground/10" />
-            <StatCard label="3PL Dispatches" value={warehouseDispatches.length} sub={`${warehouseDispatches.reduce((s, d) => s + (d.quantity_bottles || 0), 0)} bottles`} icon={Building2} color="text-blue-600" bg="bg-blue-50 border-blue-200" />
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            <Card className="p-4">
-              <h4 className="text-sm font-semibold mb-4">Inbound — Receiving ({monthLabel})</h4>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Material</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>LALs</TableHead>
-                    <TableHead>Supplier</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {monthReceiving.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No receipts this month</TableCell></TableRow>
-                  ) : pagedReceiving.map(r => (
-                    <TableRow key={r.id}>
-                      <TableCell className="text-sm">{r.date_received ? format(parseISO(r.date_received), 'dd MMM') : '—'}</TableCell>
-                      <TableCell className="font-medium text-sm">{r.material_name}</TableCell>
-                      <TableCell className="text-sm">{r.quantity} {r.unit}</TableCell>
-                      <TableCell className="text-sm">{r.lals ? r.lals.toFixed(3) : '—'}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{r.supplier || '—'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Card>
-
-            <Card className="p-4">
-              <h4 className="text-sm font-semibold mb-4">Outbound — All Dispatches ({monthLabel})</h4>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Bottles</TableHead>
-                    <TableHead>Origin</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {monthDispatches.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No dispatches this month</TableCell></TableRow>
-                  ) : pagedDispatches.map((d, i) => (
-                    <TableRow key={d.id || d._row_index || i}>
-                      <TableCell className="text-sm">{d.dispatch_date ? format(parseISO(d.dispatch_date), 'dd MMM') : '—'}</TableCell>
-                      <TableCell className="font-medium text-sm">{d.customer_name}</TableCell>
-                      <TableCell className="text-sm">{d.product_name}</TableCell>
-                      <TableCell className="text-sm font-semibold">{d.quantity_bottles}</TableCell>
-                      <TableCell className="text-sm">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${d.notes?.startsWith('[3PL]') ? 'bg-blue-100 text-blue-700' : 'bg-accent text-accent-foreground'}`}>
-                          {d.notes?.startsWith('[3PL]') ? '3PL' : 'Distillery'}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Card>
-          </div>
-        </TabsContent>
+            <MovementsReport
+              receiving={receiving}
+              dispatches={dispatches}
+              distillationRuns={distillationRuns}
+              bottlingRuns={bottlingRuns}
+              tankMovements={tankMovements}
+              tanks={tanks}
+              wastage={wastage}
+              finishedGoods={finishedGoods}
+              warehouseStock={warehouseStock}
+              startDate={startDate}
+              endDate={endDate}
+            />
+          </TabsContent>
 
         {/* ── CARBON FOOTPRINT ── */}
          <TabsContent value="carbon" className="space-y-6">
