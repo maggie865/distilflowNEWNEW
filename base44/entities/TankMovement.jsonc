@@ -13,6 +13,7 @@
         "transfer_in",
         "transfer_out",
         "bottling_draw",
+        "bottling_reversed",
         "dilution",
         "distillation_fill",
         "distillation_reversed",

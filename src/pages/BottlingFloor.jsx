@@ -335,26 +335,31 @@ export default function BottlingFloor() {
       const abv = run.input_abv || 0;
       const lals = run.input_lals || 0;
 
-      // 1. Return spirit to source tank — find by batch/product
-      const matchingTank = tanks.find(t =>
-        t.current_batch === run.batch_number || t.current_product === run.product_name
+      // 1. Return spirit to source tank — find via TankMovement audit trail
+      const allMovements = await db.TankMovement.list('-date', 5000);
+      const bottlingDraw = allMovements.find(tm =>
+        tm.action === 'bottling_draw' &&
+        tm.batch_number === run.batch_number &&
+        Math.abs((tm.volume_litres || 0) - (run.input_volume || 0)) < 0.01
       );
-      if (matchingTank) {
-        await db.StorageTank.update(matchingTank.id, {
-          current_volume: (matchingTank.current_volume || 0) + spiritVolume,
-        });
-        // Log the reversal as a tank movement
-        await db.TankMovement.create({
-          date: new Date().toISOString().split('T')[0],
-          action: 'transfer_in',
-          tank_name: matchingTank.name,
-          volume_litres: spiritVolume,
-          abv,
-          lals,
-          product: run.product_name,
-          batch_number: run.batch_number,
-          notes: `Reversal: bottling run deleted (${run.date})`,
-        });
+
+      if (bottlingDraw) {
+        const tank = tanks.find(t => t.name === bottlingDraw.tank_name);
+        if (tank) {
+          await db.StorageTank.update(tank.id, {
+            current_volume: parseFloat(((tank.current_volume || 0) + (run.input_volume || 0)).toFixed(3)),
+          });
+          await db.TankMovement.create({
+            date: new Date().toISOString().split('T')[0],
+            action: 'bottling_reversed',
+            tank_name: tank.name,
+            volume_litres: run.input_volume || 0,
+            abv: run.input_abv || 0,
+            lals: run.input_lals || 0,
+            batch_number: run.batch_number,
+            notes: `Reversal: bottling run deleted (${run.date})`,
+          });
+        }
       }
 
       // 2. Deduct from finished goods
