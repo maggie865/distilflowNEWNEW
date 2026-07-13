@@ -36,7 +36,18 @@ Deno.serve(async (req) => {
       dispatchedBluff[k].lals += d.total_lals || 0;
     }
 
-    // Calculate total at 3PL per product/batch/size (already transferred out of Bluff)
+    // Calculate total dispatched FROM 3PL per product/batch/size
+    // (these left the 3PL after being transferred there, so current 3PL stock alone doesn't capture them)
+    const dispatchedFrom3PL = {};
+    for (const d of dispatches) {
+      if (!(d.dispatched_from || 'Bluff').includes('Auckland')) continue;
+      const k = key(d);
+      if (!dispatchedFrom3PL[k]) dispatchedFrom3PL[k] = { bottles: 0, lals: 0 };
+      dispatchedFrom3PL[k].bottles += d.quantity_bottles || 0;
+      dispatchedFrom3PL[k].lals += d.total_lals || 0;
+    }
+
+    // Calculate total at 3PL per product/batch/size (currently sitting at warehouse)
     const at3PL = {};
     for (const ws of warehouseStock) {
       const k = key(ws);
@@ -52,11 +63,14 @@ Deno.serve(async (req) => {
     }
 
     // For each produced combination, calculate correct Bluff stock
+    // Bluff stock = produced - dispatchedFromBluff - totalTransferredTo3PL
+    // totalTransferredTo3PL = dispatchedFrom3PL (already sold from 3PL) + at3PL (still at warehouse)
     for (const [k, prod] of Object.entries(produced)) {
       const dispatched = dispatchedBluff[k]?.bottles || 0;
-      const transferred = at3PL[k]?.bottles || 0;
-      const correctBottles = prod.bottles - dispatched - transferred;
-      const correctLals = parseFloat((prod.lals - (dispatchedBluff[k]?.lals || 0) - (at3PL[k]?.lals || 0)).toFixed(4));
+      const dispatched3PL = dispatchedFrom3PL[k]?.bottles || 0;
+      const atWarehouse = at3PL[k]?.bottles || 0;
+      const correctBottles = prod.bottles - dispatched - dispatched3PL - atWarehouse;
+      const correctLals = parseFloat((prod.lals - (dispatchedBluff[k]?.lals || 0) - (dispatchedFrom3PL[k]?.lals || 0) - (at3PL[k]?.lals || 0)).toFixed(4));
 
       const existing = fgMap[k];
       if (existing) {
