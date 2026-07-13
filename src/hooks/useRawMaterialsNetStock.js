@@ -22,32 +22,32 @@ const normaliseType = (t) => {
 export function useRawMaterialsNetStock() {
   const { data: rawMaterials = [], isLoading } = useQuery({
     queryKey: ['rawMaterials'],
-    queryFn: () => base44.entities.RawMaterial.list('name', 200),
+    queryFn: () => base44.entities.RawMaterial.list('name', 5000),
   });
 
   const { data: distillationRuns = [] } = useQuery({
     queryKey: ['distillationRuns'],
-    queryFn: () => base44.entities.DistillationRun.list('-date', 500),
+    queryFn: () => base44.entities.DistillationRun.list('-date', 5000),
   });
 
   const { data: bottlingRuns = [] } = useQuery({
     queryKey: ['bottlingRuns'],
-    queryFn: () => base44.entities.BottlingRun.list('-date', 200),
+    queryFn: () => base44.entities.BottlingRun.list('-date', 5000),
   });
 
   const { data: dilutions = [] } = useQuery({
     queryKey: ['dilutions'],
-    queryFn: () => base44.entities.Dilution.list('-date', 500),
+    queryFn: () => base44.entities.Dilution.list('-date', 5000),
   });
 
   const { data: allReceivings = [] } = useQuery({
     queryKey: ['receivings'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 2000),
+    queryFn: () => base44.entities.Receiving.list('-date_received', 5000),
   });
 
   const { data: recipes = [] } = useQuery({
     queryKey: ['recipes'],
-    queryFn: () => base44.entities.Recipe.list('name', 100),
+    queryFn: () => base44.entities.Recipe.list('name', 5000),
   });
 
   const data = useMemo(() => {

@@ -55,10 +55,10 @@ export default function DispatchHub() {
 
   const queryClient = useQueryClient();
 
-  const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => db.FinishedGood.list('-created_at', 2000) });
-  const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => db.WarehouseStock.list('-date_transferred_in', 2000) });
+  const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => db.FinishedGood.list('-created_at', 5000) });
+  const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => db.WarehouseStock.list('-date_transferred_in', 5000) });
   const { data: allDispatches = [] } = useQuery({ queryKey: ['dispatches-all'], queryFn: () => db.Dispatch.list('-dispatch_date', 5000) });
-  const { data: customers = [] } = useQuery({ queryKey: ['customers'], queryFn: () => db.Customer.list('business_name', 2000) });
+  const { data: customers = [] } = useQuery({ queryKey: ['customers'], queryFn: () => db.Customer.list('business_name', 5000) });
   const { data: dispatchPage = { data: [], count: 0 } } = useQuery({ queryKey: ['dispatches', currentPage], queryFn: () => db.Dispatch.listPage('-dispatch_date', PAGE_SIZE, currentPage * PAGE_SIZE) });
   const dispatches = dispatchPage.data ?? [];
   const totalDispatchCount = dispatchPage.count ?? 0;
@@ -96,7 +96,7 @@ export default function DispatchHub() {
         else await db.WarehouseStock.update(ws.id, { quantity_bottles: newQty, total_lals: newLals });
       }
     } else {
-      const allFG = await db.FinishedGood.list('product_name', 1000);
+      const allFG = await db.FinishedGood.list('product_name', 5000);
       const fg = allFG.find(g => g.product_name === dispatch.product_name && g.batch_number === dispatch.batch_number && Number(g.bottle_size_ml) === Number(dispatch.bottle_size_ml));
       if (fg) {
         const newQty = (fg.quantity_bottles || 0) - qty;
@@ -164,7 +164,7 @@ export default function DispatchHub() {
         await db.WarehouseStock.create({ product_name: dispatch.product_name, batch_number: dispatch.batch_number, bottle_size_ml: dispatch.bottle_size_ml, quantity_bottles: dispatch.quantity_bottles, total_lals: dispatch.total_lals });
       }
     } else {
-      const allFG = await db.FinishedGood.list('product_name', 1000);
+      const allFG = await db.FinishedGood.list('product_name', 5000);
       const fg = allFG.find(g => g.product_name === dispatch.product_name && g.batch_number === dispatch.batch_number && Number(g.bottle_size_ml) === Number(dispatch.bottle_size_ml));
       if (fg) {
         await db.FinishedGood.update(fg.id, { quantity_bottles: (fg.quantity_bottles || 0) + (dispatch.quantity_bottles || 0), total_lals: parseFloat(((fg.total_lals || 0) + (dispatch.total_lals || 0)).toFixed(4)) });

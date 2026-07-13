@@ -330,27 +330,27 @@ export default function BatchTracker() {
 
   const { data: distillations = [], isLoading: loadingD } = useQuery({
     queryKey: ['distillationRuns'],
-    queryFn: () => base44.entities.DistillationRun.list('-date', 200),
+    queryFn: () => base44.entities.DistillationRun.list('-date', 5000),
   });
 
   const { data: bottlings = [], isLoading: loadingB } = useQuery({
     queryKey: ['bottlingRuns'],
-    queryFn: () => base44.entities.BottlingRun.list('-date', 200),
+    queryFn: () => base44.entities.BottlingRun.list('-date', 5000),
   });
 
   const { data: subBatches = [] } = useQuery({
     queryKey: ['subBatches'],
-    queryFn: () => base44.entities.SubBatch.list('-date', 500),
+    queryFn: () => base44.entities.SubBatch.list('-date', 5000),
   });
 
   const { data: dispatches = [] } = useQuery({
     queryKey: ['dispatches'],
-    queryFn: () => base44.entities.Dispatch.list('-dispatch_date', 2000),
+    queryFn: () => base44.entities.Dispatch.list('-dispatch_date', 5000),
   });
 
   const { data: receiving = [] } = useQuery({
     queryKey: ['receiving'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 500),
+    queryFn: () => base44.entities.Receiving.list('-date_received', 5000),
   });
 
   // Build lookup: given a material name and a run date, find the most recent

@@ -53,7 +53,7 @@ export default function Distillation() {
 
   const { data: masterBatches = [] } = useQuery({
     queryKey: ['masterBatches'],
-    queryFn: () => base44.entities.MasterBatch.list('-date_started', 100),
+    queryFn: () => base44.entities.MasterBatch.list('-date_started', 5000),
   });
 
   // Only show batches that are not yet completed/bottling-done
@@ -62,7 +62,7 @@ export default function Distillation() {
   const { data: recipes = [] } = useQuery({
     queryKey: ['recipes'],
     queryFn: async () => {
-      const all = await base44.entities.Recipe.list('name', 50);
+      const all = await base44.entities.Recipe.list('name', 5000);
       // Include spirit recipes and any older records without recipe_type set (pre-dates the field)
       return all.filter(r => !r.recipe_type || r.recipe_type === 'spirit');
     },
@@ -70,12 +70,12 @@ export default function Distillation() {
 
   const { data: rawMaterials = [] } = useQuery({
     queryKey: ['rawMaterials'],
-    queryFn: () => base44.entities.RawMaterial.list('created_at', 500),
+    queryFn: () => base44.entities.RawMaterial.list('created_at', 5000),
   });
 
   const { data: runs = [], isLoading } = useQuery({
     queryKey: ['distillationRuns'],
-    queryFn: () => base44.entities.DistillationRun.list('-date', 50),
+    queryFn: () => base44.entities.DistillationRun.list('-date', 5000),
   });
 
   const { data: ethanolMaterials = [] } = useQuery({
@@ -87,14 +87,14 @@ export default function Distillation() {
   const { data: botanicalReceivings = [] } = useQuery({
     queryKey: ['receivings-botanical'],
     queryFn: async () => {
-      const all = await base44.entities.Receiving.list('-date_received', 2000);
+      const all = await base44.entities.Receiving.list('-date_received', 5000);
       return all.filter(r => (r.material_type || '').toLowerCase().startsWith('botanical'));
     },
   });
 
   const { data: allTanks = [] } = useQuery({
     queryKey: ['storageTanks'],
-    queryFn: () => base44.entities.StorageTank.list('name', 50),
+    queryFn: () => base44.entities.StorageTank.list('name', 5000),
   });
 
   // Only ethanol-holding tanks (diluted_ethanol, maceration_dilution, or sns purposes, in_use)

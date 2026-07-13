@@ -30,7 +30,7 @@ export default function Bottling() {
 
   const { data: runs = [], isLoading } = useQuery({
     queryKey: ['bottlingRuns'],
-    queryFn: () => base44.entities.BottlingRun.list('-date', 50),
+    queryFn: () => base44.entities.BottlingRun.list('-date', 5000),
   });
 
   const inputLALs = form.input_volume && form.input_abv

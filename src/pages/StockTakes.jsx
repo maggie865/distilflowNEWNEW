@@ -33,27 +33,27 @@ export default function StockTakes() {
 
   const { data: stockTakes = [], isLoading } = useQuery({
     queryKey: ['stockTakes'],
-    queryFn: () => db.StockTake.list('-date', 50),
+    queryFn: () => db.StockTake.list('-date', 5000),
   });
 
   const { data: allLines = [] } = useQuery({
     queryKey: ['stockTakeLines'],
-    queryFn: () => db.StockTakeLine.list('material_name', 2000),
+    queryFn: () => db.StockTakeLine.list('material_name', 5000),
   });
 
   const { data: rawMaterials = [] } = useQuery({
     queryKey: ['rawMaterials'],
-    queryFn: () => db.RawMaterial.list('name', 500),
+    queryFn: () => db.RawMaterial.list('name', 5000),
   });
 
   const { data: finishedGoods = [] } = useQuery({
     queryKey: ['finishedGoods'],
-    queryFn: () => db.FinishedGood.list('product_name', 1000),
+    queryFn: () => db.FinishedGood.list('product_name', 5000),
   });
 
   const { data: tanks = [] } = useQuery({
     queryKey: ['storageTanks'],
-    queryFn: () => db.StorageTank.list('name', 100),
+    queryFn: () => db.StorageTank.list('name', 5000),
   });
 
   const createMutation = useMutation({

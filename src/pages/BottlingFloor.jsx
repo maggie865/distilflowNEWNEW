@@ -62,7 +62,7 @@ export default function BottlingFloor() {
 
   const { data: masterBatches = [] } = useQuery({
     queryKey: ['masterBatches'],
-    queryFn: () => db.MasterBatch.list('-date_started', 100),
+    queryFn: () => db.MasterBatch.list('-date_started', 5000),
   });
 
   const { data: tanks = [] } = useQuery({
@@ -72,12 +72,12 @@ export default function BottlingFloor() {
 
   const { data: recipes = [] } = useQuery({
     queryKey: ['recipes'],
-    queryFn: () => db.Recipe.list('name', 100),
+    queryFn: () => db.Recipe.list('name', 5000),
   });
 
   const { data: bottlingRuns = [] } = useQuery({
     queryKey: ['bottlingFloorRuns'],
-    queryFn: () => db.BottlingRun.list('-date', 100),
+    queryFn: () => db.BottlingRun.list('-date', 5000),
   });
 
   // Only tanks that are final_product_storage, in_use, AND admin-marked as ready for bottling
@@ -219,7 +219,7 @@ export default function BottlingFloor() {
       // Use product_name + bottle size as a composite key to guarantee separate records
       const fgProductName = activeRun.product_name + ' ' + activeRun.bottle_size_ml + 'ml';
       if (totalBottles > 0) {
-        const allFG = await db.FinishedGood.list('product_name', 1000);
+        const allFG = await db.FinishedGood.list('product_name', 5000);
         const fg = allFG.find(g =>
           g.product_name === fgProductName &&
           g.batch_number === activeRun.batch_code
@@ -245,7 +245,7 @@ export default function BottlingFloor() {
       if (tastingBottles > 0) {
         const tastingName = `${activeRun.product_name} — Tasting`;
         const tastingLals = (tastingBottles * activeRun.bottle_size_ml / 1000) * abv / 100;
-        const allFGList = await db.FinishedGood.list('product_name', 2000);
+        const allFGList = await db.FinishedGood.list('product_name', 5000);
         const existingTasting = allFGList.filter(g =>
           g.product_name === tastingName &&
           g.batch_number === activeRun.batch_code &&
@@ -342,7 +342,7 @@ export default function BottlingFloor() {
       // 2. Deduct from finished goods
       if (bottlesProduced > 0) {
         const fgProductName = run.product_name + ' ' + (run.bottle_size_ml || 700) + 'ml';
-        const allFG = await db.FinishedGood.list('product_name', 1000);
+        const allFG = await db.FinishedGood.list('product_name', 5000);
         const fg = allFG.find(g =>
           g.product_name === fgProductName &&
           g.batch_number === run.batch_number
@@ -366,7 +366,7 @@ export default function BottlingFloor() {
       const tastingCount = tastingMatch ? parseInt(tastingMatch[1]) : 0;
       if (tastingCount > 0) {
         const tastingName = `${run.product_name} — Tasting`;
-        const allFGList = await db.FinishedGood.list('product_name', 2000);
+        const allFGList = await db.FinishedGood.list('product_name', 5000);
         const existingTasting = allFGList.filter(g =>
           g.product_name === tastingName &&
           g.batch_number === run.batch_number &&

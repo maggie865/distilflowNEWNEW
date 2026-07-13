@@ -73,7 +73,7 @@ export default function Tanks() {
 
   const { data: tanks = [], isLoading: tanksLoading } = useQuery({
     queryKey: ['storageTanks'],
-    queryFn: () => db.StorageTank.list('name', 50),
+    queryFn: () => db.StorageTank.list('name', 5000),
   });
 
   const addMutation = useMutation({
@@ -110,7 +110,7 @@ export default function Tanks() {
 
   const { data: movements = [], isLoading: movLoading } = useQuery({
     queryKey: ['tankMovements'],
-    queryFn: () => db.TankMovement.list('-date', 100),
+    queryFn: () => db.TankMovement.list('-date', 5000),
   });
 
   const handleTransfer = (tank) => {

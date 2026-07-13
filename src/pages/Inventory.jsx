@@ -460,37 +460,37 @@ export default function Inventory() {
 
   const { data: distillationRuns = [] } = useQuery({
     queryKey: ['distillationRuns'],
-    queryFn: () => base44.entities.DistillationRun.list('-date', 200),
+    queryFn: () => base44.entities.DistillationRun.list('-date', 5000),
   });
 
   const { data: bottlingRuns = [] } = useQuery({
     queryKey: ['bottlingRuns'],
-    queryFn: () => base44.entities.BottlingRun.list('-date', 200),
+    queryFn: () => base44.entities.BottlingRun.list('-date', 5000),
   });
 
   const { data: dilutions = [] } = useQuery({
     queryKey: ['dilutions'],
-    queryFn: () => base44.entities.Dilution.list('-date', 500),
+    queryFn: () => base44.entities.Dilution.list('-date', 5000),
   });
 
   const { data: finishedGoods = [], isLoading: loadingFinished } = useQuery({
     queryKey: ['finishedGoods'],
-    queryFn: () => base44.entities.FinishedGood.list('product_name', 2000),
+    queryFn: () => base44.entities.FinishedGood.list('product_name', 5000),
   });
 
   const { data: thresholds = [] } = useQuery({
     queryKey: ['stockThresholds'],
-    queryFn: async () => { try { return await base44.entities.StockThreshold.list('material_name', 200); } catch { return []; } },
+    queryFn: async () => { try { return await base44.entities.StockThreshold.list('material_name', 5000); } catch { return []; } },
   });
 
   const { data: allReceivings = [] } = useQuery({
     queryKey: ['receivings'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 2000),
+    queryFn: () => base44.entities.Receiving.list('-date_received', 5000),
   });
 
   const { data: recipes = [] } = useQuery({
     queryKey: ['recipes'],
-    queryFn: () => base44.entities.Recipe.list('name', 50),
+    queryFn: () => base44.entities.Recipe.list('name', 5000),
   });
 
   // quantity_bottles on each FinishedGood record is already the correct post-dispatch figure.

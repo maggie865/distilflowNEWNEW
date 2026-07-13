@@ -71,19 +71,19 @@ export default function Receiving() {
 
   const { refetch } = useQuery({
     queryKey: ['receivings'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 500),
+    queryFn: () => base44.entities.Receiving.list('-date_received', 5000),
   });
 
   const isRefreshing = usePullToRefresh(() => refetch());
 
   const receivingsQuery = useQuery({
     queryKey: ['receivings'],
-    queryFn: () => base44.entities.Receiving.list('-date_received', 500),
+    queryFn: () => base44.entities.Receiving.list('-date_received', 5000),
   });
 
   const suppliersQuery = useQuery({
     queryKey: ['suppliers'],
-    queryFn: () => base44.entities.Supplier.list('business_name', 100),
+    queryFn: () => base44.entities.Supplier.list('business_name', 5000),
   });
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));

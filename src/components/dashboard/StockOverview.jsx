@@ -9,15 +9,15 @@ export default function StockOverview() {
 
   const { data: finishedGoods = [] } = useQuery({
     queryKey: ['finishedGoods'],
-    queryFn: () => base44.entities.FinishedGood.list('-updated_date', 2000),
+    queryFn: () => base44.entities.FinishedGood.list('-updated_date', 5000),
   });
   const { data: warehouseStock = [] } = useQuery({
     queryKey: ['warehouseStock'],
-    queryFn: () => base44.entities.WarehouseStock.list('-updated_date', 2000),
+    queryFn: () => base44.entities.WarehouseStock.list('-updated_date', 5000),
   });
   const { data: tanks = [] } = useQuery({
     queryKey: ['storageTanks'],
-    queryFn: () => base44.entities.StorageTank.list('name', 100),
+    queryFn: () => base44.entities.StorageTank.list('name', 5000),
   });
 
   const distilleryBottles = finishedGoods.reduce((s, f) => s + (f.quantity_bottles || 0), 0);

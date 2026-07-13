@@ -22,7 +22,7 @@ export default function StockReconciliation() {
 
   const { data: finishedGoods = [], isLoading } = useQuery({
     queryKey: ['finishedGoodsReconcile'],
-    queryFn: () => base44.entities.FinishedGood.list('product_name', 2000),
+    queryFn: () => base44.entities.FinishedGood.list('product_name', 5000),
   });
 
   // Separate Tasting items

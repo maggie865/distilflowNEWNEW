@@ -71,7 +71,7 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
           total_lals: parseFloat(((fg.quantity_bottles - transferQty) * lalsPerBottle).toFixed(4)),
         });
 
-        const allWS = await base44.entities.WarehouseStock.list('-date_transferred_in', 2000);
+        const allWS = await base44.entities.WarehouseStock.list('-date_transferred_in', 5000);
         const existing = allWS.filter(w =>
           w.product_name === fg.product_name &&
           w.batch_number === fg.batch_number &&

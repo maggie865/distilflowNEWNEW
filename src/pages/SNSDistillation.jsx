@@ -42,7 +42,7 @@ export default function SNSDistillation() {
     queryKey: ['snsRuns'],
     queryFn: async () => {
       try {
-        return await db.SNSRun.list('-date', 50);
+        return await db.SNSRun.list('-date', 5000);
       } catch {
         return [];
       }
@@ -51,7 +51,7 @@ export default function SNSDistillation() {
 
   const { data: tanks = [] } = useQuery({
     queryKey: ['storageTanks'],
-    queryFn: () => db.StorageTank.list('name', 50),
+    queryFn: () => db.StorageTank.list('name', 5000),
   });
 
   // Tanks with heads/tails content (IBC tanks designated for heads & tails)

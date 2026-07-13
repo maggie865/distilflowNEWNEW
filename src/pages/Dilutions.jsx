@@ -90,14 +90,14 @@ export default function Dilutions() {
   const { data: receivings = [] } = useQuery({
     queryKey: ['receivings-ethanol'],
     queryFn: async () => {
-      const all = await db.Receiving.list('-date_received', 2000);
+      const all = await db.Receiving.list('-date_received', 5000);
       return all.filter(r => (r.material_type || '').toLowerCase() === 'ethanol');
     },
   });
 
   const { data: tanks = [] } = useQuery({
     queryKey: ['storageTanks'],
-    queryFn: () => db.StorageTank.list('name', 50),
+    queryFn: () => db.StorageTank.list('name', 5000),
   });
 
   const ethanolDestTanks = tanks.filter(t => t.purpose === 'diluted_ethanol');
@@ -346,7 +346,7 @@ export default function Dilutions() {
       const outputAbv = parseFloat(dilution.output_abv) || 0;
       const today = new Date().toISOString().split('T')[0];
 
-      const allTanks = await db.StorageTank.list('name', 100);
+      const allTanks = await db.StorageTank.list('name', 5000);
 
       if (isHearts) {
         const isTransfer = dilution.notes?.includes('Transferred to Tank');
@@ -415,7 +415,7 @@ export default function Dilutions() {
           });
         }
       } else {
-        const allMovements = await db.TankMovement.list('-date', 500);
+        const allMovements = await db.TankMovement.list('-date', 5000);
         const fillMovement = allMovements.find(m =>
           m.date === dilution.date &&
           m.batch_number === dilution.batch_number &&

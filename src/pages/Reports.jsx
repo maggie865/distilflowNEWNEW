@@ -34,22 +34,22 @@ export default function Reports() {
   const [endDate, setEndDate] = useState(format(now, 'yyyy-MM-dd'));
   const [exporting, setExporting] = useState(false);
 
-  const { data: wastage = [] } = useQuery({ queryKey: ['wastage'], queryFn: () => db.WastageRecord.list('-date', 2000) });
-  const { data: receiving = [] } = useQuery({ queryKey: ['receiving'], queryFn: () => db.Receiving.list('-date_received', 500) });
+  const { data: wastage = [] } = useQuery({ queryKey: ['wastage'], queryFn: () => db.WastageRecord.list('-date', 5000) });
+  const { data: receiving = [] } = useQuery({ queryKey: ['receiving'], queryFn: () => db.Receiving.list('-date_received', 5000) });
   const { data: dispatches = [] } = useQuery({
     queryKey: ['dispatches'],
-    queryFn: () => db.Dispatch.list('-dispatch_date', 2000),
+    queryFn: () => db.Dispatch.list('-dispatch_date', 5000),
   });
-  const { data: rawMaterials = [] } = useQuery({ queryKey: ['rawMaterials'], queryFn: () => db.RawMaterial.list('name', 200) });
-  const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => db.FinishedGood.list('product_name', 200) });
-  const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => db.WarehouseStock.list('-date_transferred_in', 200) });
-  const { data: distillationRuns = [] } = useQuery({ queryKey: ['distillationRuns'], queryFn: () => db.DistillationRun.list('-date', 500) });
-  const { data: bottlingRuns = [] } = useQuery({ queryKey: ['bottlingRuns'], queryFn: () => db.BottlingRun.list('-date', 200) });
-  const { data: masterBatches = [] } = useQuery({ queryKey: ['masterBatches'], queryFn: () => db.MasterBatch.list('-date_started', 200) });
-  const { data: dilutions = [] } = useQuery({ queryKey: ['dilutions'], queryFn: () => db.Dilution.list('-date', 500) });
-  const { data: tankMovements = [] } = useQuery({ queryKey: ['tankMovements'], queryFn: () => db.TankMovement.list('-date', 500) });
-  const { data: tanks = [] } = useQuery({ queryKey: ['storageTanks'], queryFn: () => db.StorageTank.list('name', 100) });
-  const { data: recipes = [] } = useQuery({ queryKey: ['recipes'], queryFn: () => db.Recipe.list('name', 100) });
+  const { data: rawMaterials = [] } = useQuery({ queryKey: ['rawMaterials'], queryFn: () => db.RawMaterial.list('name', 5000) });
+  const { data: finishedGoods = [] } = useQuery({ queryKey: ['finishedGoods'], queryFn: () => db.FinishedGood.list('product_name', 5000) });
+  const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => db.WarehouseStock.list('-date_transferred_in', 5000) });
+  const { data: distillationRuns = [] } = useQuery({ queryKey: ['distillationRuns'], queryFn: () => db.DistillationRun.list('-date', 5000) });
+  const { data: bottlingRuns = [] } = useQuery({ queryKey: ['bottlingRuns'], queryFn: () => db.BottlingRun.list('-date', 5000) });
+  const { data: masterBatches = [] } = useQuery({ queryKey: ['masterBatches'], queryFn: () => db.MasterBatch.list('-date_started', 5000) });
+  const { data: dilutions = [] } = useQuery({ queryKey: ['dilutions'], queryFn: () => db.Dilution.list('-date', 5000) });
+  const { data: tankMovements = [] } = useQuery({ queryKey: ['tankMovements'], queryFn: () => db.TankMovement.list('-date', 5000) });
+  const { data: tanks = [] } = useQuery({ queryKey: ['storageTanks'], queryFn: () => db.StorageTank.list('name', 5000) });
+  const { data: recipes = [] } = useQuery({ queryKey: ['recipes'], queryFn: () => db.Recipe.list('name', 5000) });
 
   // Net raw material stock from shared hook (includes receiving-only items with costs)
   const { rawMaterialsWithNetStock: rawMaterialsNetStock } = useRawMaterialsNetStock();
