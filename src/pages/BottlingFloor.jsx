@@ -271,12 +271,27 @@ export default function BottlingFloor() {
             notes: 'Tasting bottles — rejected from main run',
           });
         }
+
+        // Also create a WastageRecord for reporting (captures bottling losses in wastage report)
+        await db.WastageRecord.create({
+          date: new Date().toISOString().split('T')[0],
+          batch_number: activeRun.batch_code,
+          product_name: activeRun.product_name,
+          volume: parseFloat((tastingBottles * activeRun.bottle_size_ml / 1000).toFixed(3)),
+          abv: activeRun.abv,
+          lals: parseFloat(tastingLals.toFixed(4)),
+          reason: `Tasting/sample bottles — ${tastingBottles} × ${activeRun.bottle_size_ml}ml`,
+          source: 'bottling',
+          bottle_size_ml: activeRun.bottle_size_ml,
+          quantity_bottles: tastingBottles,
+        });
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bottlingFloorRuns'] });
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
+      queryClient.invalidateQueries({ queryKey: ['wastageRecords'] });
       localStorage.removeItem(ACTIVE_RUN_KEY);
       setActiveRun(null);
       resetForm();
@@ -364,31 +379,10 @@ export default function BottlingFloor() {
         }
       }
 
-      // 3. Parse tasting bottles from notes and reverse tasting stock
-      const tastingMatch = run.notes?.match(/Tasting:\s*(\d+)/);
-      const tastingCount = tastingMatch ? parseInt(tastingMatch[1]) : 0;
-      if (tastingCount > 0) {
-        const tastingName = `${run.product_name} — Tasting`;
-        const allFGList = await db.FinishedGood.list('product_name', 5000);
-        const existingTasting = allFGList.filter(g =>
-          g.product_name === tastingName &&
-          g.batch_number === run.batch_number &&
-          Number(g.bottle_size_ml) === Number(run.bottle_size_ml)
-        );
-        if (existingTasting.length > 0) {
-          const tg = existingTasting[0];
-          const tastingLals = (tastingCount * (run.bottle_size_ml || 700) / 1000) * abv / 100;
-          const newQty = Math.max(0, (tg.quantity_bottles || 0) - tastingCount);
-          const newLals = Math.max(0, (tg.total_lals || 0) - tastingLals);
-          if (newQty === 0) {
-            await db.FinishedGood.delete(tg.id);
-          } else {
-            await db.FinishedGood.update(tg.id, {
-              quantity_bottles: newQty,
-              total_lals: parseFloat(newLals.toFixed(4)),
-            });
-          }
-        }
+      // 3. Delete WastageRecord(s) created for tasting bottles from this run
+      const tastingWastage = await db.WastageRecord.filter({ source: 'bottling', batch_number: run.batch_number });
+      for (const wr of tastingWastage) {
+        await db.WastageRecord.delete(wr.id);
       }
 
       // 4. Delete the run record
@@ -398,6 +392,7 @@ export default function BottlingFloor() {
       queryClient.invalidateQueries({ queryKey: ['bottlingFloorRuns'] });
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
+      queryClient.invalidateQueries({ queryKey: ['wastageRecords'] });
       setDeletingRun(null);
       toast.success('Run deleted and inventory reversed');
     },
@@ -828,7 +823,7 @@ export default function BottlingFloor() {
               <ul className="mt-2 space-y-1 list-disc list-inside text-sm">
                 <li>Return <strong>{deletingRun?.input_volume?.toFixed(1)}L</strong> of spirit back to the source tank</li>
                 <li>Remove <strong>{deletingRun?.bottles_produced}</strong> bottles from finished goods stock</li>
-                <li>Reverse any tasting bottle stock additions</li>
+                <li>Delete tasting bottle wastage records for this batch</li>
               </ul>
               <p className="mt-2 font-medium text-destructive">This cannot be undone.</p>
             </AlertDialogDescription>
