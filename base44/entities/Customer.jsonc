@@ -9,6 +9,10 @@
     "delivery_address": {
       "type": "string",
       "description": "Standard delivery address"
+    },
+    "xero_contact_id": {
+      "type": "string",
+      "description": "Xero contact ID (set automatically when Xero integration is connected)"
     }
   },
   "required": [

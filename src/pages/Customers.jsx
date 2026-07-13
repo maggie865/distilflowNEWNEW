@@ -242,6 +242,16 @@ export default function Customers() {
                 className="mt-1"
               />
             </div>
+            <div>
+              <Label>Xero Contact ID</Label>
+              <Input
+                value={editingCustomer?.xero_contact_id || ''}
+                readOnly
+                placeholder="Not yet linked"
+                className="mt-1 bg-muted"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Set automatically when Xero integration is connected.</p>
+            </div>
             <Button
               onClick={() => editMutation.mutate()}
               disabled={editMutation.isPending || !editForm.business_name || !editForm.delivery_address}

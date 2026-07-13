@@ -96,6 +96,10 @@
     "notes": {
       "type": "string",
       "description": "Additional notes"
+    },
+    "xero_invoice_id": {
+      "type": "string",
+      "description": "Xero invoice ID (set automatically when synced to Xero)"
     }
   },
   "required": [

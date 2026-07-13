@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Truck, PackageCheck, MapPin, Trash2, Search, Map, Pencil, RotateCcw, ArrowRightLeft, Plus, Store } from 'lucide-react';
+import { Truck, PackageCheck, MapPin, Trash2, Search, Map, Pencil, RotateCcw, ArrowRightLeft, Plus, Store, FileCheck } from 'lucide-react';
 import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -295,9 +295,16 @@ export default function DispatchHub() {
                   <TableCell>{(() => { try { const dt = new Date(d.dispatch_date?.replace(/-/g, '/')); return isNaN(dt) ? d.dispatch_date || '—' : format(dt, 'dd MMM yyyy'); } catch { return d.dispatch_date || '—'; } })()}</TableCell>
                   <TableCell><Badge variant={d.dispatched_from === 'Auckland 3PL' ? 'secondary' : 'outline'} className="text-xs">{d.dispatched_from || 'Bluff'}</Badge></TableCell>
                   <TableCell className="font-semibold">
-                    {d.sales_channel && d.sales_channel !== 'wholesale' ? (
-                      <Badge variant="secondary" className="text-xs">{CHANNEL_LABELS[d.sales_channel] || d.sales_channel}</Badge>
-                    ) : d.customer_name}
+                    <div className="flex items-center gap-1.5">
+                      {d.sales_channel && d.sales_channel !== 'wholesale' ? (
+                        <Badge variant="secondary" className="text-xs">{CHANNEL_LABELS[d.sales_channel] || d.sales_channel}</Badge>
+                      ) : d.customer_name}
+                      {d.xero_invoice_id && (
+                        <button onClick={() => toast.info(`Xero Invoice ID: ${d.xero_invoice_id}`)} title={`Xero Invoice: ${d.xero_invoice_id}`}>
+                          <FileCheck className="w-3.5 h-3.5 text-sky-600" />
+                        </button>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>{d.product_name}</TableCell>
                   <TableCell className="font-mono text-xs">{d.batch_number}</TableCell>
@@ -342,6 +349,11 @@ export default function DispatchHub() {
                 <>
                   <Badge variant={d.dispatched_from === 'Auckland 3PL' ? 'secondary' : 'outline'} className="text-xs">{d.dispatched_from || 'Bluff'}</Badge>
                   <StatusBadge status={d.status} />
+                  {d.xero_invoice_id && (
+                    <button onClick={() => toast.info(`Xero Invoice ID: ${d.xero_invoice_id}`)}>
+                      <FileCheck className="w-3.5 h-3.5 text-sky-600" />
+                    </button>
+                  )}
                 </>
               }
               accent={<span className="text-lg font-bold text-primary">{d.quantity_bottles}</span>}
