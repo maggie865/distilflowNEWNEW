@@ -17,7 +17,8 @@
         "distillation_fill",
         "cleaning",
         "adjustment",
-        "disposal"
+        "disposal",
+        "dilution_reversed"
       ],
       "description": "Type of tank movement"
     },

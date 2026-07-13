@@ -9,7 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Calculator, FlaskConical, Droplets, Pencil, Search } from 'lucide-react';
+import { Calculator, FlaskConical, Droplets, Pencil, Search, Trash2 } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -54,6 +55,7 @@ export default function Dilutions() {
   const [ethanolForm, setEthanolForm] = useState(BLANK_ETHANOL);
   const [heartsForm, setHeartsForm] = useState(BLANK_HEARTS);
   const [editingDilution, setEditingDilution] = useState(null);
+  const [deletingDilution, setDeletingDilution] = useState(null);
   const [currentPage, setCurrentPage] = useState(0);
   const queryClient = useQueryClient();
 
@@ -333,6 +335,126 @@ export default function Dilutions() {
       setEditingDilution(null);
       toast.success('Dilution updated');
     },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (dilution) => {
+      const isHearts = dilution.notes?.includes('[Heads Dilution]');
+      const waterAdded = parseFloat(dilution.water_added) || 0;
+      const outputVolume = parseFloat(dilution.output_volume) || 0;
+      const outputLals = parseFloat(dilution.output_lals) || 0;
+      const outputAbv = parseFloat(dilution.output_abv) || 0;
+      const today = new Date().toISOString().split('T')[0];
+
+      const allTanks = await db.StorageTank.list('name', 100);
+
+      if (isHearts) {
+        const isTransfer = dilution.notes?.includes('Transferred to Tank');
+        const sourceMatch = dilution.notes?.match(/Source tank: ([^\s.]+)/);
+        const destMatch = dilution.notes?.match(/Transferred to Tank ([^\s.]+)/);
+        const sourceName = sourceMatch?.[1];
+        const destName = destMatch?.[1];
+
+        if (isTransfer && destName) {
+          const sourceTank = allTanks.find(t => t.name === sourceName);
+          const destTank = allTanks.find(t => t.name === destName);
+
+          if (sourceTank) {
+            const newSrcVol = (sourceTank.current_volume || 0) + outputVolume;
+            const newSrcAbv = newSrcVol > 0 ? (outputLals / newSrcVol) * 100 : 0;
+            await db.StorageTank.update(sourceTank.id, {
+              current_volume: parseFloat(newSrcVol.toFixed(3)),
+              current_abv: parseFloat(newSrcAbv.toFixed(2)),
+              current_product: dilution.batch_number || sourceTank.current_product,
+              current_batch: dilution.batch_number || sourceTank.current_batch,
+              status: 'in_use',
+            });
+          }
+
+          if (destTank) {
+            const newDestVol = Math.max(0, (destTank.current_volume || 0) - outputVolume);
+            const destLals = (destTank.current_volume || 0) * (destTank.current_abv || 0) / 100;
+            const newDestLals = Math.max(0, destLals - outputLals);
+            const newDestAbv = newDestVol > 0 ? (newDestLals / newDestVol) * 100 : 0;
+            await db.StorageTank.update(destTank.id, {
+              current_volume: parseFloat(newDestVol.toFixed(3)),
+              current_abv: parseFloat(newDestAbv.toFixed(2)),
+              ...(newDestVol === 0 ? { current_product: '', current_batch: '', status: 'empty' } : {}),
+            });
+          }
+
+          await db.TankMovement.create({
+            date: today, action: 'dilution_reversed', tank_name: sourceName || 'unknown',
+            volume_litres: outputVolume, abv: outputAbv, lals: outputLals,
+            product: dilution.batch_number, batch_number: dilution.batch_number,
+            notes: `Reversed hearts dilution transfer — ${outputVolume}L returned to source`,
+          });
+          await db.TankMovement.create({
+            date: today, action: 'dilution_reversed', tank_name: destName,
+            volume_litres: outputVolume, abv: outputAbv, lals: outputLals,
+            product: dilution.batch_number, batch_number: dilution.batch_number,
+            notes: `Reversed hearts dilution transfer — ${outputVolume}L removed from destination`,
+          });
+        } else {
+          const sourceTank = allTanks.find(t => t.name === sourceName);
+          if (sourceTank) {
+            const newVol = Math.max(0, (sourceTank.current_volume || 0) - waterAdded);
+            const currentLals = (sourceTank.current_volume || 0) * (sourceTank.current_abv || 0) / 100;
+            const newAbv = newVol > 0 ? (currentLals / newVol) * 100 : 0;
+            await db.StorageTank.update(sourceTank.id, {
+              current_volume: parseFloat(newVol.toFixed(3)),
+              current_abv: parseFloat(newAbv.toFixed(2)),
+              ...(newVol === 0 ? { current_product: '', current_batch: '', status: 'empty' } : {}),
+            });
+          }
+          await db.TankMovement.create({
+            date: today, action: 'dilution_reversed', tank_name: sourceName || 'unknown',
+            volume_litres: waterAdded, abv: 0, lals: 0,
+            product: dilution.batch_number, batch_number: dilution.batch_number,
+            notes: `Reversed hearts in-place dilution — ${waterAdded}L water removed`,
+          });
+        }
+      } else {
+        const allMovements = await db.TankMovement.list('-date', 500);
+        const fillMovement = allMovements.find(m =>
+          m.date === dilution.date &&
+          m.batch_number === dilution.batch_number &&
+          m.action === 'fill'
+        );
+        const tankName = fillMovement?.tank_name;
+
+        if (tankName) {
+          const tank = allTanks.find(t => t.name === tankName);
+          if (tank) {
+            const newVol = Math.max(0, (tank.current_volume || 0) - waterAdded);
+            const currentLals = (tank.current_volume || 0) * (tank.current_abv || 0) / 100;
+            const newAbv = newVol > 0 ? (currentLals / newVol) * 100 : 0;
+            await db.StorageTank.update(tank.id, {
+              current_volume: parseFloat(newVol.toFixed(3)),
+              current_abv: parseFloat(newAbv.toFixed(2)),
+              ...(newVol === 0 ? { current_product: '', current_batch: '', status: 'empty' } : {}),
+            });
+          }
+        }
+        await db.TankMovement.create({
+          date: today, action: 'dilution_reversed', tank_name: tankName || 'unknown',
+          volume_litres: waterAdded, abv: 0, lals: 0,
+          product: dilution.batch_number, batch_number: dilution.batch_number,
+          notes: `Reversed ethanol dilution — ${waterAdded}L water removed`,
+        });
+      }
+
+      await db.Dilution.delete(dilution.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dilutions'] });
+      queryClient.invalidateQueries({ queryKey: ['dilutions-sheet'] });
+      queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+      queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
+      setDeletingDilution(null);
+      toast.success('Dilution deleted and tank volumes reversed');
+    },
+    onError: (err) => toast.error(err.message || 'Failed to delete dilution'),
   });
 
   const CalcDisplay = ({ value, label }) => (
@@ -711,14 +833,24 @@ export default function Dilutions() {
                     <TableCell className="text-sm font-medium">{d.output_lals?.toFixed(3)}</TableCell>
                     <TableCell><StatusBadge status={d.status} /></TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => setEditingDilution({ ...d })}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => setEditingDilution({ ...d })}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:text-destructive"
+                          onClick={() => setDeletingDilution(d)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -752,7 +884,10 @@ export default function Dilutions() {
                 }
                 accent={<span className="text-sm font-semibold">{d.output_abv?.toFixed(1)}%</span>}
                 actions={
-                  <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => setEditingDilution({ ...d })}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                  <>
+                    <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => setEditingDilution({ ...d })}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                    <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => setDeletingDilution(d)}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
+                  </>
                 }
               >
                 <MobileDetailRow label="Input" value={`${d.input_ethanol_volume}L @ ${d.input_abv}%`} />
@@ -892,6 +1027,24 @@ export default function Dilutions() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deletingDilution} onOpenChange={v => !v && setDeletingDilution(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Dilution?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reverse all tank volume changes from this dilution. Are you sure?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={() => deleteMutation.mutate(deletingDilution)} disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? 'Deleting…' : 'Delete & Reverse'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
