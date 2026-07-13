@@ -128,6 +128,10 @@
       "type": "number",
       "description": "LALs remaining in still"
     },
+    "destination_tank_id": {
+      "type": "string",
+      "description": "ID of the StorageTank where hearts output is credited on completion"
+    },
     "status": {
       "type": "string",
       "enum": [

@@ -14,6 +14,7 @@
         "transfer_out",
         "bottling_draw",
         "dilution",
+        "distillation_fill",
         "cleaning",
         "adjustment",
         "disposal"

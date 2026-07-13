@@ -33,6 +33,7 @@ const EMPTY_FORM = {
   hearts_volume: '', hearts_abv: '',
   tails_volume: '', tails_abv: '',
   dumped_volume: '', dumped_abv: '', dumped_notes: '',
+  destination_tank_id: '',
   status: 'planned', notes: ''
 };
 
@@ -139,6 +140,7 @@ export default function Distillation() {
       dumped_volume: run.dumped_volume ?? '',
       dumped_abv: run.dumped_abv ?? '',
       dumped_notes: run.dumped_notes || '',
+      destination_tank_id: run.destination_tank_id || '',
       status: run.status || 'planned',
       notes: run.notes || '',
     });
@@ -229,6 +231,7 @@ export default function Distillation() {
   const buildPayload = (data) => {
     const payload = { ...data };
     delete payload.source_tank_ids; // UI-only, not stored on DistillationRun
+    payload.destination_tank_id = data.destination_tank_id || undefined;
     numericFields.forEach(f => { payload[f] = data[f] !== '' ? parseFloat(data[f]) : undefined; });
     payload.input_lals = inputLALs ? parseFloat(inputLALs.toFixed(4)) : undefined;
     payload.heads_lals = headsLALs ? parseFloat(headsLALs.toFixed(4)) : undefined;
@@ -240,6 +243,51 @@ export default function Distillation() {
     payload.output_abv = calcOutputAbv > 0 ? parseFloat(calcOutputAbv.toFixed(2)) : undefined;
     payload.output_lals = calcOutputLALs > 0 ? parseFloat(calcOutputLALs.toFixed(4)) : undefined;
     return payload;
+  };
+
+  const creditHeartsToTank = async (tankId, heartsVolume, heartsAbv, heartsLALs, batchNumber, productName, date) => {
+    const tank = allTanks.find(t => t.id === tankId);
+    if (!tank) return;
+    const existingVol = tank.current_volume || 0;
+    const existingAbv = tank.current_abv || 0;
+    const newVol = parseFloat((existingVol + heartsVolume).toFixed(3));
+    const blendedAbv = newVol > 0
+      ? parseFloat(((existingVol * existingAbv + heartsVolume * heartsAbv) / newVol).toFixed(2))
+      : heartsAbv;
+    await base44.entities.StorageTank.update(tank.id, {
+      current_volume: newVol,
+      current_abv: blendedAbv,
+      current_product: productName || tank.current_product,
+      current_batch: batchNumber || tank.current_batch,
+      status: 'in_use',
+    });
+    await base44.entities.TankMovement.create({
+      date: date || format(new Date(), 'yyyy-MM-dd'),
+      action: 'distillation_fill',
+      tank_name: tank.name,
+      volume_litres: parseFloat(heartsVolume.toFixed(3)),
+      abv: parseFloat(heartsAbv.toFixed(2)),
+      lals: parseFloat((heartsLALs || 0).toFixed(4)),
+      product: productName,
+      batch_number: batchNumber,
+      notes: `Hearts from distillation run ${batchNumber}`,
+    });
+  };
+
+  const reverseHeartsFromTank = async (tankId, heartsVolume, heartsAbv) => {
+    const tank = allTanks.find(t => t.id === tankId);
+    if (!tank) return;
+    const existingVol = tank.current_volume || 0;
+    const existingAbv = tank.current_abv || 0;
+    const newVol = parseFloat(Math.max(0, existingVol - heartsVolume).toFixed(3));
+    const newAbv = newVol > 0
+      ? parseFloat(Math.max(0, (existingVol * existingAbv - heartsVolume * heartsAbv) / newVol).toFixed(2))
+      : 0;
+    await base44.entities.StorageTank.update(tank.id, {
+      current_volume: newVol,
+      current_abv: newAbv,
+      status: newVol <= 0 ? 'empty' : tank.status,
+    });
   };
 
   const createMutation = useMutation({
@@ -345,12 +393,18 @@ export default function Distillation() {
           });
         }
       }
+
+      // Credit hearts to destination tank when run is completed
+      if (data.status === 'completed' && data.destination_tank_id && payload.hearts_volume && payload.hearts_abv) {
+        await creditHeartsToTank(data.destination_tank_id, payload.hearts_volume, payload.hearts_abv, payload.hearts_lals, data.batch_number, data.product_name, data.date);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['distillationRuns'] });
       queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       queryClient.invalidateQueries({ queryKey: ['rawMaterials-ethanol'] });
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+      queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
       setOpen(false);
       toast.success('Distillation run recorded');
     },
@@ -358,10 +412,24 @@ export default function Distillation() {
 
   const updateMutation = useMutation({
     mutationFn: async (data) => {
-      await base44.entities.DistillationRun.update(editing.id, buildPayload(data));
+      const payload = buildPayload(data);
+
+      // Reverse old destination tank credit if run was previously completed
+      if (editing.status === 'completed' && editing.destination_tank_id && editing.hearts_volume) {
+        await reverseHeartsFromTank(editing.destination_tank_id, editing.hearts_volume, editing.hearts_abv || 0);
+      }
+
+      await base44.entities.DistillationRun.update(editing.id, payload);
+
+      // Apply new destination tank credit if run is completed
+      if (data.status === 'completed' && data.destination_tank_id && payload.hearts_volume && payload.hearts_abv) {
+        await creditHeartsToTank(data.destination_tank_id, payload.hearts_volume, payload.hearts_abv, payload.hearts_lals, data.batch_number, data.product_name, data.date);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['distillationRuns'] });
+      queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+      queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
       setOpen(false);
       toast.success('Distillation run updated');
     },
@@ -829,6 +897,22 @@ export default function Distillation() {
                 </div>
               </div>
             )}
+
+            <div>
+              <Label>Destination Tank (Hearts)</Label>
+              <Select value={form.destination_tank_id} onValueChange={v => set('destination_tank_id', v)}>
+                <SelectTrigger><SelectValue placeholder="Select tank for hearts output (optional)…" /></SelectTrigger>
+                <SelectContent>
+                  {allTanks.filter(t => t.status !== 'cleaning').map(t => (
+                    <SelectItem key={t.id} value={t.id}>
+                      Tank {t.name}
+                      {t.current_volume > 0 ? ` — ${t.current_volume.toFixed(1)}L` : ' — empty'}
+                      {t.current_product ? ` (${t.current_product})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <div>
               <Label>Status</Label>
