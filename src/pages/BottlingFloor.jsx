@@ -245,7 +245,12 @@ export default function BottlingFloor() {
       if (tastingBottles > 0) {
         const tastingName = `${activeRun.product_name} — Tasting`;
         const tastingLals = (tastingBottles * activeRun.bottle_size_ml / 1000) * abv / 100;
-        const existingTasting = await db.FinishedGood.filter({ product_name: tastingName });
+        const allFGList = await db.FinishedGood.list('product_name', 2000);
+        const existingTasting = allFGList.filter(g =>
+          g.product_name === tastingName &&
+          g.batch_number === activeRun.batch_code &&
+          Number(g.bottle_size_ml) === Number(activeRun.bottle_size_ml)
+        );
         if (existingTasting.length > 0) {
           const tg = existingTasting[0];
           await db.FinishedGood.update(tg.id, {
@@ -361,7 +366,12 @@ export default function BottlingFloor() {
       const tastingCount = tastingMatch ? parseInt(tastingMatch[1]) : 0;
       if (tastingCount > 0) {
         const tastingName = `${run.product_name} — Tasting`;
-        const existingTasting = await db.FinishedGood.filter({ product_name: tastingName });
+        const allFGList = await db.FinishedGood.list('product_name', 2000);
+        const existingTasting = allFGList.filter(g =>
+          g.product_name === tastingName &&
+          g.batch_number === run.batch_number &&
+          Number(g.bottle_size_ml) === Number(run.bottle_size_ml)
+        );
         if (existingTasting.length > 0) {
           const tg = existingTasting[0];
           const tastingLals = (tastingCount * (run.bottle_size_ml || 700) / 1000) * abv / 100;
