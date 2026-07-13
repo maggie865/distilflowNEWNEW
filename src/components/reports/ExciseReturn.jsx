@@ -113,10 +113,24 @@ export default function ExciseReturn({
 
   // === EXCISE CALCULATION ===
 
-  // 1. ALL dispatches from distillery (Bluff) are taxable — including samples
+  // 1. Taxable distillery dispatches — standard sales and samples only
+  // Duty free and export dispatches from Bluff are excise exempt
   const bluffDispatchLals = monthDispatches
-    .filter(d => !(d.dispatched_from || '').includes('Auckland'))
+    .filter(d =>
+      !(d.dispatched_from || '').includes('Auckland') &&
+      d.duty_free !== true &&
+      d.is_export !== true
+    )
     .reduce((s, d) => s + (d.total_lals || 0), 0);
+
+  // Exempt distillery dispatches — duty free and export from Bluff
+  const dutyFreeFromBluff = monthDispatches
+    .filter(d => !(d.dispatched_from || '').includes('Auckland') && d.duty_free === true)
+    .reduce((s, d) => s + (d.total_lals || 0), 0);
+  const exportFromBluff = monthDispatches
+    .filter(d => !(d.dispatched_from || '').includes('Auckland') && d.is_export === true)
+    .reduce((s, d) => s + (d.total_lals || 0), 0);
+  const bluffExemptLals = dutyFreeFromBluff + exportFromBluff;
 
   // 2. LALs transferred to 3PL this month — taxable at point of transfer
   const transfersToWarehouse = warehouseStockAll.filter(ws => {
@@ -151,7 +165,7 @@ export default function ExciseReturn({
     .reduce((s, d) => s + (d.total_lals || 0), 0);
 
   const lalsSamples = monthDispatches
-    .filter(d => d.is_sample)
+    .filter(d => d.is_sample && !(d.dispatched_from || '').includes('Auckland'))
     .reduce((s, d) => s + (d.total_lals || 0), 0);
 
   // --- All dispatched LALs (for mass balance) ---
@@ -193,20 +207,26 @@ export default function ExciseReturn({
       `Company: ${companyName}`,
       `Category: Spirits containing more than 23% vol.`,
       ``,
-      `Net Taxable LALs:         ${totalTaxableLals.toFixed(3)} LALs`,
-      `Excise Rate:              $${exciseRate.toFixed(3)} per LAL (GST excl.)`,
-      `Excise Due (GST excl.):   $${exciseDueGSTExcl.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      `GST (15%):                $${gstAmount.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      `Total Excise (GST incl.): $${exciseDueGSTIncl.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `Distillery Dispatches:`,
+      `  Gross dispatches:              ${(bluffDispatchLals + bluffExemptLals).toFixed(3)} LALs`,
+      `  Less duty free:               (${dutyFreeFromBluff.toFixed(3)} LALs)`,
+      `  Less export/overseas:         (${exportFromBluff.toFixed(3)} LALs)`,
+      `  Net taxable (distillery):      ${bluffDispatchLals.toFixed(3)} LALs`,
       ``,
-      `--- Breakdown ---`,
-      `Direct Distillery Dispatches:  ${bluffDispatchLals.toFixed(3)}  (incl. ${lalsSamples.toFixed(3)} samples)`,
-      `3PL Transfers:                 ${transferLals.toFixed(3)}`,
-      `Less Duty Free:               (${dutyFreeFrom3PL.toFixed(3)})`,
-      `Less Export/Overseas:         (${exportFrom3PL.toFixed(3)})`,
+      `3PL Transfers:`,
+      `  Transferred to 3PL:            ${transferLals.toFixed(3)} LALs`,
+      `  Less duty free from 3PL:      (${dutyFreeFrom3PL.toFixed(3)} LALs)`,
+      `  Less export from 3PL:         (${exportFrom3PL.toFixed(3)} LALs)`,
+      `  Net taxable (3PL):             ${net3PLTaxableLals.toFixed(3)} LALs`,
       ``,
-      `Wastage:                       ${lalsWasted.toFixed(3)} LALs`,
-      `Closing Stock:                 ${closingLALs.toFixed(3)}`,
+      `TOTAL TAXABLE LALs:              ${totalTaxableLals.toFixed(3)} LALs`,
+      `Excise Rate:                     $${exciseRate.toFixed(3)} per LAL (GST excl.)`,
+      `Excise Due (GST excl.):          $${exciseDueGSTExcl.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `GST (15%):                       $${gstAmount.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `Total Excise (GST incl.):        $${exciseDueGSTIncl.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      ``,
+      `Wastage:                         ${lalsWasted.toFixed(3)} LALs`,
+      `Closing Stock:                   ${closingLALs.toFixed(3)}`,
     ].join('\n');
 
     navigator.clipboard.writeText(text).then(() => {
@@ -256,14 +276,17 @@ export default function ExciseReturn({
 
           {/* Taxable Dispatches section */}
           <SectionHeader label="Taxable Dispatches" />
-          <ExciseRow label="Direct from Distillery" value={bluffDispatchLals} sub="taxable (incl. samples)" indent />
+          <ExciseRow label="Distillery dispatches (std + samples)" value={bluffDispatchLals} sub="taxable" indent />
+          <ExciseRow label="Less: Duty Free from Distillery" value={dutyFreeFromBluff} displayValue={dutyFreeFromBluff > 0 ? `(${dutyFreeFromBluff.toFixed(3)})` : '0.000'} sub="exempt" indent />
+          <ExciseRow label="Less: Export from Distillery" value={exportFromBluff} displayValue={exportFromBluff > 0 ? `(${exportFromBluff.toFixed(3)})` : '0.000'} sub="exempt" indent />
+          <ExciseRow label="Net Distillery Taxable LALs" value={bluffDispatchLals} sub="std + samples only" indent />
           <ExciseRow label="Transferred to 3PL" value={transferLals} sub="taxable at point of transfer" indent />
           <ExciseRow label="Less: Duty Free from 3PL" value={dutyFreeFrom3PL} displayValue={dutyFreeFrom3PL > 0 ? `(${dutyFreeFrom3PL.toFixed(3)})` : '0.000'} sub="exempt" indent />
           <ExciseRow label="Less: Export / Overseas from 3PL" value={exportFrom3PL} displayValue={exportFrom3PL > 0 ? `(${exportFrom3PL.toFixed(3)})` : '0.000'} sub="exempt" indent />
           <ExciseRow label="Net 3PL Taxable LALs" value={net3PLTaxableLals} sub="Transfers minus exempt dispatches" indent />
 
           {/* Total */}
-          <ExciseRow label="TOTAL EXCISE PAYABLE LALs" value={totalTaxableLals} sub="Bluff dispatches + Net 3PL taxable" highlight />
+          <ExciseRow label="TOTAL EXCISE PAYABLE LALs" value={totalTaxableLals} sub="Net distillery + Net 3PL taxable" highlight />
           <div className="flex items-center justify-between px-4 py-3">
             <p className="text-sm font-medium">Excise Rate</p>
             <p className="text-sm font-mono">${exciseRate.toFixed(3)} per LAL <span className="text-muted-foreground">({rateLabel})</span></p>
@@ -288,7 +311,7 @@ export default function ExciseReturn({
 
           {/* For information only section */}
           <SectionHeader label="For Information Only (not deducted)" />
-          <ExciseRow label="Samples dispatched" value={lalsSamples} sub="duty paid, shown for reference" indent />
+          <ExciseRow label="Samples (Bluff)" value={lalsSamples} sub="taxable, shown for reference" indent />
           <ExciseRow label="Standard 3PL dispatches" value={standard3PLDispatchLals} sub="duty already paid at transfer" indent />
 
           {/* Wastage and closing */}
@@ -299,7 +322,7 @@ export default function ExciseReturn({
         <div className="px-4 py-3 border-t border-border bg-muted/20 space-y-1">
           <p className="text-xs text-muted-foreground">Current system stock (for reference): {currentTotalLALs.toFixed(3)} LALs</p>
           <p className="text-xs text-muted-foreground">LALs Bottled (no net LAL change): {lalsBottled.toFixed(3)} LALs across {monthBottlings.length} run(s)</p>
-          <p className="text-xs text-amber-600">All distillery dispatches including samples are taxable. Duty free and export dispatches from 3PL are exempt and deducted from transfer LALs.</p>
+          <p className="text-xs text-amber-600">Distillery standard sales and samples are taxable. Duty free and export from Bluff are exempt. Duty free and export from 3PL are deducted from transfer LALs.</p>
         </div>
       </Card>
 
