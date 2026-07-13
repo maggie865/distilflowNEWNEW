@@ -66,7 +66,11 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
     if (!r.fgId) return false;
     const qty = parseInt(r.qty) || 0;
     if (qty <= 0) return true;
-    return qty > getRowAvailable(r.fgId);
+    const fg = bluffStock.find(g => g.id === r.fgId);
+    if (!fg) return true;
+    // Only subtract allocations from OTHER rows, not this row's own qty
+    const allocatedByOthers = (allocatedByFgId[r.fgId] || 0) - qty;
+    return qty > fg.available_bottles - allocatedByOthers;
   });
 
   const transferMutation = useMutation({
@@ -141,7 +145,8 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
             <div className="space-y-3 overflow-y-auto flex-1 pr-1">
               {rows.map((row, idx) => {
                 const fg = bluffStock.find(g => g.id === row.fgId);
-                const available = fg ? getRowAvailable(fg.id) : 0;
+                const allocatedByOthers = fg ? (allocatedByFgId[fg.id] || 0) - (parseInt(row.qty) || 0) : 0;
+                const available = fg ? Math.max(0, fg.available_bottles - allocatedByOthers) : 0;
                 const qty = parseInt(row.qty) || 0;
                 const isOver = fg && qty > available;
                 const selectedIds = rows.map(r => r.fgId).filter(id => id);
