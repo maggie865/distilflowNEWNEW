@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { Wine, Droplets, Boxes, DollarSign } from 'lucide-react';
+import { Wine, Droplets, Boxes, DollarSign, FlaskConical } from 'lucide-react';
 
 function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent border-accent-foreground/10', icon }) {
   return (
@@ -19,7 +19,7 @@ function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent b
 
 const COGS_COLORS = ['#8B5CF6', '#F97316', '#06B6D4', '#10B981', '#3B82F6', '#F59E0B'];
 
-export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, finishedGoodsWithStock, tanks, recipes, distillationRuns }) {
+export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, finishedGoodsWithStock, tanks, recipes, distillationRuns, bottlingRuns, masterBatches }) {
   const avgEthanolCostPerLal = useMemo(() => {
     const ethanolMats = rawMaterialsNetStock.filter(m => m.type === 'ethanol' && m.cost_per_unit);
     if (ethanolMats.length === 0) return 3.5;
@@ -47,6 +47,76 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
     }
     return 0;
   };
+
+  // Per-batch COGS: BottlingRun → MasterBatch → Recipe → scale ingredients by actual distillation input
+  const batchCogs = useMemo(() => {
+    if (!bottlingRuns || bottlingRuns.length === 0) return [];
+
+    return bottlingRuns
+      .filter(br => (br.bottles_produced || 0) > 0)
+      .map(br => {
+        // 1. Find linked MasterBatch via batch_number
+        const masterBatch = (masterBatches || []).find(
+          mb => mb.batch_code === br.batch_number
+        );
+
+        // 2. Find Recipe by product name match
+        const productName = masterBatch?.product_name || br.product_name;
+        const recipe = (recipes || [])
+          .filter(r => r.recipe_type === 'spirit' && r.base_ethanol_volume)
+          .find(r =>
+            r.name === productName ||
+            productName?.toLowerCase().includes(r.name?.toLowerCase()) ||
+            r.name?.toLowerCase().includes(productName?.toLowerCase())
+          );
+
+        // 3. Sum distillation run input_volume for this batch
+        const distRuns = (distillationRuns || []).filter(
+          dr => dr.batch_number === br.batch_number
+        );
+        const totalDistInput = distRuns.reduce((s, dr) => s + (dr.input_volume || 0), 0);
+
+        // 4. Scale ingredient quantities to actual input and sum costs
+        let rawMaterialCost = 0;
+        if (recipe && recipe.base_ethanol_volume) {
+          const scale = totalDistInput > 0 ? totalDistInput / recipe.base_ethanol_volume : 1;
+          for (const ing of (recipe.ingredients || [])) {
+            const cpu = findCostPerUnit(ing.name);
+            if (cpu) rawMaterialCost += (ing.quantity || 0) * scale * cpu;
+          }
+        }
+
+        const bottlesProduced = br.bottles_produced || 0;
+        const rawMaterialCostPerBottle = bottlesProduced > 0 ? rawMaterialCost / bottlesProduced : 0;
+        const packagingCostPerBottle = recipe?.packaging_cost_per_bottle || 0;
+        const totalCogsPerBottle = rawMaterialCostPerBottle + packagingCostPerBottle;
+        const totalCogsForBatch = totalCogsPerBottle * bottlesProduced;
+
+        // 5. Selling price from FinishedGood.product_price
+        const fg = (finishedGoodsWithStock || []).find(
+          g => g.product_name === br.product_name && g.batch_number === br.batch_number
+        );
+        const sellingPrice = fg?.product_price || 0;
+        const grossMargin = sellingPrice - totalCogsPerBottle;
+        const grossMarginPct = sellingPrice > 0 ? (grossMargin / sellingPrice) * 100 : 0;
+
+        return {
+          ...br,
+          productName,
+          recipeName: recipe?.name || null,
+          bottlesProduced,
+          totalDistInput,
+          rawMaterialCost,
+          rawMaterialCostPerBottle,
+          packagingCostPerBottle,
+          totalCogsPerBottle,
+          totalCogsForBatch,
+          sellingPrice,
+          grossMargin,
+          grossMarginPct,
+        };
+      });
+  }, [bottlingRuns, masterBatches, recipes, distillationRuns, finishedGoodsWithStock, findCostPerUnit]);
 
   const finishedGoodsCosts = useMemo(() => {
     return finishedGoodsWithStock
@@ -272,6 +342,52 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
           </div>
         </Card>
       </div>
+
+      {/* Per-Batch COGS Analysis */}
+      <Card className="p-4">
+        <h4 className="text-sm font-semibold mb-4 flex items-center gap-2"><FlaskConical className="w-4 h-4 text-primary" /> Per-Batch COGS Analysis</h4>
+        <p className="text-xs text-muted-foreground mb-3">Raw material costs scaled to actual distillation input volume, plus packaging cost per bottle</p>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Product</TableHead>
+                <TableHead>Batch</TableHead>
+                <TableHead>Bottles</TableHead>
+                <TableHead>Raw Mat. / Bottle</TableHead>
+                <TableHead>Packaging / Bottle</TableHead>
+                <TableHead>COGS / Bottle</TableHead>
+                <TableHead>Total COGS</TableHead>
+                <TableHead>Selling Price</TableHead>
+                <TableHead>Gross Margin</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {batchCogs.length === 0 ? (
+                <TableRow><TableCell colSpan={9} className="text-center py-4 text-muted-foreground text-sm">No bottling runs with production data</TableCell></TableRow>
+              ) : batchCogs.map(b => (
+                <TableRow key={b.id}>
+                  <TableCell className="font-medium text-sm">{b.productName}</TableCell>
+                  <TableCell className="font-mono text-xs">{b.batch_number}</TableCell>
+                  <TableCell className="text-sm">{b.bottlesProduced.toLocaleString()}</TableCell>
+                  <TableCell className="text-sm">{money(b.rawMaterialCostPerBottle)}</TableCell>
+                  <TableCell className="text-sm">{money(b.packagingCostPerBottle)}</TableCell>
+                  <TableCell className="text-sm font-semibold">{money(b.totalCogsPerBottle)}</TableCell>
+                  <TableCell className="text-sm font-bold">{money(b.totalCogsForBatch)}</TableCell>
+                  <TableCell className="text-sm">{b.sellingPrice ? money(b.sellingPrice) : '—'}</TableCell>
+                  <TableCell className="text-sm">
+                    {b.sellingPrice > 0 ? (
+                      <span className={b.grossMargin >= 0 ? 'text-green-600 font-medium' : 'text-destructive font-medium'}>
+                        {money(b.grossMargin)} ({b.grossMarginPct.toFixed(1)}%)
+                      </span>
+                    ) : '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
 
       {/* Finished Goods Cost Detail */}
       <Card className="p-4">

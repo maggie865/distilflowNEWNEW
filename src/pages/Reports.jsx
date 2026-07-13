@@ -45,6 +45,7 @@ export default function Reports() {
   const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => db.WarehouseStock.list('-date_transferred_in', 200) });
   const { data: distillationRuns = [] } = useQuery({ queryKey: ['distillationRuns'], queryFn: () => db.DistillationRun.list('-date', 500) });
   const { data: bottlingRuns = [] } = useQuery({ queryKey: ['bottlingRuns'], queryFn: () => db.BottlingRun.list('-date', 200) });
+  const { data: masterBatches = [] } = useQuery({ queryKey: ['masterBatches'], queryFn: () => db.MasterBatch.list('-date_started', 200) });
   const { data: dilutions = [] } = useQuery({ queryKey: ['dilutions'], queryFn: () => db.Dilution.list('-date', 500) });
   const { data: tankMovements = [] } = useQuery({ queryKey: ['tankMovements'], queryFn: () => db.TankMovement.list('-date', 500) });
   const { data: tanks = [] } = useQuery({ queryKey: ['storageTanks'], queryFn: () => db.StorageTank.list('name', 100) });
@@ -204,6 +205,8 @@ export default function Reports() {
               tanks={tanks}
               recipes={recipes}
               distillationRuns={distillationRuns}
+              bottlingRuns={bottlingRuns}
+              masterBatches={masterBatches}
             />
           </TabsContent>
 

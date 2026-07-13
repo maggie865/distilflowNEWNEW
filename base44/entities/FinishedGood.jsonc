@@ -26,6 +26,10 @@
       "type": "number",
       "description": "Total LALs in stock"
     },
+    "product_price": {
+      "type": "number",
+      "description": "Selling price per bottle (for COGS gross margin calculations)"
+    },
     "notes": {
       "type": "string",
       "description": "Additional notes"

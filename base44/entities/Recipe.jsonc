@@ -84,6 +84,10 @@
         }
       }
     },
+    "packaging_cost_per_bottle": {
+      "type": "number",
+      "description": "Total packaging cost per bottle (bottles, labels, caps) \u2014 used for COGS calculations"
+    },
     "bottles_per_case": {
       "type": "number",
       "description": "Number of bottles per case/carton"
