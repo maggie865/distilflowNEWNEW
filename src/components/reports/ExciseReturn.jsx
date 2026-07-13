@@ -1,24 +1,33 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Copy, CheckCircle2, AlertTriangle, FileText } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
 
-function ExciseRow({ label, value, sub, highlight }) {
+function ExciseRow({ label, value, sub, highlight, indent, displayValue }) {
   return (
-    <div className={`flex items-center justify-between px-4 py-3 ${highlight ? 'bg-accent/30' : ''}`}>
+    <div className={`flex items-center justify-between px-4 py-3 ${highlight ? 'bg-accent/30' : ''} ${indent ? 'pl-8' : ''}`}>
       <div>
         <p className="text-sm font-medium">{label}</p>
         {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
       </div>
-      <p className={`text-lg font-bold font-mono ${highlight ? 'text-primary' : ''}`}>
-        {value.toFixed(3)}
+      <p className={`font-bold font-mono ${highlight ? 'text-primary text-lg' : 'text-base'}`}>
+        {displayValue !== undefined ? displayValue : value.toFixed(3)}
       </p>
+    </div>
+  );
+}
+
+function SectionHeader({ label }) {
+  return (
+    <div className="px-4 py-2 bg-muted/20">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -49,6 +58,27 @@ export default function ExciseReturn({
     } catch { return false; }
   };
 
+  // Fetch WarehouseStock for transfer LALs
+  const { data: warehouseStockAll = [] } = useQuery({
+    queryKey: ['warehouseStock'],
+    queryFn: () => base44.entities.WarehouseStock.list('-transfer_date', 5000),
+  });
+
+  // Fetch Receiving for LALs received (ethanol inbound)
+  const { data: receivingsAll = [] } = useQuery({
+    queryKey: ['receiving'],
+    queryFn: () => base44.entities.Receiving.list('-date_received', 5000),
+  });
+
+  // Fetch AppSettings for excise rate
+  const { data: appSettings = [] } = useQuery({
+    queryKey: ['appSettings'],
+    queryFn: () => base44.entities.AppSettings.list('-created_date', 5000),
+  });
+
+  const exciseRate = parseFloat(appSettings.find(s => s.key === 'excise_rate_per_lal')?.value) || 57.96;
+  const companyName = appSettings.find(s => s.key === 'company_name')?.value || '';
+
   // --- Current total LALs (all stock locations) ---
   const currentFinishedLALs = finishedGoods.reduce((s, g) => s + (g.total_lals || 0), 0);
   const currentWarehouseLALs = warehouseStock.reduce((s, w) => s + (w.total_lals || 0), 0);
@@ -59,32 +89,64 @@ export default function ExciseReturn({
   const monthDistillations = distillationRuns.filter(r => inMonth(r.date));
   const lalsProduced = monthDistillations.reduce((s, r) => s + (r.hearts_lals || 0), 0);
 
+  // --- LALs Received (ethanol inbound) ---
+  const monthReceivings = receivingsAll.filter(r => inMonth(r.date_received) && r.material_type === 'Ethanol');
+  const lalsReceived = monthReceivings.reduce((s, r) => s + (r.lals || 0), 0);
+
   // --- LALs Bottled (input_lals from bottling runs in month) ---
   const monthBottlings = bottlingRuns.filter(r => inMonth(r.date));
   const lalsBottled = monthBottlings.reduce((s, r) => s + (r.input_lals || 0), 0);
 
-  // --- LALs Dispatched (total_lals from dispatches in month) ---
-  const monthDispatches = dispatches.filter(d => inMonth(d.dispatch_date));
-  const lalsDispatched = monthDispatches
-    .filter(d => !d.is_sample)
-    .reduce((s, d) => s + (d.total_lals || 0), 0);
-  const lalsSamples = monthDispatches
-    .filter(d => d.is_sample)
-    .reduce((s, d) => s + (d.total_lals || 0), 0);
-  const lalsDispatchedAll = lalsDispatched + lalsSamples;
-
-  // --- LALs Wasted (lals from wastage records in month) ---
+  // --- LALs Wasted ---
   const monthWastage = wastage.filter(w => inMonth(w.date));
   const lalsWasted = monthWastage.reduce((s, w) => s + (w.lals || 0), 0);
 
-  // --- Opening LALs: work backwards from current totals ---
-  // Add back dispatches and wastage within the month (they reduced stock)
-  // Subtract distillation hearts produced in the month (they increased stock)
-  // Bottling doesn't change total LALs (just moves from tank to bottles)
-  const openingLALs = currentTotalLALs + lalsDispatchedAll + lalsWasted - lalsProduced;
+  // --- Dispatches in month ---
+  const monthDispatches = dispatches.filter(d => inMonth(d.dispatch_date));
 
-  // --- Closing LALs: Opening + Produced - Dispatched - Wasted ---
-  const closingLALs = openingLALs + lalsProduced - lalsDispatchedAll - lalsWasted;
+  // === EXCISE CALCULATION ===
+
+  // 1. LALs dispatched direct from distillery (Bluff) — fully taxable
+  const bluffDispatchLals = monthDispatches
+    .filter(d => !d.is_sample && !(d.dispatched_from || '').includes('Auckland'))
+    .reduce((s, d) => s + (d.total_lals || 0), 0);
+
+  // 2. LALs transferred to 3PL this month — taxable at point of transfer
+  const transfersToWarehouse = warehouseStockAll.filter(ws => {
+    const d = ws.transfer_date || ws.date_transferred_in;
+    return d && inMonth(d);
+  });
+  const transferLals = transfersToWarehouse.reduce((s, ws) => s + (ws.total_lals || 0), 0);
+
+  // 3. Duty free dispatches from 3PL this month — deduct from transfer LALs
+  const dutyFreeFrom3PL = monthDispatches
+    .filter(d => (d.dispatched_from || '').includes('Auckland') && d.duty_free === true)
+    .reduce((s, d) => s + (d.total_lals || 0), 0);
+
+  // 4. Net taxable 3PL LALs
+  const net3PLTaxableLals = Math.max(0, transferLals - dutyFreeFrom3PL);
+
+  // 5. Total excise payable LALs
+  const totalTaxableLals = bluffDispatchLals + net3PLTaxableLals;
+
+  // Excise due
+  const exciseDue = totalTaxableLals * exciseRate;
+
+  // --- Non-taxable categories (for info only) ---
+  const standard3PLDispatchLals = monthDispatches
+    .filter(d => (d.dispatched_from || '').includes('Auckland') && !d.duty_free && !d.is_sample)
+    .reduce((s, d) => s + (d.total_lals || 0), 0);
+
+  const lalsSamples = monthDispatches
+    .filter(d => d.is_sample)
+    .reduce((s, d) => s + (d.total_lals || 0), 0);
+
+  // --- All dispatched LALs (for mass balance) ---
+  const allDispatchedLals = monthDispatches.reduce((s, d) => s + (d.total_lals || 0), 0);
+
+  // --- Opening / Closing LALs ---
+  const openingLALs = currentTotalLALs + allDispatchedLals + lalsWasted - lalsProduced;
+  const closingLALs = openingLALs + lalsProduced - allDispatchedLals - lalsWasted;
 
   // --- Mass balance check ---
   const discrepancy = Math.abs(closingLALs - currentTotalLALs);
@@ -114,24 +176,20 @@ export default function ExciseReturn({
 
   const handleCopy = () => {
     const text = [
-      `NZ EXCISE RETURN — LAL SUMMARY`,
-      `Period: ${monthLabel}`,
+      `EXCISE RETURN — ${monthLabel.toUpperCase()}`,
+      `Company: ${companyName}`,
       ``,
-      `Opening LALs:           ${openingLALs.toFixed(3)}`,
+      `Opening Stock LALs:     ${openingLALs.toFixed(3)}`,
       `LALs Produced:          ${lalsProduced.toFixed(3)}`,
-      `LALs Bottled:           ${lalsBottled.toFixed(3)}`,
-      `LALs Dispatched (sold): ${lalsDispatched.toFixed(3)}`,
-      `LALs Samples/Promo:     ${lalsSamples.toFixed(3)}`,
+      `LALs Received:          ${lalsReceived.toFixed(3)}`,
+      `LALs Transferred (3PL): ${transferLals.toFixed(3)}`,
+      `Less Duty Free:        (${dutyFreeFrom3PL.toFixed(3)})`,
+      `Net Taxable LALs:       ${totalTaxableLals.toFixed(3)}`,
+      `Excise Rate:            $${exciseRate.toFixed(2)}`,
+      `Excise Due:             $${exciseDue.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      ``,
       `LALs Wasted:            ${lalsWasted.toFixed(3)}`,
-      `Closing LALs:           ${closingLALs.toFixed(3)}`,
-      ``,
-      `Mass Balance Check: ${isBalanced ? 'BALANCED ✓' : `DISCREPANCY ${discrepancy.toFixed(3)} LALs ⚠`}`,
-      ``,
-      `--- Dispatched by Customer ---`,
-      ...dispatchByCustomer.map(c => `${c.name}: ${c.lals.toFixed(3)}`),
-      ``,
-      `--- Produced by Batch ---`,
-      ...producedByBatch.map(b => `${b.batch}: ${b.lals.toFixed(3)}`),
+      `Closing Stock LALs:     ${closingLALs.toFixed(3)}`,
     ].join('\n');
 
     navigator.clipboard.writeText(text).then(() => {
@@ -149,7 +207,7 @@ export default function ExciseReturn({
           <div className="flex items-center gap-3">
             <FileText className="w-5 h-5 text-primary" />
             <div>
-              <h3 className="text-sm font-semibold">Monthly LAL Summary for Excise Return</h3>
+              <h3 className="text-sm font-semibold">Excise Return — Monthly Summary</h3>
               <p className="text-xs text-muted-foreground">Suitable for NZ Trade Single Window submission</p>
             </div>
           </div>
@@ -170,23 +228,47 @@ export default function ExciseReturn({
         </div>
       </Card>
 
-      {/* LAL Summary */}
+      {/* Excise Summary */}
       <Card className="overflow-hidden">
         <div className="px-4 py-3 border-b border-border bg-muted/30">
-          <h4 className="text-sm font-semibold">{monthLabel} — LAL Summary (Litres of Absolute Alcohol)</h4>
+          <h4 className="text-sm font-semibold">{monthLabel} — Excise Return Summary</h4>
         </div>
         <div className="divide-y divide-border">
-          <ExciseRow label="Opening LALs" value={openingLALs} sub={`Total stock at start of ${monthLabel}`} />
-          <ExciseRow label="LALs Produced" value={lalsProduced} sub={`${monthDistillations.length} distillation run(s)`} />
-          <ExciseRow label="LALs Bottled" value={lalsBottled} sub={`${monthBottlings.length} bottling run(s) — no net change to total LALs`} />
-          <ExciseRow label="LALs Dispatched (sold)" value={lalsDispatched} sub={`${monthDispatches.filter(d => !d.is_sample).length} dispatch(es) (excl. samples)`} />
-          <ExciseRow label="LALs — Samples / Promotional" value={lalsSamples} sub={`${monthDispatches.filter(d => d.is_sample).length} sample dispatch(es)`} />
+          <ExciseRow label="LALs Produced (hearts)" value={lalsProduced} sub={`${monthDistillations.length} distillation run(s)`} />
+          <ExciseRow label="LALs Received (ethanol inbound)" value={lalsReceived} sub={`${monthReceivings.length} ethanol receiving(s)`} />
+
+          {/* Taxable Dispatches section */}
+          <SectionHeader label="Taxable Dispatches" />
+          <ExciseRow label="Direct from Distillery (Bluff)" value={bluffDispatchLals} sub="taxable at point of dispatch" indent />
+          <ExciseRow label="Transferred to 3PL" value={transferLals} sub="taxable at point of transfer" indent />
+          <ExciseRow label="Less: Duty Free from 3PL" value={dutyFreeFrom3PL} displayValue={dutyFreeFrom3PL > 0 ? `(${dutyFreeFrom3PL.toFixed(3)})` : '0.000'} sub="deducted from 3PL transfers" indent />
+          <ExciseRow label="Net 3PL Taxable LALs" value={net3PLTaxableLals} sub="Transfers minus duty free dispatches" indent />
+
+          {/* Total */}
+          <ExciseRow label="TOTAL EXCISE PAYABLE LALs" value={totalTaxableLals} sub="Bluff dispatches + Net 3PL taxable" highlight />
+          <div className="flex items-center justify-between px-4 py-3">
+            <p className="text-sm font-medium">Excise Rate (NZ)</p>
+            <p className="text-sm font-mono">${exciseRate.toFixed(2)} / LAL</p>
+          </div>
+          <div className="flex items-center justify-between px-4 py-4 bg-primary/5">
+            <p className="text-sm font-bold">EXCISE DUE</p>
+            <p className="text-xl font-bold font-mono text-primary">${exciseDue.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+
+          {/* Non-taxable section */}
+          <SectionHeader label="Non-Taxable (already duty paid or exempt)" />
+          <ExciseRow label="Standard 3PL Dispatches" value={standard3PLDispatchLals} sub="duty already paid at transfer — info only" indent />
+          <ExciseRow label="Samples / Promotional" value={lalsSamples} sub="excluded from excise — info only" indent />
+
+          {/* Wastage and closing */}
           <ExciseRow label="LALs Wasted" value={lalsWasted} sub={`${monthWastage.length} wastage record(s)`} />
-          <ExciseRow label="Closing LALs" value={closingLALs} sub={`Opening + Produced - Dispatched - Wasted`} highlight />
+          <ExciseRow label="Opening Stock LALs" value={openingLALs} sub={`Total stock at start of ${monthLabel}`} />
+          <ExciseRow label="Closing Stock LALs" value={closingLALs} sub="Opening + Produced - Dispatched - Wasted" highlight />
         </div>
         <div className="px-4 py-3 border-t border-border bg-muted/20 space-y-1">
           <p className="text-xs text-muted-foreground">Current system stock (for reference): {currentTotalLALs.toFixed(3)} LALs</p>
-          <p className="text-xs text-amber-600">Samples are excluded from taxable dispatches. Verify sample treatment with your customs broker.</p>
+          <p className="text-xs text-muted-foreground">LALs Bottled (no net LAL change): {lalsBottled.toFixed(3)} LALs across {monthBottlings.length} run(s)</p>
+          <p className="text-xs text-amber-600">3PL standard dispatches are not taxable (duty paid at transfer). Duty free dispatches reduce taxable transfer LALs.</p>
         </div>
       </Card>
 
@@ -243,7 +325,7 @@ export default function ExciseReturn({
                 {dispatchByCustomer.length > 0 && (
                   <TableRow className="border-t-2 bg-muted/30">
                     <TableCell className="font-bold text-sm">Total</TableCell>
-                    <TableCell className="font-bold text-sm font-mono text-right">{lalsDispatchedAll.toFixed(3)}</TableCell>
+                    <TableCell className="font-bold text-sm font-mono text-right">{allDispatchedLals.toFixed(3)}</TableCell>
                   </TableRow>
                 )}
               </TableBody>

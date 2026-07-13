@@ -94,6 +94,11 @@
       "default": false,
       "description": "Whether this dispatch is a free sample / promotional (excluded from excise LAL totals)"
     },
+    "duty_free": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this 3PL dispatch is duty free (exempt from excise \u2014 deducted from taxable transfer LALs)"
+    },
     "order_reference": {
       "type": "string",
       "description": "Order reference number (for direct sales)"

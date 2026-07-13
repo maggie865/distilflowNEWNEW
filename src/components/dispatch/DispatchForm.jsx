@@ -37,6 +37,7 @@ const EMPTY_FORM = {
   transport_method: 'road',
   status: 'dispatched',
   is_sample: false,
+  duty_free: false,
   notes: '',
 };
 
@@ -292,7 +293,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
             quantity_bottles: qty, total_lals: parseFloat(lals.toFixed(4)), parcel_weight_kg: weight,
             transport_distance_km: distanceKm || undefined, transport_method: transportMethod,
             co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined, status: form.status || 'dispatched',
-            is_sample: form.is_sample || undefined, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
+            is_sample: form.is_sample || undefined, duty_free: form.duty_free || undefined, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
           });
           const newQty = ws.quantity_bottles - qty;
           if (newQty <= 0) await db.WarehouseStock.delete(ws.id);
@@ -494,6 +495,20 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
               {form.is_sample && <p className="text-xs text-amber-600 mt-0.5">Sample dispatches are excluded from excise LAL calculations.</p>}
             </div>
           </div>
+
+          {dispatchedFrom.includes('Auckland') && (
+            <div className="flex items-start gap-2 rounded-lg border border-border p-3">
+              <Checkbox
+                checked={form.duty_free || false}
+                onCheckedChange={v => setForm(f => ({ ...f, duty_free: v === true }))}
+                className="mt-0.5"
+              />
+              <div>
+                <Label className="cursor-pointer">Duty Free dispatch (no excise)</Label>
+                {form.duty_free && <p className="text-xs text-blue-600 mt-0.5">Duty free dispatches are deducted from taxable 3PL transfer LALs in the Excise Return.</p>}
+              </div>
+            </div>
+          )}
 
           <Button onClick={() => dispatchMutation.mutate()} disabled={dispatchMutation.isPending || !canSubmit} className="w-full h-12 text-base font-semibold">
             {dispatchMutation.isPending ? 'Saving…' : `Record Dispatch (${totalBottles} bottles${dispatchedFrom === 'Bluff' ? allocationMode === 'fifo' ? ', FIFO' : ', Manual' : ''})`}
