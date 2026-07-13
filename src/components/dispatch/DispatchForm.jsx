@@ -46,6 +46,8 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
   const [newLineWSId, setNewLineWSId] = useState('');
   const [newLineQty, setNewLineQty] = useState('');
   const [calcingDistance, setCalcingDistance] = useState(false);
+  const [allocationMode, setAllocationMode] = useState('fifo');
+  const [newLineBatchId, setNewLineBatchId] = useState('');
 
   const queryClient = useQueryClient();
   const originAddress = dispatchedFrom === 'Bluff' ? DISTILLERY_ORIGIN : WAREHOUSE_ADDRESS;
@@ -79,6 +81,16 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
     }).filter(opt => opt.totalAvailable > 0);
   }, [sellableGoods]);
 
+  const bluffBatches = useMemo(() => {
+    const list = [];
+    for (const opt of bluffProductOptions) {
+      for (const b of opt.batches) {
+        list.push({ ...b, productKey: `${opt.product_name}||${opt.bottle_size_ml}` });
+      }
+    }
+    return list;
+  }, [bluffProductOptions]);
+
   // 3PL: individual WarehouseStock records
   const threePLProductOptions = useMemo(
     () => warehouseStock.map(ws => ({ ...ws, available: ws.quantity_bottles || 0 })).filter(ws => ws.available > 0),
@@ -103,6 +115,19 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
     return ws ? Math.max(0, ws.available - (committedByProduct[key] || 0)) : 0;
   };
 
+  const committedByBatch = useMemo(() => {
+    const map = {};
+    for (const li of lineItems) {
+      if (li.batchId) map[li.batchId] = (map[li.batchId] || 0) + (parseInt(li.quantity) || 0);
+    }
+    return map;
+  }, [lineItems]);
+
+  const getRemainingBatchAvail = (batchId) => {
+    const batch = bluffBatches.find(b => b.id === batchId);
+    return batch ? Math.max(0, batch.available - (committedByBatch[batchId] || 0)) : 0;
+  };
+
   const totalBottles = lineItems.reduce((s, li) => s + (parseInt(li.quantity) || 0), 0);
   const totalWeightKg = lineItems.reduce((s, li) => {
     if (dispatchedFrom === 'Bluff') {
@@ -113,6 +138,9 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
     return s + (ws ? calcWeightKg(ws.bottle_size_ml, parseInt(li.quantity) || 0) : 0);
   }, 0);
   const hasOverStock = lineItems.some(li => {
+    if (dispatchedFrom === 'Bluff' && li.batchId) {
+      return (committedByBatch[li.batchId] || 0) > (bluffBatches.find(b => b.id === li.batchId)?.available || 0);
+    }
     const key = dispatchedFrom === 'Bluff' ? li.productKey : li.wsId;
     const totalAvail = dispatchedFrom === 'Bluff'
       ? (bluffProductOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === key)?.totalAvailable || 0)
@@ -126,6 +154,8 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
     setLineItems([]);
     setNewLineProductKey('');
     setNewLineWSId('');
+    setNewLineBatchId('');
+    setAllocationMode('fifo');
     setNewLineQty('');
     setForm(f => ({ ...f, transport_distance_km: '' }));
   };
@@ -135,9 +165,16 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
     const qty = parseInt(newLineQty) || 0;
     if (qty <= 0) return;
     if (dispatchedFrom === 'Bluff') {
-      if (!newLineProductKey) return;
-      setLineItems(prev => [...prev, { id: Date.now() + Math.random(), productKey: newLineProductKey, quantity: String(qty) }]);
-      setNewLineProductKey('');
+      if (allocationMode === 'manual') {
+        if (!newLineBatchId) return;
+        const batch = bluffBatches.find(b => b.id === newLineBatchId);
+        setLineItems(prev => [...prev, { id: Date.now() + Math.random(), productKey: batch.productKey, batchId: newLineBatchId, quantity: String(qty) }]);
+        setNewLineBatchId('');
+      } else {
+        if (!newLineProductKey) return;
+        setLineItems(prev => [...prev, { id: Date.now() + Math.random(), productKey: newLineProductKey, quantity: String(qty) }]);
+        setNewLineProductKey('');
+      }
     } else {
       if (!newLineWSId) return;
       setLineItems(prev => [...prev, { id: Date.now() + Math.random(), wsId: newLineWSId, quantity: String(qty) }]);
@@ -170,6 +207,8 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
     setLineItems([]);
     setNewLineProductKey('');
     setNewLineWSId('');
+    setNewLineBatchId('');
+    setAllocationMode('fifo');
     setNewLineQty('');
     setDispatchedFrom('Bluff');
     onClose();
@@ -189,17 +228,30 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
           const product = bluffProductOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
           if (!product) continue;
           let remaining = parseInt(li.quantity) || 0;
-          for (const batch of product.batches) {
-            if (remaining <= 0) break;
+          if (li.batchId) {
+            const batch = product.batches.find(b => b.id === li.batchId);
+            if (!batch) throw new Error(`Batch not found for ${product.product_name}`);
             const avail = batchAvailMap[batch.id] || 0;
-            if (avail <= 0) continue;
-            const take = Math.min(remaining, avail);
+            if (avail < remaining) throw new Error(`Insufficient stock for ${product.product_name} batch ${batch.batch_number} (${avail} available)`);
             const bottleSize = batch.bottle_size_ml || 700;
-            const lals = ((take * bottleSize) / 1000) * (batch.abv_percent || 0) / 100;
-            const weightKg = calcWeightKg(bottleSize, take);
-            allAllocations.push({ batch, take, lals, weightKg, co2e: calcCO2e(distanceKm, weightKg, transportMethod) });
-            batchAvailMap[batch.id] = avail - take;
-            remaining -= take;
+            const lals = ((remaining * bottleSize) / 1000) * (batch.abv_percent || 0) / 100;
+            const weightKg = calcWeightKg(bottleSize, remaining);
+            allAllocations.push({ batch, take: remaining, lals, weightKg, co2e: calcCO2e(distanceKm, weightKg, transportMethod) });
+            batchAvailMap[batch.id] = avail - remaining;
+            remaining = 0;
+          } else {
+            for (const batch of product.batches) {
+              if (remaining <= 0) break;
+              const avail = batchAvailMap[batch.id] || 0;
+              if (avail <= 0) continue;
+              const take = Math.min(remaining, avail);
+              const bottleSize = batch.bottle_size_ml || 700;
+              const lals = ((take * bottleSize) / 1000) * (batch.abv_percent || 0) / 100;
+              const weightKg = calcWeightKg(bottleSize, take);
+              allAllocations.push({ batch, take, lals, weightKg, co2e: calcCO2e(distanceKm, weightKg, transportMethod) });
+              batchAvailMap[batch.id] = avail - take;
+              remaining -= take;
+            }
           }
           if (remaining > 0) throw new Error(`Insufficient stock for ${product.product_name} (${product.bottle_size_ml}ml)`);
         }
@@ -278,20 +330,26 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
             {lineItems.length > 0 && (
               <div className="space-y-2 mb-3">
                 {lineItems.map((li) => {
-                  const key = dispatchedFrom === 'Bluff' ? li.productKey : li.wsId;
-                  const remaining = getRemainingAvail(key);
-                  const liQty = parseInt(li.quantity) || 0;
-                  const over = liQty > remaining;
-                  let label, sublabel;
+                  let remaining, label, sublabel;
                   if (dispatchedFrom === 'Bluff') {
                     const product = bluffProductOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
                     label = product?.product_name || 'Unknown';
-                    sublabel = `${product?.bottle_size_ml}ml • ${remaining} available`;
+                    if (li.batchId) {
+                      const batch = bluffBatches.find(b => b.id === li.batchId);
+                      remaining = getRemainingBatchAvail(li.batchId);
+                      sublabel = `${product?.bottle_size_ml}ml • Batch ${batch?.batch_number} • ${remaining} available`;
+                    } else {
+                      remaining = getRemainingAvail(li.productKey);
+                      sublabel = `${product?.bottle_size_ml}ml • ${remaining} available`;
+                    }
                   } else {
                     const ws = threePLProductOptions.find(w => w.id === li.wsId);
                     label = ws?.product_name || 'Unknown';
+                    remaining = getRemainingAvail(li.wsId);
                     sublabel = `${ws?.bottle_size_ml}ml • Batch ${ws?.batch_number} • ${remaining} available`;
                   }
+                  const liQty = parseInt(li.quantity) || 0;
+                  const over = liQty > remaining;
                   return (
                     <div key={li.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
                       <div className="flex-1 min-w-0">
@@ -306,34 +364,55 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
               </div>
             )}
             {hasStock && (
-              <div className="flex items-end gap-2">
-                <div className="flex-1">
-                  {dispatchedFrom === 'Bluff' ? (
-                    <Select value={newLineProductKey} onValueChange={setNewLineProductKey}>
-                      <SelectTrigger><SelectValue placeholder="Add product…" /></SelectTrigger>
-                      <SelectContent>
-                        {bluffProductOptions.map(opt => (
-                          <SelectItem key={`${opt.product_name}||${opt.bottle_size_ml}`} value={`${opt.product_name}||${opt.bottle_size_ml}`}>
-                            {opt.product_name} ({opt.bottle_size_ml}ml) — {getRemainingAvail(`${opt.product_name}||${opt.bottle_size_ml}`)} btls
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Select value={newLineWSId} onValueChange={setNewLineWSId}>
-                      <SelectTrigger><SelectValue placeholder="Add product…" /></SelectTrigger>
-                      <SelectContent>
-                        {threePLProductOptions.map(ws => (
-                          <SelectItem key={ws.id} value={ws.id}>
-                            {ws.product_name} — Batch {ws.batch_number} ({getRemainingAvail(ws.id)} btls)
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
+              <div className="space-y-2">
+                {dispatchedFrom === 'Bluff' && (
+                  <div className="flex gap-1 rounded-md bg-muted p-1">
+                    <button type="button" className={`flex-1 text-xs font-medium py-1 rounded ${allocationMode === 'fifo' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} onClick={() => setAllocationMode('fifo')}>FIFO (auto)</button>
+                    <button type="button" className={`flex-1 text-xs font-medium py-1 rounded ${allocationMode === 'manual' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} onClick={() => setAllocationMode('manual')}>Choose batch</button>
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    {dispatchedFrom === 'Bluff' ? (
+                      allocationMode === 'manual' ? (
+                        <Select value={newLineBatchId} onValueChange={setNewLineBatchId}>
+                          <SelectTrigger><SelectValue placeholder="Select batch…" /></SelectTrigger>
+                          <SelectContent>
+                            {bluffBatches.map(b => (
+                              <SelectItem key={b.id} value={b.id}>
+                                {b.product_name} ({b.bottle_size_ml}ml) — Batch {b.batch_number} — {getRemainingBatchAvail(b.id)} btls
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Select value={newLineProductKey} onValueChange={setNewLineProductKey}>
+                          <SelectTrigger><SelectValue placeholder="Add product…" /></SelectTrigger>
+                          <SelectContent>
+                            {bluffProductOptions.map(opt => (
+                              <SelectItem key={`${opt.product_name}||${opt.bottle_size_ml}`} value={`${opt.product_name}||${opt.bottle_size_ml}`}>
+                                {opt.product_name} ({opt.bottle_size_ml}ml) — {getRemainingAvail(`${opt.product_name}||${opt.bottle_size_ml}`)} btls
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )
+                    ) : (
+                      <Select value={newLineWSId} onValueChange={setNewLineWSId}>
+                        <SelectTrigger><SelectValue placeholder="Add product…" /></SelectTrigger>
+                        <SelectContent>
+                          {threePLProductOptions.map(ws => (
+                            <SelectItem key={ws.id} value={ws.id}>
+                              {ws.product_name} — Batch {ws.batch_number} ({getRemainingAvail(ws.id)} btls)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                  <Input type="number" min="1" value={newLineQty} onChange={e => setNewLineQty(e.target.value)} className="w-20" placeholder="Qty" />
+                  <Button variant="outline" size="icon" onClick={addLineItem} disabled={dispatchedFrom === 'Bluff' ? (allocationMode === 'manual' ? !newLineBatchId || !newLineQty : !newLineProductKey || !newLineQty) : !newLineWSId || !newLineQty}><Plus className="w-4 h-4" /></Button>
                 </div>
-                <Input type="number" min="1" value={newLineQty} onChange={e => setNewLineQty(e.target.value)} className="w-20" placeholder="Qty" />
-                <Button variant="outline" size="icon" onClick={addLineItem} disabled={dispatchedFrom === 'Bluff' ? !newLineProductKey || !newLineQty : !newLineWSId || !newLineQty}><Plus className="w-4 h-4" /></Button>
               </div>
             )}
             {!hasStock && <p className="text-sm text-muted-foreground text-center py-4">No stock available at this location</p>}
@@ -395,7 +474,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
           <div><Label>Notes</Label><Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any additional notes" className="mt-1" /></div>
 
           <Button onClick={() => dispatchMutation.mutate()} disabled={dispatchMutation.isPending || !canSubmit} className="w-full h-12 text-base font-semibold">
-            {dispatchMutation.isPending ? 'Saving…' : `Record Dispatch (${totalBottles} bottles${dispatchedFrom === 'Bluff' ? ', FIFO' : ''})`}
+            {dispatchMutation.isPending ? 'Saving…' : `Record Dispatch (${totalBottles} bottles${dispatchedFrom === 'Bluff' ? allocationMode === 'fifo' ? ', FIFO' : ', Manual' : ''})`}
           </Button>
         </div>
       </DialogContent>

@@ -50,6 +50,8 @@ export default function DirectSalesForm({ open, onClose, finishedGoods = [], all
   const [newLineProductKey, setNewLineProductKey] = useState('');
   const [newLineQty, setNewLineQty] = useState('');
   const [calcingDistance, setCalcingDistance] = useState(false);
+  const [allocationMode, setAllocationMode] = useState('fifo');
+  const [newLineBatchId, setNewLineBatchId] = useState('');
 
   const queryClient = useQueryClient();
   const isPickup = form.transport_method === 'pickup';
@@ -82,6 +84,16 @@ export default function DirectSalesForm({ open, onClose, finishedGoods = [], all
     }).filter(opt => opt.totalAvailable > 0);
   }, [sellableGoods, allDispatches]);
 
+  const flatBatches = useMemo(() => {
+    const list = [];
+    for (const opt of productOptions) {
+      for (const b of opt.batches) {
+        list.push({ ...b, productKey: `${opt.product_name}||${opt.bottle_size_ml}` });
+      }
+    }
+    return list;
+  }, [productOptions]);
+
   const committedByProduct = useMemo(() => {
     const map = {};
     for (const li of lineItems) {
@@ -95,12 +107,28 @@ export default function DirectSalesForm({ open, onClose, finishedGoods = [], all
     return product ? Math.max(0, product.totalAvailable - (committedByProduct[key] || 0)) : 0;
   };
 
+  const committedByBatch = useMemo(() => {
+    const map = {};
+    for (const li of lineItems) {
+      if (li.batchId) map[li.batchId] = (map[li.batchId] || 0) + (parseInt(li.quantity) || 0);
+    }
+    return map;
+  }, [lineItems]);
+
+  const getRemainingBatchAvail = (batchId) => {
+    const batch = flatBatches.find(b => b.id === batchId);
+    return batch ? Math.max(0, batch.available - (committedByBatch[batchId] || 0)) : 0;
+  };
+
   const totalBottles = lineItems.reduce((s, li) => s + (parseInt(li.quantity) || 0), 0);
   const totalWeightKg = lineItems.reduce((s, li) => {
     const product = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
     return s + (product ? calcWeightKg(product.bottle_size_ml, parseInt(li.quantity) || 0) : 0);
   }, 0);
-  const hasOverStock = lineItems.some(li => (parseInt(li.quantity) || 0) > getRemainingAvail(li.productKey));
+  const hasOverStock = lineItems.some(li => {
+    if (li.batchId) return (parseInt(li.quantity) || 0) > getRemainingBatchAvail(li.batchId);
+    return (parseInt(li.quantity) || 0) > getRemainingAvail(li.productKey);
+  });
   const canSubmit = lineItems.length > 0 && !hasOverStock && totalBottles > 0;
 
   const handleChannelChange = (value) => {
@@ -119,11 +147,19 @@ export default function DirectSalesForm({ open, onClose, finishedGoods = [], all
   };
 
   const addLineItem = () => {
-    if (!newLineProductKey || !newLineQty) return;
+    if (!newLineQty) return;
     const qty = parseInt(newLineQty) || 0;
     if (qty <= 0) return;
-    setLineItems(prev => [...prev, { id: Date.now() + Math.random(), productKey: newLineProductKey, quantity: String(qty) }]);
-    setNewLineProductKey('');
+    if (allocationMode === 'manual') {
+      if (!newLineBatchId) return;
+      const batch = flatBatches.find(b => b.id === newLineBatchId);
+      setLineItems(prev => [...prev, { id: Date.now() + Math.random(), productKey: batch.productKey, batchId: newLineBatchId, quantity: String(qty) }]);
+      setNewLineBatchId('');
+    } else {
+      if (!newLineProductKey) return;
+      setLineItems(prev => [...prev, { id: Date.now() + Math.random(), productKey: newLineProductKey, quantity: String(qty) }]);
+      setNewLineProductKey('');
+    }
     setNewLineQty('');
   };
 
@@ -150,6 +186,8 @@ export default function DirectSalesForm({ open, onClose, finishedGoods = [], all
     setForm(EMPTY_FORM);
     setLineItems([]);
     setNewLineProductKey('');
+    setNewLineBatchId('');
+    setAllocationMode('fifo');
     setNewLineQty('');
     onClose();
   };
@@ -170,17 +208,30 @@ export default function DirectSalesForm({ open, onClose, finishedGoods = [], all
         const product = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
         if (!product) continue;
         let remaining = parseInt(li.quantity) || 0;
-        for (const batch of product.batches) {
-          if (remaining <= 0) break;
+        if (li.batchId) {
+          const batch = product.batches.find(b => b.id === li.batchId);
+          if (!batch) throw new Error(`Batch not found for ${product.product_name}`);
           const avail = batchAvailMap[batch.id] || 0;
-          if (avail <= 0) continue;
-          const take = Math.min(remaining, avail);
+          if (avail < remaining) throw new Error(`Insufficient stock for ${product.product_name} batch ${batch.batch_number} (${avail} available)`);
           const bottleSize = batch.bottle_size_ml || 700;
-          const lals = ((take * bottleSize) / 1000) * (batch.abv_percent || 0) / 100;
-          const weightKg = calcWeightKg(bottleSize, take);
-          allAllocations.push({ batch, take, lals, weightKg, co2e: calcCO2e(distanceKm, weightKg, transportMethod) });
-          batchAvailMap[batch.id] = avail - take;
-          remaining -= take;
+          const lals = ((remaining * bottleSize) / 1000) * (batch.abv_percent || 0) / 100;
+          const weightKg = calcWeightKg(bottleSize, remaining);
+          allAllocations.push({ batch, take: remaining, lals, weightKg, co2e: calcCO2e(distanceKm, weightKg, transportMethod) });
+          batchAvailMap[batch.id] = avail - remaining;
+          remaining = 0;
+        } else {
+          for (const batch of product.batches) {
+            if (remaining <= 0) break;
+            const avail = batchAvailMap[batch.id] || 0;
+            if (avail <= 0) continue;
+            const take = Math.min(remaining, avail);
+            const bottleSize = batch.bottle_size_ml || 700;
+            const lals = ((take * bottleSize) / 1000) * (batch.abv_percent || 0) / 100;
+            const weightKg = calcWeightKg(bottleSize, take);
+            allAllocations.push({ batch, take, lals, weightKg, co2e: calcCO2e(distanceKm, weightKg, transportMethod) });
+            batchAvailMap[batch.id] = avail - take;
+            remaining -= take;
+          }
         }
         if (remaining > 0) throw new Error(`Insufficient stock for ${product.product_name} (${product.bottle_size_ml}ml)`);
       }
@@ -258,15 +309,23 @@ export default function DirectSalesForm({ open, onClose, finishedGoods = [], all
             {lineItems.length > 0 && (
               <div className="space-y-2 mb-3">
                 {lineItems.map((li) => {
-                  const remaining = getRemainingAvail(li.productKey);
+                  const product = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
+                  let remaining, sublabel;
+                  if (li.batchId) {
+                    const batch = flatBatches.find(b => b.id === li.batchId);
+                    remaining = getRemainingBatchAvail(li.batchId);
+                    sublabel = `${product?.bottle_size_ml}ml • Batch ${batch?.batch_number} • ${remaining} available`;
+                  } else {
+                    remaining = getRemainingAvail(li.productKey);
+                    sublabel = `${product?.bottle_size_ml}ml • ${remaining} available`;
+                  }
                   const liQty = parseInt(li.quantity) || 0;
                   const over = liQty > remaining;
-                  const product = productOptions.find(p => `${p.product_name}||${p.bottle_size_ml}` === li.productKey);
                   return (
                     <div key={li.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{product?.product_name || 'Unknown'}</p>
-                        <p className="text-xs text-muted-foreground">{product?.bottle_size_ml}ml • {remaining} available</p>
+                        <p className="text-xs text-muted-foreground">{sublabel}</p>
                       </div>
                       <Input type="number" min="1" max={remaining} value={li.quantity} onChange={e => updateLineItem(li.id, e.target.value)} className={`w-20 ${over ? 'border-destructive' : ''}`} />
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeLineItem(li.id)}><X className="w-4 h-4" /></Button>
@@ -276,21 +335,40 @@ export default function DirectSalesForm({ open, onClose, finishedGoods = [], all
               </div>
             )}
             {hasStock && (
-              <div className="flex items-end gap-2">
-                <div className="flex-1">
-                  <Select value={newLineProductKey} onValueChange={setNewLineProductKey}>
-                    <SelectTrigger><SelectValue placeholder="Add product…" /></SelectTrigger>
-                    <SelectContent>
-                      {productOptions.map(opt => (
-                        <SelectItem key={`${opt.product_name}||${opt.bottle_size_ml}`} value={`${opt.product_name}||${opt.bottle_size_ml}`}>
-                          {opt.product_name} ({opt.bottle_size_ml}ml) — {getRemainingAvail(`${opt.product_name}||${opt.bottle_size_ml}`)} btls
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <div className="space-y-2">
+                <div className="flex gap-1 rounded-md bg-muted p-1">
+                  <button type="button" className={`flex-1 text-xs font-medium py-1 rounded ${allocationMode === 'fifo' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} onClick={() => setAllocationMode('fifo')}>FIFO (auto)</button>
+                  <button type="button" className={`flex-1 text-xs font-medium py-1 rounded ${allocationMode === 'manual' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} onClick={() => setAllocationMode('manual')}>Choose batch</button>
                 </div>
-                <Input type="number" min="1" value={newLineQty} onChange={e => setNewLineQty(e.target.value)} className="w-20" placeholder="Qty" />
-                <Button variant="outline" size="icon" onClick={addLineItem} disabled={!newLineProductKey || !newLineQty}><Plus className="w-4 h-4" /></Button>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    {allocationMode === 'manual' ? (
+                      <Select value={newLineBatchId} onValueChange={setNewLineBatchId}>
+                        <SelectTrigger><SelectValue placeholder="Select batch…" /></SelectTrigger>
+                        <SelectContent>
+                          {flatBatches.map(b => (
+                            <SelectItem key={b.id} value={b.id}>
+                              {b.product_name} ({b.bottle_size_ml}ml) — Batch {b.batch_number} — {getRemainingBatchAvail(b.id)} btls
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Select value={newLineProductKey} onValueChange={setNewLineProductKey}>
+                        <SelectTrigger><SelectValue placeholder="Add product…" /></SelectTrigger>
+                        <SelectContent>
+                          {productOptions.map(opt => (
+                            <SelectItem key={`${opt.product_name}||${opt.bottle_size_ml}`} value={`${opt.product_name}||${opt.bottle_size_ml}`}>
+                              {opt.product_name} ({opt.bottle_size_ml}ml) — {getRemainingAvail(`${opt.product_name}||${opt.bottle_size_ml}`)} btls
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                  <Input type="number" min="1" value={newLineQty} onChange={e => setNewLineQty(e.target.value)} className="w-20" placeholder="Qty" />
+                  <Button variant="outline" size="icon" onClick={addLineItem} disabled={allocationMode === 'manual' ? !newLineBatchId || !newLineQty : !newLineProductKey || !newLineQty}><Plus className="w-4 h-4" /></Button>
+                </div>
               </div>
             )}
             {!hasStock && <p className="text-sm text-muted-foreground text-center py-4">No stock available</p>}
