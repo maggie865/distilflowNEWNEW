@@ -16,9 +16,10 @@ export default function StockTab({ warehouseStock, onPrintSlip, onAdjust, onDele
   const [adjustPending, setAdjustPending] = useState(false);
 
   const filtered = useMemo(() => {
-    if (!search) return warehouseStock;
+    const withStock = warehouseStock.filter(w => (w.quantity_bottles || 0) > 0);
+    if (!search) return withStock;
     const q = search.toLowerCase();
-    return warehouseStock.filter(w =>
+    return withStock.filter(w =>
       (w.product_name || '').toLowerCase().includes(q) ||
       (w.batch_number || '').toLowerCase().includes(q)
     );

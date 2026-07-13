@@ -24,7 +24,15 @@
     },
     "total_lals": {
       "type": "number",
-      "description": "Total LALs held at the warehouse"
+      "description": "Total LALs currently held at the warehouse"
+    },
+    "original_quantity_bottles": {
+      "type": "number",
+      "description": "Original number of bottles transferred to the warehouse (preserved for transfer history when stock is depleted)"
+    },
+    "original_total_lals": {
+      "type": "number",
+      "description": "Original total LALs transferred to the warehouse (preserved for transfer history when stock is depleted)"
     },
     "date_transferred_in": {
       "type": "string",

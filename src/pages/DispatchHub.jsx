@@ -91,10 +91,9 @@ export default function DispatchHub() {
       const existing = await db.WarehouseStock.filter({ product_name: dispatch.product_name, batch_number: dispatch.batch_number });
       if (existing.length > 0) {
         const ws = existing[0];
-        const newQty = (ws.quantity_bottles || 0) - qty;
+        const newQty = Math.max(0, (ws.quantity_bottles || 0) - qty);
         const newLals = parseFloat(((ws.total_lals || 0) - lals).toFixed(4));
-        if (newQty <= 0) await db.WarehouseStock.delete(ws.id);
-        else await db.WarehouseStock.update(ws.id, { quantity_bottles: newQty, total_lals: newLals });
+        await db.WarehouseStock.update(ws.id, { quantity_bottles: newQty, total_lals: newLals });
       }
     } else {
       const allFG = await db.FinishedGood.list('product_name', 5000);

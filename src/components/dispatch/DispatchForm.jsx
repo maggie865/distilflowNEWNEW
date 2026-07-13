@@ -296,12 +296,9 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
             co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined, status: form.status || 'dispatched',
             is_sample: form.is_sample || undefined, duty_free: form.duty_free || undefined, is_export: form.is_export || undefined, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
           });
-          const newQty = ws.quantity_bottles - qty;
-          if (newQty <= 0) await db.WarehouseStock.delete(ws.id);
-          else {
-            const newLals = Math.max(0, (ws.total_lals || 0) - lals);
-            await db.WarehouseStock.update(ws.id, { quantity_bottles: newQty, total_lals: parseFloat(newLals.toFixed(4)) });
-          }
+          const newQty = Math.max(0, ws.quantity_bottles - qty);
+          const newLals = Math.max(0, (ws.total_lals || 0) - lals);
+          await db.WarehouseStock.update(ws.id, { quantity_bottles: newQty, total_lals: parseFloat(newLals.toFixed(4)) });
         }
       }
     },
