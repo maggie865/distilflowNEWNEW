@@ -38,6 +38,7 @@ const EMPTY_FORM = {
   status: 'dispatched',
   is_sample: false,
   duty_free: false,
+  is_export: false,
   notes: '',
 };
 
@@ -293,7 +294,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
             quantity_bottles: qty, total_lals: parseFloat(lals.toFixed(4)), parcel_weight_kg: weight,
             transport_distance_km: distanceKm || undefined, transport_method: transportMethod,
             co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined, status: form.status || 'dispatched',
-            is_sample: form.is_sample || undefined, duty_free: form.duty_free || undefined, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
+            is_sample: form.is_sample || undefined, duty_free: form.duty_free || undefined, is_export: form.is_export || undefined, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
           });
           const newQty = ws.quantity_bottles - qty;
           if (newQty <= 0) await db.WarehouseStock.delete(ws.id);
@@ -497,16 +498,24 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
           </div>
 
           {dispatchedFrom.includes('Auckland') && (
-            <div className="flex items-start gap-2 rounded-lg border border-border p-3">
-              <Checkbox
-                checked={form.duty_free || false}
-                onCheckedChange={v => setForm(f => ({ ...f, duty_free: v === true }))}
-                className="mt-0.5"
-              />
-              <div>
-                <Label className="cursor-pointer">Duty Free dispatch (no excise)</Label>
-                {form.duty_free && <p className="text-xs text-blue-600 mt-0.5">Duty free dispatches are deducted from taxable 3PL transfer LALs in the Excise Return.</p>}
+            <div className="rounded-lg border border-border p-3 space-y-2">
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  checked={form.duty_free || false}
+                  onCheckedChange={v => setForm(f => ({ ...f, duty_free: v === true, is_export: v === true ? false : f.is_export }))}
+                  className="mt-0.5"
+                />
+                <Label className="cursor-pointer">Duty Free dispatch</Label>
               </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  checked={form.is_export || false}
+                  onCheckedChange={v => setForm(f => ({ ...f, is_export: v === true, duty_free: v === true ? false : f.duty_free }))}
+                  className="mt-0.5"
+                />
+                <Label className="cursor-pointer">Export / Overseas dispatch</Label>
+              </div>
+              <p className="text-xs text-blue-600">Duty free and export dispatches are excise exempt and will be deducted from your monthly excise return.</p>
             </div>
           )}
 

@@ -92,12 +92,17 @@
     "is_sample": {
       "type": "boolean",
       "default": false,
-      "description": "Whether this dispatch is a free sample / promotional (excluded from excise LAL totals)"
+      "description": "Whether this dispatch is a free sample / promotional"
     },
     "duty_free": {
       "type": "boolean",
       "default": false,
       "description": "Whether this 3PL dispatch is duty free (exempt from excise \u2014 deducted from taxable transfer LALs)"
+    },
+    "is_export": {
+      "type": "boolean",
+      "default": false,
+      "description": "Export or overseas dispatch \u2014 excise exempt"
     },
     "order_reference": {
       "type": "string",
