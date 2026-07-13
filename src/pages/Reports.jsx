@@ -34,7 +34,7 @@ export default function Reports() {
   const [endDate, setEndDate] = useState(format(now, 'yyyy-MM-dd'));
   const [exporting, setExporting] = useState(false);
 
-  const { data: wastage = [] } = useQuery({ queryKey: ['wastage'], queryFn: () => db.WastageRecord.list('-date', 500) });
+  const { data: wastage = [] } = useQuery({ queryKey: ['wastage'], queryFn: () => db.WastageRecord.list('-date', 2000) });
   const { data: receiving = [] } = useQuery({ queryKey: ['receiving'], queryFn: () => db.Receiving.list('-date_received', 500) });
   const { data: dispatches = [] } = useQuery({
     queryKey: ['dispatches'],
