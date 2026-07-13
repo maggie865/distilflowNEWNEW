@@ -12,7 +12,7 @@ import { Plus, Pencil, Trash2, RefreshCw, MapPin } from 'lucide-react';
 import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
-import Pagination from '@/components/shared/Pagination';
+import Pagination from '@/components/ui/Pagination';
 
 const PAGE_SIZE = 50;
 
@@ -32,15 +32,17 @@ export default function Suppliers() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(BLANK_FORM);
   const [syncing, setSyncing] = useState(false);
-  const [currentPage, setCurrentPage] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const queryClient = useQueryClient();
 
   const suppliersQuery = useQuery({
-    queryKey: ['suppliers', currentPage],
-    queryFn: () => db.Supplier.listPage('business_name', PAGE_SIZE, currentPage * PAGE_SIZE),
+    queryKey: ['suppliers'],
+    queryFn: () => db.Supplier.list('business_name', 5000),
   });
-  const data = suppliersQuery.data?.data ?? [];
-  const totalCount = suppliersQuery.data?.count ?? 0;
+  const allSuppliers = suppliersQuery.data ?? [];
+  const totalCount = allSuppliers.length;
+  const data = allSuppliers.slice((page - 1) * pageSize, page * pageSize);
 
   const openNew = () => {
     setEditingId(null);
@@ -314,7 +316,7 @@ export default function Suppliers() {
             </MobileCard>
           ))}
         </MobileCardGrid>
-        <Pagination currentPage={currentPage} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
+        <Pagination total={totalCount} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </Card>
     </div>
   );

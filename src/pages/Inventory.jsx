@@ -17,6 +17,7 @@ import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 import StockReconciliation from '@/components/inventory/StockReconciliation';
+import Pagination from '@/components/ui/Pagination';
 
 const typeColors = {
   ethanol: 'bg-amber-100 text-amber-800',
@@ -444,6 +445,10 @@ function LowStockAlerts({ rawMaterials, thresholds }) {
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function Inventory() {
   const [dialog, setDialog] = useState(null); // { type: 'adjust'|'edit'|'delete', item, entity, queryKey }
+  const [rawPage, setRawPage] = useState(1);
+  const [rawPageSize, setRawPageSize] = useState(50);
+  const [pkgPage, setPkgPage] = useState(1);
+  const [pkgPageSize, setPkgPageSize] = useState(50);
 
   const {
     rawMaterialsWithNetStock: rawMaterialsWithNetStockFromHook,
@@ -499,6 +504,8 @@ export default function Inventory() {
 
   const packagingItems = rawMaterialsWithNetStock.filter(m => m.type?.toLowerCase() === 'packaging');
   const nonPackagingRaw = rawMaterialsWithNetStock.filter(m => m.type?.toLowerCase() !== 'packaging');
+  const pagedRaw = nonPackagingRaw.slice((rawPage - 1) * rawPageSize, rawPage * rawPageSize);
+  const pagedPkg = packagingItems.slice((pkgPage - 1) * pkgPageSize, pkgPage * pkgPageSize);
   const totalEthanolLALs = rawMaterialsWithNetStock.filter(m => m.type === 'ethanol').reduce((s, m) => s + (m.lals || 0), 0);
   const totalBottles = finishedGoods.reduce((s, g) => s + (g.quantity_bottles || 0), 0);
   const totalFinishedLALs = finishedGoods.reduce((s, g) => s + (g.total_lals || 0), 0);
@@ -579,7 +586,7 @@ export default function Inventory() {
                     <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
                   ) : nonPackagingRaw.length === 0 ? (
                     <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No raw materials in stock</TableCell></TableRow>
-                  ) : nonPackagingRaw.map(m => (
+                  ) : pagedRaw.map(m => (
                     <TableRow key={m.id}>
                       <TableCell className="font-medium text-sm">{m.name}</TableCell>
                       <TableCell><Badge variant="secondary" className={typeColors[m.type] || typeColors.other}>{m.type}</Badge></TableCell>
@@ -605,7 +612,7 @@ export default function Inventory() {
                 <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
               ) : nonPackagingRaw.length === 0 ? (
                 <p className="text-center py-8 text-muted-foreground text-sm">No raw materials in stock</p>
-              ) : nonPackagingRaw.map(m => (
+              ) : pagedRaw.map(m => (
                 <MobileCard
                   key={m.id}
                   title={m.name}
@@ -626,6 +633,7 @@ export default function Inventory() {
                 </MobileCard>
               ))}
             </MobileCardGrid>
+            <Pagination total={nonPackagingRaw.length} page={rawPage} pageSize={rawPageSize} onPageChange={setRawPage} onPageSizeChange={(s) => { setRawPageSize(s); setRawPage(1); }} />
           </Card>
         </TabsContent>
 
@@ -650,7 +658,7 @@ export default function Inventory() {
                     <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
                   ) : packagingItems.length === 0 ? (
                     <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No packaging items in stock.</TableCell></TableRow>
-                  ) : packagingItems.map(m => (
+                  ) : pagedPkg.map(m => (
                     <TableRow key={m.id}>
                       <TableCell className="font-medium text-sm">{m.name}</TableCell>
                       <TableCell className="text-sm font-semibold">{m.quantity}</TableCell>
@@ -675,7 +683,7 @@ export default function Inventory() {
                 <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
               ) : packagingItems.length === 0 ? (
                 <p className="text-center py-8 text-muted-foreground text-sm">No packaging items in stock</p>
-              ) : packagingItems.map(m => (
+              ) : pagedPkg.map(m => (
                 <MobileCard
                   key={m.id}
                   title={m.name}
@@ -694,6 +702,7 @@ export default function Inventory() {
                 </MobileCard>
               ))}
             </MobileCardGrid>
+            <Pagination total={packagingItems.length} page={pkgPage} pageSize={pkgPageSize} onPageChange={setPkgPage} onPageSizeChange={(s) => { setPkgPageSize(s); setPkgPage(1); }} />
           </Card>
         </TabsContent>
 

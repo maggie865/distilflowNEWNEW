@@ -19,6 +19,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import CompleteDistillationDialog from '@/components/distillation/CompleteDistillationDialog';
 import CreateBatchDialog from '@/components/distillation/CreateBatchDialog';
 import BatchManagement from '@/components/distillation/BatchManagement';
+import Pagination from '@/components/ui/Pagination';
 
 const EMPTY_FORM = {
   batch_number: '', date: new Date().toISOString().split('T')[0],
@@ -49,6 +50,8 @@ export default function Distillation() {
   const [batchError, setBatchError] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const queryClient = useQueryClient();
 
   const { data: masterBatches = [] } = useQuery({
@@ -449,6 +452,14 @@ export default function Distillation() {
       createMutation.mutate(form);
     }
   };
+
+  const filteredRuns = runs.filter(r => {
+    const s = search.toLowerCase();
+    const matchSearch = !s || r.batch_number?.toLowerCase().includes(s) || r.product_name?.toLowerCase().includes(s);
+    const matchStatus = filterStatus === 'all' || r.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+  const pagedRuns = filteredRuns.slice((page - 1) * pageSize, page * pageSize);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
@@ -965,9 +976,9 @@ export default function Distillation() {
         <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search batch, product…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 text-sm" />
+            <Input placeholder="Search batch, product…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="pl-8 text-sm" />
           </div>
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <Select value={filterStatus} onValueChange={v => { setFilterStatus(v); setPage(1); }}>
             <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All statuses" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Statuses</SelectItem>
@@ -999,12 +1010,7 @@ export default function Distillation() {
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading…</TableCell></TableRow>
               ) : runs.length === 0 ? (
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No distillation runs yet</TableCell></TableRow>
-              ) : runs.filter(r => {
-                const s = search.toLowerCase();
-                const matchSearch = !s || r.batch_number?.toLowerCase().includes(s) || r.product_name?.toLowerCase().includes(s);
-                const matchStatus = filterStatus === 'all' || r.status === filterStatus;
-                return matchSearch && matchStatus;
-              }).map(r => (
+              ) : pagedRuns.map(r => (
                 <TableRow key={r.id}>
                   <TableCell className="text-sm">{r.date ? format(new Date(r.date), 'MMM d, yyyy') : '—'}</TableCell>
                   <TableCell className="font-medium text-sm">{r.batch_number}</TableCell>
@@ -1030,12 +1036,7 @@ export default function Distillation() {
             <p className="text-center py-8 text-muted-foreground text-sm">Loading…</p>
           ) : runs.length === 0 ? (
             <p className="text-center py-8 text-muted-foreground text-sm">No distillation runs yet</p>
-          ) : runs.filter(r => {
-            const s = search.toLowerCase();
-            const matchSearch = !s || r.batch_number?.toLowerCase().includes(s) || r.product_name?.toLowerCase().includes(s);
-            const matchStatus = filterStatus === 'all' || r.status === filterStatus;
-            return matchSearch && matchStatus;
-          }).map(r => (
+          ) : pagedRuns.map(r => (
             <MobileCard
               key={r.id}
               title={r.product_name}
@@ -1055,6 +1056,7 @@ export default function Distillation() {
             </MobileCard>
           ))}
         </MobileCardGrid>
+        <Pagination total={filteredRuns.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </Card>
 
       <CompleteDistillationDialog

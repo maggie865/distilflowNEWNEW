@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import TankCard from '@/components/tanks/TankCard';
 import TransferDialog from '@/components/tanks/TransferDialog';
+import Pagination from '@/components/ui/Pagination';
 
 // All known purposes — new tanks will auto-appear in the correct group via their purpose field
 const GROUP_ORDER = ['maceration_dilution', 'diluted_ethanol', 'final_product_storage', 'ibc', 'sns', 'spare'];
@@ -69,6 +70,8 @@ export default function Tanks() {
   const [addOpen, setAddOpen] = useState(false);
   const [newTank, setNewTank] = useState(BLANK_TANK);
   const [editTank, setEditTank] = useState(null);
+  const [mvmtPage, setMvmtPage] = useState(1);
+  const [mvmtPageSize, setMvmtPageSize] = useState(50);
   const queryClient = useQueryClient();
 
   const { data: tanks = [], isLoading: tanksLoading } = useQuery({
@@ -112,6 +115,8 @@ export default function Tanks() {
     queryKey: ['tankMovements'],
     queryFn: () => db.TankMovement.list('-date', 5000),
   });
+
+  const pagedMovements = movements.slice((mvmtPage - 1) * mvmtPageSize, mvmtPage * mvmtPageSize);
 
   const handleTransfer = (tank) => {
     setSelectedTank(tank);
@@ -274,7 +279,7 @@ export default function Tanks() {
                     <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
                   ) : movements.length === 0 ? (
                     <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No movements recorded yet</TableCell></TableRow>
-                  ) : movements.map(m => (
+                  ) : pagedMovements.map(m => (
                     <TableRow key={m.id}>
                       <TableCell className="text-sm whitespace-nowrap">{m.date ? format(new Date(m.date), 'MMM d, yyyy') : '—'}</TableCell>
                       <TableCell className="font-semibold text-sm">Tank {m.tank_name}</TableCell>
@@ -297,6 +302,7 @@ export default function Tanks() {
                 </TableBody>
               </Table>
             </div>
+            <Pagination total={movements.length} page={mvmtPage} pageSize={mvmtPageSize} onPageChange={setMvmtPage} onPageSizeChange={(s) => { setMvmtPageSize(s); setMvmtPage(1); }} />
           </Card>
         </TabsContent>
       </Tabs>

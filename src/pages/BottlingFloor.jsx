@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import BottlingRunTracker from '@/components/bottling/BottlingRunTracker';
+import Pagination from '@/components/ui/Pagination';
 
 const BOTTLE_SIZES = [200, 700];
 
@@ -35,6 +36,8 @@ export default function BottlingFloor() {
   const [editForm, setEditForm] = useState({});
   const [deletingRun, setDeletingRun] = useState(null);
   const [approvingBatch, setApprovingBatch] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const queryClient = useQueryClient();
 
@@ -406,6 +409,8 @@ export default function BottlingFloor() {
     return true;
   });
 
+  const pagedHistory = filteredHistory.slice((page - 1) * pageSize, page * pageSize);
+
   if (activeRun) {
     return (
       <BottlingRunTracker
@@ -726,7 +731,7 @@ export default function BottlingFloor() {
                       No bottling runs yet
                     </TableCell>
                   </TableRow>
-                ) : filteredHistory.map(run => (
+                ) : pagedHistory.map(run => (
                   <TableRow key={run.id}>
                     <TableCell>{run.date ? format(new Date(run.date), 'MMM d, yyyy') : '—'}</TableCell>
                     <TableCell className="font-mono font-semibold">{run.batch_number}</TableCell>
@@ -767,6 +772,7 @@ export default function BottlingFloor() {
               </TableBody>
             </Table>
           </div>
+          <Pagination total={filteredHistory.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
         </Card>
       </div>
 

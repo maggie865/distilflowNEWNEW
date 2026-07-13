@@ -15,6 +15,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
+import Pagination from '@/components/ui/Pagination';
 
 export default function Bottling() {
   const [open, setOpen] = useState(false);
@@ -27,6 +28,8 @@ export default function Bottling() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const { data: runs = [], isLoading } = useQuery({
     queryKey: ['bottlingRuns'],
@@ -105,6 +108,14 @@ export default function Bottling() {
   };
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+  const filteredRuns = runs.filter(r => {
+    const s = search.toLowerCase();
+    const matchSearch = !s || r.batch_number?.toLowerCase().includes(s) || r.product_name?.toLowerCase().includes(s);
+    const matchStatus = filterStatus === 'all' || r.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+  const pagedRuns = filteredRuns.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="pb-20 md:pb-0">
@@ -213,9 +224,9 @@ export default function Bottling() {
         <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search batch, product…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 text-sm" />
+            <Input placeholder="Search batch, product…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="pl-8 text-sm" />
           </div>
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <Select value={filterStatus} onValueChange={v => { setFilterStatus(v); setPage(1); }}>
             <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All statuses" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Statuses</SelectItem>
@@ -246,12 +257,7 @@ export default function Bottling() {
                 <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
               ) : runs.length === 0 ? (
                 <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No bottling runs</TableCell></TableRow>
-              ) : runs.filter(r => {
-                const s = search.toLowerCase();
-                const matchSearch = !s || r.batch_number?.toLowerCase().includes(s) || r.product_name?.toLowerCase().includes(s);
-                const matchStatus = filterStatus === 'all' || r.status === filterStatus;
-                return matchSearch && matchStatus;
-              }).map(r => (
+              ) : pagedRuns.map(r => (
                 <TableRow key={r.id}>
                   <TableCell className="text-sm">{r.date ? format(new Date(r.date), 'MMM d, yyyy') : '—'}</TableCell>
                   <TableCell className="font-medium text-sm">{r.batch_number}</TableCell>
@@ -273,12 +279,7 @@ export default function Bottling() {
             <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
           ) : runs.length === 0 ? (
             <p className="text-center py-8 text-muted-foreground text-sm">No bottling runs</p>
-          ) : runs.filter(r => {
-            const s = search.toLowerCase();
-            const matchSearch = !s || r.batch_number?.toLowerCase().includes(s) || r.product_name?.toLowerCase().includes(s);
-            const matchStatus = filterStatus === 'all' || r.status === filterStatus;
-            return matchSearch && matchStatus;
-          }).map(r => (
+          ) : pagedRuns.map(r => (
             <MobileCard
               key={r.id}
               title={r.product_name}
@@ -294,6 +295,7 @@ export default function Bottling() {
             </MobileCard>
           ))}
         </MobileCardGrid>
+        <Pagination total={filteredRuns.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </Card>
     </div>
   );

@@ -11,6 +11,7 @@ import { FileSpreadsheet, Loader2, TrendingDown, PackageCheck, ArrowDownToLine, 
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
+import Pagination from '@/components/ui/Pagination';
 import InventoryReport from '@/components/reports/InventoryReport';
 import CostOfGoodsReport from '@/components/reports/CostOfGoodsReport';
 import { useRawMaterialsNetStock } from '@/hooks/useRawMaterialsNetStock';
@@ -33,6 +34,12 @@ export default function Reports() {
   const [startDate, setStartDate] = useState(format(startOfMonth(now), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(now, 'yyyy-MM-dd'));
   const [exporting, setExporting] = useState(false);
+  const [recvPage, setRecvPage] = useState(1);
+  const [recvPageSize, setRecvPageSize] = useState(50);
+  const [dispPage, setDispPage] = useState(1);
+  const [dispPageSize, setDispPageSize] = useState(50);
+  const [wastePage, setWastePage] = useState(1);
+  const [wastePageSize, setWastePageSize] = useState(50);
 
   const { data: wastage = [] } = useQuery({ queryKey: ['wastage'], queryFn: () => db.WastageRecord.list('-date', 5000) });
   const { data: receiving = [] } = useQuery({ queryKey: ['receiving'], queryFn: () => db.Receiving.list('-date_received', 5000) });
@@ -158,6 +165,10 @@ export default function Reports() {
 
   const monthLabel = `${format(rangeStart, 'dd MMM yyyy')} – ${format(rangeEnd, 'dd MMM yyyy')}`;
 
+  const pagedReceiving = monthReceiving.slice((recvPage - 1) * recvPageSize, recvPage * recvPageSize);
+  const pagedDispatches = monthDispatches.slice((dispPage - 1) * dispPageSize, dispPage * dispPageSize);
+  const pagedWastage = wastageWithCost.slice((wastePage - 1) * wastePageSize, wastePage * wastePageSize);
+
   return (
     <div className="pb-20 md:pb-0">
       <PageHeader title="Reports" subtitle="Operational audit, inventory snapshot, and wastage analysis">
@@ -236,7 +247,7 @@ export default function Reports() {
                 <TableBody>
                   {monthReceiving.length === 0 ? (
                     <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No receipts this month</TableCell></TableRow>
-                  ) : monthReceiving.map(r => (
+                  ) : pagedReceiving.map(r => (
                     <TableRow key={r.id}>
                       <TableCell className="text-sm">{r.date_received ? format(parseISO(r.date_received), 'dd MMM') : '—'}</TableCell>
                       <TableCell className="font-medium text-sm">{r.material_name}</TableCell>
@@ -264,7 +275,7 @@ export default function Reports() {
                 <TableBody>
                   {monthDispatches.length === 0 ? (
                     <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No dispatches this month</TableCell></TableRow>
-                  ) : monthDispatches.map((d, i) => (
+                  ) : pagedDispatches.map((d, i) => (
                     <TableRow key={d.id || d._row_index || i}>
                       <TableCell className="text-sm">{d.dispatch_date ? format(parseISO(d.dispatch_date), 'dd MMM') : '—'}</TableCell>
                       <TableCell className="font-medium text-sm">{d.customer_name}</TableCell>
@@ -470,7 +481,7 @@ export default function Reports() {
                 <TableBody>
                   {wastageWithCost.length === 0 ? (
                     <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No wastage records this month</TableCell></TableRow>
-                  ) : wastageWithCost.map(w => (
+                  ) : pagedWastage.map(w => (
                     <TableRow key={w.id}>
                       <TableCell className="text-sm">{w.date ? format(parseISO(w.date), 'dd MMM yyyy') : '—'}</TableCell>
                       <TableCell className="font-medium text-sm">{w.product_name}</TableCell>
@@ -487,6 +498,7 @@ export default function Reports() {
                 </TableBody>
               </Table>
             </div>
+            <Pagination total={wastageWithCost.length} page={wastePage} pageSize={wastePageSize} onPageChange={setWastePage} onPageSizeChange={(s) => { setWastePageSize(s); setWastePage(1); }} />
           </Card>
         </TabsContent>
       </Tabs>

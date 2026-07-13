@@ -16,7 +16,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
-import Pagination from '@/components/shared/Pagination';
+import Pagination from '@/components/ui/Pagination';
 
 const PAGE_SIZE = 100;
 
@@ -56,18 +56,17 @@ export default function Dilutions() {
   const [heartsForm, setHeartsForm] = useState(BLANK_HEARTS);
   const [editingDilution, setEditingDilution] = useState(null);
   const [deletingDilution, setDeletingDilution] = useState(null);
-  const [currentPage, setCurrentPage] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const queryClient = useQueryClient();
 
   const setE = (f, v) => setEthanolForm(p => ({ ...p, [f]: v }));
   const setH = (f, v) => setHeartsForm(p => ({ ...p, [f]: v }));
 
-  const { data: dilutionPage = { data: [], count: 0 }, isLoading } = useQuery({
-    queryKey: ['dilutions', currentPage],
-    queryFn: () => db.Dilution.listPage('-date', PAGE_SIZE, currentPage * PAGE_SIZE),
+  const { data: allDilutions = [], isLoading } = useQuery({
+    queryKey: ['dilutions'],
+    queryFn: () => db.Dilution.list('-date', 5000),
   });
-  const entityDilutions = dilutionPage.data ?? [];
-  const totalCount = dilutionPage.count ?? 0;
 
   const { data: sheetData } = useQuery({
     queryKey: ['dilutions-sheet'],
@@ -80,12 +79,21 @@ export default function Dilutions() {
   });
 
   // Merge: sheet records first (oldest history), then entity records on top
-  const entityIds = new Set(entityDilutions.map(d => d.id));
+  const entityIds = new Set(allDilutions.map(d => d.id));
   const sheetDilutions = (Array.isArray(sheetData) ? sheetData : sheetData?.dilutions || []).filter(d => !d.id || !entityIds.has(d.id));
-  const dilutions = [...entityDilutions, ...sheetDilutions].sort((a, b) => {
+  const dilutions = [...allDilutions, ...sheetDilutions].sort((a, b) => {
     const da = new Date(a.date || 0), db = new Date(b.date || 0);
     return db - da;
   });
+
+  const filteredDilutions = dilutions.filter(d => {
+    const isHearts = d.notes?.includes('[Heads Dilution]') || parseFloat(d.input_abv) === 79;
+    const s = search.toLowerCase();
+    const matchSearch = !s || d.batch_number?.toLowerCase().includes(s);
+    const matchType = filterType === 'all' || (filterType === 'hearts' && isHearts) || (filterType === 'ethanol' && !isHearts);
+    return matchSearch && matchType;
+  });
+  const pagedDilutions = filteredDilutions.slice((page - 1) * pageSize, page * pageSize);
 
   const { data: receivings = [] } = useQuery({
     queryKey: ['receivings-ethanol'],
@@ -764,9 +772,9 @@ export default function Dilutions() {
         <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search batch, lot code…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 text-sm" />
+            <Input placeholder="Search batch, lot code…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="pl-8 text-sm" />
           </div>
-          <Select value={filterType} onValueChange={setFilterType}>
+          <Select value={filterType} onValueChange={v => { setFilterType(v); setPage(1); }}>
             <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All types" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Types</SelectItem>
@@ -798,13 +806,7 @@ export default function Dilutions() {
                 <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
               ) : dilutions.length === 0 ? (
                 <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No dilutions recorded</TableCell></TableRow>
-              ) : dilutions.filter(d => {
-                const isHearts = d.notes?.includes('[Heads Dilution]') || parseFloat(d.input_abv) === 79;
-                const s = search.toLowerCase();
-                const matchSearch = !s || d.batch_number?.toLowerCase().includes(s);
-                const matchType = filterType === 'all' || (filterType === 'hearts' && isHearts) || (filterType === 'ethanol' && !isHearts);
-                return matchSearch && matchType;
-              }).map(d => {
+              ) : pagedDilutions.map(d => {
                 const isHearts = d.notes?.includes('[Heads Dilution]') || parseFloat(d.input_abv) === 79;
                 return (
                   <TableRow key={d.id}>
@@ -863,13 +865,7 @@ export default function Dilutions() {
             <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
           ) : dilutions.length === 0 ? (
             <p className="text-center py-8 text-muted-foreground text-sm">No dilutions recorded</p>
-          ) : dilutions.filter(d => {
-            const isHearts = d.notes?.includes('[Heads Dilution]') || parseFloat(d.input_abv) === 79;
-            const s = search.toLowerCase();
-            const matchSearch = !s || d.batch_number?.toLowerCase().includes(s);
-            const matchType = filterType === 'all' || (filterType === 'hearts' && isHearts) || (filterType === 'ethanol' && !isHearts);
-            return matchSearch && matchType;
-          }).map(d => {
+          ) : pagedDilutions.map(d => {
             const isHearts = d.notes?.includes('[Heads Dilution]') || parseFloat(d.input_abv) === 79;
             return (
               <MobileCard
@@ -901,7 +897,7 @@ export default function Dilutions() {
             );
           })}
         </MobileCardGrid>
-        <Pagination currentPage={currentPage} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
+        <Pagination total={filteredDilutions.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </Card>
 
       {/* Edit Dialog */}

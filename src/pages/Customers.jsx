@@ -13,7 +13,7 @@ import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
-import Pagination from '@/components/shared/Pagination';
+import Pagination from '@/components/ui/Pagination';
 import { base44 } from '@/api/base44Client';
 
 const EMPTY_FORM = { business_name: '', delivery_address: '' };
@@ -25,22 +25,23 @@ export default function Customers() {
   const [deletingCustomer, setDeletingCustomer] = useState(null);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
-  const [currentPage, setCurrentPage] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [isImporting, setIsImporting] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: pageResult = { data: [], count: 0 } } = useQuery({
-    queryKey: ['customers', currentPage],
-    queryFn: () => db.Customer.listPage('business_name', PAGE_SIZE, currentPage * PAGE_SIZE),
+  const { data: allCustomers = [] } = useQuery({
+    queryKey: ['customers'],
+    queryFn: () => db.Customer.list('business_name', 5000),
   });
-  const customers = pageResult.data ?? [];
-  const totalCount = pageResult.count ?? 0;
+  const totalCount = allCustomers.length;
+  const customers = allCustomers.slice((page - 1) * pageSize, page * pageSize);
 
   const createMutation = useMutation({
     mutationFn: () => db.Customer.create(form),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
-      setCurrentPage(0);
+      setPage(1);
       setShowForm(false);
       setForm(EMPTY_FORM);
       toast.success('Customer added');
@@ -73,7 +74,7 @@ export default function Customers() {
     try {
       const res = await base44.functions.invoke('syncCustomersFromSheet', {});
       queryClient.invalidateQueries({ queryKey: ['customers'] });
-      setCurrentPage(0);
+      setPage(1);
       const d = res.data || {};
       toast.success(`Imported ${d.synced ?? 0} customers (${d.created ?? 0} new, ${d.updated ?? 0} updated)`);
     } catch (err) {
@@ -172,7 +173,7 @@ export default function Customers() {
             </MobileCard>
           ))}
         </MobileCardGrid>
-        <Pagination currentPage={currentPage} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
+        <Pagination total={totalCount} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </Card>
 
       {/* Add Customer Dialog */}

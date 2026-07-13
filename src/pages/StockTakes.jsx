@@ -14,6 +14,7 @@ import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
+import Pagination from '@/components/ui/Pagination';
 
 const CATEGORY_META = {
   raw_material: { label: 'Raw Materials', icon: Package, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
@@ -29,6 +30,8 @@ export default function StockTakes() {
   const [activeStockTake, setActiveStockTake] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const queryClient = useQueryClient();
 
   const { data: stockTakes = [], isLoading } = useQuery({
@@ -200,6 +203,8 @@ export default function StockTakes() {
   });
 
   const getLinesForTake = (id) => allLines.filter(l => l.stock_take_id === id);
+
+  const pagedStockTakes = stockTakes.slice((page - 1) * pageSize, page * pageSize);
 
   const getVarianceSummary = (lines) => {
     const counted = lines.filter(l => l.counted_quantity != null);
@@ -452,7 +457,7 @@ export default function StockTakes() {
             <p className="font-medium text-muted-foreground">No stock takes yet</p>
             <p className="text-sm text-muted-foreground mt-1">Create your first stock take to start reconciling inventory</p>
           </Card>
-        ) : stockTakes.map(st => {
+        ) : pagedStockTakes.map(st => {
           const lines = getLinesForTake(st.id);
           const summary = getVarianceSummary(lines);
           const isExpanded = expandedId === st.id;
@@ -518,6 +523,7 @@ export default function StockTakes() {
           );
         })}
       </div>
+      <Pagination total={stockTakes.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
 
       <Dialog open={newOpen} onOpenChange={v => { setNewOpen(v); if (!v) { setConductedBy(''); setNotes(''); setScope({ raw_material: true, finished_good: true, tank: true }); } }}>
         <DialogContent className="max-w-sm">

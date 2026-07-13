@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { cn } from '@/lib/utils';
+import Pagination from '@/components/ui/Pagination';
 
 function StepRow({ icon: Icon, color, label, data, children }) {
   return (
@@ -327,6 +328,8 @@ function BatchCard({ batchNumber, distillations, bottlings, subBatches, dispatch
 
 export default function BatchTracker() {
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const { data: distillations = [], isLoading: loadingD } = useQuery({
     queryKey: ['distillationRuns'],
@@ -422,6 +425,8 @@ export default function BatchTracker() {
       })
     : batches;
 
+  const pagedBatches = filtered.slice((page - 1) * pageSize, page * pageSize);
+
   return (
     <div className="pb-20 md:pb-0">
       <PageHeader
@@ -435,7 +440,7 @@ export default function BatchTracker() {
           className="pl-9"
           placeholder="Search by batch number or product name..."
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => { setSearch(e.target.value); setPage(1); }}
         />
       </div>
 
@@ -449,7 +454,7 @@ export default function BatchTracker() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map(([batchNumber, { distillations: ds, bottlings: bs }]) => (
+          {pagedBatches.map(([batchNumber, { distillations: ds, bottlings: bs }]) => (
             <BatchCard
               key={batchNumber}
               batchNumber={batchNumber}
@@ -463,6 +468,7 @@ export default function BatchTracker() {
           ))}
         </div>
       )}
+      <Pagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
     </div>
   );
 }

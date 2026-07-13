@@ -14,6 +14,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
+import Pagination from '@/components/ui/Pagination';
 
 const BLANK_FORM = {
   date: new Date().toISOString().split('T')[0],
@@ -36,6 +37,8 @@ export default function SNSDistillation() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(BLANK_FORM);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const queryClient = useQueryClient();
 
   const { data: snsRuns = [] } = useQuery({
@@ -66,6 +69,8 @@ export default function SNSDistillation() {
   const destinationTank = tanks.find(t => t.id === form.destination_tank_id);
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+  const pagedSnsRuns = snsRuns.slice((page - 1) * pageSize, page * pageSize);
 
   const openNew = () => {
     setEditingId(null);
@@ -455,7 +460,7 @@ export default function SNSDistillation() {
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No SNS runs recorded</TableCell>
                 </TableRow>
-              ) : snsRuns.map(run => {
+              ) : pagedSnsRuns.map(run => {
                 const heartsLals = (run.hearts_volume * run.hearts_abv) / 100;
                 const sourceTank = tanks.find(t => t.id === run.source_tank_id);
                 return (
@@ -487,6 +492,7 @@ export default function SNSDistillation() {
           </Table>
         </div>
       </Card>
+      <Pagination total={snsRuns.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
     </div>
   );
 }

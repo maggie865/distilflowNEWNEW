@@ -15,6 +15,7 @@ import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
+import Pagination from '@/components/ui/Pagination';
 
 const MATERIAL_TYPES = ['Ethanol', 'Botanicals', 'Packaging', 'Grain', 'Sugar', 'Water', 'Flavoring', 'Other'];
 const TRANSPORT_METHODS = ['road', 'courier', 'air', 'sea'];
@@ -352,6 +353,8 @@ export default function Receiving() {
 
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
   const rawData = receivingsQuery.data || [];
@@ -362,6 +365,7 @@ export default function Receiving() {
     const matchSearch = !s || r.material_name?.toLowerCase().includes(s) || r.supplier_name?.toLowerCase().includes(s) || r.batch_number?.toLowerCase().includes(s);
     return matchType && matchSearch;
   });
+  const pagedData = data.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="pb-20 md:pb-0 relative">
@@ -541,9 +545,9 @@ export default function Receiving() {
         <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search material, supplier, batch…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 text-sm" />
+            <Input placeholder="Search material, supplier, batch…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="pl-8 text-sm" />
           </div>
-          <Select value={filterType} onValueChange={setFilterType}>
+          <Select value={filterType} onValueChange={v => { setFilterType(v); setPage(1); }}>
             <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All types" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Types</SelectItem>
@@ -572,11 +576,11 @@ export default function Receiving() {
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
               ) : data.length === 0 ? (
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No receivings yet</TableCell></TableRow>
-              ) : data.map(r => (
-                <TableRow key={r.id}>
-                  <TableCell className="text-sm">{r.date_received ? format(new Date(r.date_received), 'MMM d, yyyy') : '—'}</TableCell>
-                  <TableCell className="font-medium text-sm">{r.material_name}</TableCell>
-                  <TableCell className="text-sm">{r.material_type}</TableCell>
+              ) : pagedData.map(r => (
+                  <TableRow key={r.id}>
+                    <TableCell className="text-sm">{r.date_received ? format(new Date(r.date_received), 'MMM d, yyyy') : '—'}</TableCell>
+                    <TableCell className="font-medium text-sm">{r.material_name}</TableCell>
+                    <TableCell className="text-sm">{r.material_type}</TableCell>
                   <TableCell className="text-sm">{r.quantity} {r.unit}</TableCell>
                   <TableCell className="text-sm">{r.supplier_name || '—'}</TableCell>
                   <TableCell className="text-sm">{r.transport_distance_km ? `${r.transport_distance_km} km` : '—'}</TableCell>
@@ -619,7 +623,7 @@ export default function Receiving() {
             <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
           ) : data.length === 0 ? (
             <p className="text-center py-8 text-muted-foreground text-sm">No receivings yet</p>
-          ) : data.map(r => (
+          ) : pagedData.map(r => (
             <MobileCard
               key={r.id}
               title={r.material_name}
@@ -642,6 +646,7 @@ export default function Receiving() {
             </MobileCard>
           ))}
         </MobileCardGrid>
+        <Pagination total={data.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </Card>
 
       {/* Packing Slip Viewer */}

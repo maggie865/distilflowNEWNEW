@@ -16,7 +16,7 @@ import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
-import Pagination from '@/components/shared/Pagination';
+import Pagination from '@/components/ui/Pagination';
 
 const PAGE_SIZE = 50;
 
@@ -140,7 +140,8 @@ export default function RawMaterials() {
   const [deleteItem, setDeleteItem] = useState(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
-  const [currentPage, setCurrentPage] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const queryClient = useQueryClient();
 
   const { rawMaterialsWithNetStock: materials, isLoading } = useRawMaterialsNetStock();
@@ -179,7 +180,7 @@ export default function RawMaterials() {
     const matchType = typeFilter === 'all' || m.type === typeFilter;
     return matchSearch && matchType;
   });
-  const filtered = allFiltered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const filtered = allFiltered.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="pb-20 md:pb-0">
@@ -209,10 +210,10 @@ export default function RawMaterials() {
             className="pl-9"
             placeholder="Search by name, supplier or lot code..."
             value={search}
-            onChange={e => { setSearch(e.target.value); setCurrentPage(0); }}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
-        <Select value={typeFilter} onValueChange={v => { setTypeFilter(v); setCurrentPage(0); }}>
+        <Select value={typeFilter} onValueChange={v => { setTypeFilter(v); setPage(1); }}>
           <SelectTrigger className="w-full sm:w-44">
             <SelectValue placeholder="All types" />
           </SelectTrigger>
@@ -233,7 +234,7 @@ export default function RawMaterials() {
           return (
             <button
               key={type}
-              onClick={() => { setTypeFilter(typeFilter === type ? 'all' : type); setCurrentPage(0); }}
+              onClick={() => { setTypeFilter(typeFilter === type ? 'all' : type); setPage(1); }}
               className={`text-xs px-3 py-1 rounded-full border transition-colors ${
                 typeFilter === type
                   ? 'bg-primary text-primary-foreground border-primary'
@@ -353,7 +354,7 @@ export default function RawMaterials() {
             </MobileCard>
           ))}
         </MobileCardGrid>
-        <Pagination currentPage={currentPage} totalCount={allFiltered.length} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
+        <Pagination total={allFiltered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </Card>
 
       {/* Edit Dialog */}

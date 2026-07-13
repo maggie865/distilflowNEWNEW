@@ -17,7 +17,7 @@ import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
-import Pagination from '@/components/shared/Pagination';
+import Pagination from '@/components/ui/Pagination';
 import DispatchForm from '@/components/dispatch/DispatchForm.jsx';
 import DirectSalesForm from '@/components/dispatch/DirectSalesForm.jsx';
 import StockLocationDialog from '@/components/dispatch/StockLocationDialog.jsx';
@@ -44,8 +44,8 @@ export default function DispatchHub() {
   const [showMap, setShowMap] = useState(false);
   const [showTransfer3PL, setShowTransfer3PL] = useState(false);
   const [stockLocation, setStockLocation] = useState(null);
-  const [currentPage, setCurrentPage] = useState(0);
-  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const [editingDispatch, setEditingDispatch] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -59,9 +59,7 @@ export default function DispatchHub() {
   const { data: warehouseStock = [] } = useQuery({ queryKey: ['warehouseStock'], queryFn: () => db.WarehouseStock.list('-date_transferred_in', 5000) });
   const { data: allDispatches = [] } = useQuery({ queryKey: ['dispatches-all'], queryFn: () => db.Dispatch.list('-dispatch_date', 5000) });
   const { data: customers = [] } = useQuery({ queryKey: ['customers'], queryFn: () => db.Customer.list('business_name', 5000) });
-  const { data: dispatchPage = { data: [], count: 0 } } = useQuery({ queryKey: ['dispatches', currentPage], queryFn: () => db.Dispatch.listPage('-dispatch_date', PAGE_SIZE, currentPage * PAGE_SIZE) });
-  const dispatches = dispatchPage.data ?? [];
-  const totalDispatchCount = dispatchPage.count ?? 0;
+  // Client-side pagination — allDispatches already loaded above
 
   const totalBottlesDispatched = allDispatches.reduce((s, d) => s + (d.quantity_bottles || 0), 0);
   const totalLalsDispatched = allDispatches.reduce((s, d) => s + (d.total_lals || 0), 0);
@@ -69,7 +67,7 @@ export default function DispatchHub() {
   const bluffBottles = finishedGoods.reduce((s, fg) => s + (fg.quantity_bottles || 0), 0);
   const warehouseBottles = warehouseStock.reduce((s, w) => s + (w.quantity_bottles || 0), 0);
 
-  const filtered = dispatches
+  const filtered = allDispatches
     .filter(d => { if (!search) return true; const s = search.toLowerCase(); return d.customer_name?.toLowerCase().includes(s) || d.product_name?.toLowerCase().includes(s) || d.batch_number?.toLowerCase().includes(s); })
     .filter(d => filterSource === 'all' || (d.dispatched_from || 'Bluff') === filterSource)
     .filter(d => filterStatus === 'all' || d.status === filterStatus)
@@ -80,7 +78,9 @@ export default function DispatchHub() {
     })
     .sort((a, b) => new Date(b.dispatch_date) - new Date(a.dispatch_date));
 
-  const handleSearch = (val) => { setSearch(val); setCurrentPage(0); };
+  const handleSearch = (val) => { setSearch(val); setPage(1); };
+
+  const pagedFiltered = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const depleteStock = async (dispatch) => {
     const is3PL = (dispatch.dispatched_from || '').includes('Auckland');
@@ -214,7 +214,7 @@ export default function DispatchHub() {
         <Button variant="outline" onClick={() => recalcMutation.mutate()} disabled={recalcMutation.isPending} className="gap-2"><RotateCcw className="w-4 h-4" />{recalcMutation.isPending ? 'Recalculating...' : 'Recalc Stock'}</Button>
       </PageHeader>
 
-      {showMap && <div className="mb-6"><DeliveryMap dispatches={dispatches} customers={customers} distilleryOrigin={DISTILLERY_ORIGIN} /></div>}
+      {showMap && <div className="mb-6"><DeliveryMap dispatches={allDispatches} customers={customers} distilleryOrigin={DISTILLERY_ORIGIN} /></div>}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
@@ -264,15 +264,15 @@ export default function DispatchHub() {
               <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
               <Input placeholder="Search customer, product, batch…" value={search} onChange={e => handleSearch(e.target.value)} className="pl-8 text-sm" />
             </div>
-            <Select value={filterSource} onValueChange={v => { setFilterSource(v); setCurrentPage(0); }}>
+            <Select value={filterSource} onValueChange={v => { setFilterSource(v); setPage(1); }}>
               <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All sources" /></SelectTrigger>
               <SelectContent><SelectItem value="all">All Sources</SelectItem><SelectItem value="Bluff">Bluff Distillery</SelectItem><SelectItem value="Auckland 3PL">Auckland 3PL</SelectItem></SelectContent>
             </Select>
-            <Select value={filterChannel} onValueChange={v => { setFilterChannel(v); setCurrentPage(0); }}>
+            <Select value={filterChannel} onValueChange={v => { setFilterChannel(v); setPage(1); }}>
               <SelectTrigger className="w-full sm:w-36"><SelectValue placeholder="All types" /></SelectTrigger>
               <SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="wholesale">Wholesale</SelectItem><SelectItem value="cellar_door">Cellar Door</SelectItem><SelectItem value="shopify">Shopify</SelectItem><SelectItem value="airpoints">Airpoints</SelectItem><SelectItem value="website">Website</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent>
             </Select>
-            <Select value={filterStatus} onValueChange={v => { setFilterStatus(v); setCurrentPage(0); }}>
+            <Select value={filterStatus} onValueChange={v => { setFilterStatus(v); setPage(1); }}>
               <SelectTrigger className="w-full sm:w-36"><SelectValue placeholder="All statuses" /></SelectTrigger>
               <SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="dispatched">Dispatched</SelectItem><SelectItem value="delivered">Delivered</SelectItem></SelectContent>
             </Select>
@@ -290,7 +290,7 @@ export default function DispatchHub() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow><TableCell colSpan={12} className="text-center py-10 text-muted-foreground">No dispatches found</TableCell></TableRow>
-              ) : filtered.map((d, i) => (
+              ) : pagedFiltered.map((d, i) => (
                 <TableRow key={d.id || i}>
                   <TableCell>{(() => { try { const dt = new Date(d.dispatch_date?.replace(/-/g, '/')); return isNaN(dt) ? d.dispatch_date || '—' : format(dt, 'dd MMM yyyy'); } catch { return d.dispatch_date || '—'; } })()}</TableCell>
                   <TableCell><Badge variant={d.dispatched_from === 'Auckland 3PL' ? 'secondary' : 'outline'} className="text-xs">{d.dispatched_from || 'Bluff'}</Badge></TableCell>
@@ -340,7 +340,7 @@ export default function DispatchHub() {
         <MobileCardGrid>
           {filtered.length === 0 ? (
             <p className="text-center py-10 text-muted-foreground text-sm">No dispatches found</p>
-          ) : filtered.map((d, i) => (
+          ) : pagedFiltered.map((d, i) => (
             <MobileCard
               key={d.id || i}
               title={d.sales_channel && d.sales_channel !== 'wholesale' ? (CHANNEL_LABELS[d.sales_channel] || d.sales_channel) : (d.customer_name || '—')}
@@ -384,7 +384,7 @@ export default function DispatchHub() {
             </MobileCard>
           ))}
         </MobileCardGrid>
-        <Pagination currentPage={currentPage} totalCount={totalDispatchCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
+        <Pagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </Card>
 
       <DispatchForm open={showForm} onClose={() => setShowForm(false)} finishedGoods={finishedGoods} warehouseStock={warehouseStock} customers={customers} />
