@@ -14,6 +14,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import Pagination from '@/components/ui/Pagination';
 import InventoryReport from '@/components/reports/InventoryReport';
 import CostOfGoodsReport from '@/components/reports/CostOfGoodsReport';
+import ExciseReturn from '@/components/reports/ExciseReturn';
 import { useRawMaterialsNetStock } from '@/hooks/useRawMaterialsNetStock';
 
 function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent border-accent-foreground/10', icon: Icon }) {
@@ -195,7 +196,8 @@ export default function Reports() {
            <TabsTrigger value="movements">Movements</TabsTrigger>
            <TabsTrigger value="carbon">Carbon Footprint</TabsTrigger>
            <TabsTrigger value="wastage">Wastage Analysis</TabsTrigger>
-         </TabsList>
+           <TabsTrigger value="excise">Excise Return</TabsTrigger>
+           </TabsList>
 
         {/* ── INVENTORY SNAPSHOT ── */}
         <TabsContent value="overview" className="space-y-6">
@@ -500,6 +502,19 @@ export default function Reports() {
             </div>
             <Pagination total={wastageWithCost.length} page={wastePage} pageSize={wastePageSize} onPageChange={setWastePage} onPageSizeChange={(s) => { setWastePageSize(s); setWastePage(1); }} />
           </Card>
+        </TabsContent>
+        {/* ── EXCISE RETURN ── */}
+        <TabsContent value="excise" className="space-y-6">
+          <ExciseReturn
+            finishedGoods={finishedGoods}
+            warehouseStock={warehouseStock}
+            tanks={tanks}
+            dispatches={dispatches}
+            distillationRuns={distillationRuns}
+            bottlingRuns={bottlingRuns}
+            wastage={wastage}
+            tankMovements={tankMovements}
+          />
         </TabsContent>
       </Tabs>
     </div>
