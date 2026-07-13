@@ -195,13 +195,15 @@ export default function SNSDistillation() {
         }
       }
       
-      // Clear the source tank after completion
+      // Subtract only the used volume from the source tank
       if (selectedTank) {
+        const usedVolume = parseFloat(form.input_volume) || 0;
+        const remainingVolume = Math.max(0, (selectedTank.current_volume || 0) - usedVolume);
         await db.StorageTank.update(form.source_tank_id, {
-          current_volume: 0,
-          current_abv: 0,
-          current_product: '',
-          status: 'empty',
+          current_volume: remainingVolume,
+          current_abv: remainingVolume > 0 ? (selectedTank.current_abv || 0) : 0,
+          current_product: remainingVolume > 0 ? (selectedTank.current_product || '') : '',
+          status: remainingVolume > 0 ? 'in_use' : 'empty',
         });
       }
       
