@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { PackageCheck, MapPin, Users, X, Plus, Building2 } from 'lucide-react';
+import { PackageCheck, MapPin, Users, X, Plus, Building2, Gift } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
@@ -35,6 +36,7 @@ const EMPTY_FORM = {
   transport_distance_km: '',
   transport_method: 'road',
   status: 'dispatched',
+  is_sample: false,
   notes: '',
 };
 
@@ -290,7 +292,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
             quantity_bottles: qty, total_lals: parseFloat(lals.toFixed(4)), parcel_weight_kg: weight,
             transport_distance_km: distanceKm || undefined, transport_method: transportMethod,
             co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined, status: form.status || 'dispatched',
-            notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
+            is_sample: form.is_sample || undefined, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
           });
           const newQty = ws.quantity_bottles - qty;
           if (newQty <= 0) await db.WarehouseStock.delete(ws.id);
@@ -480,6 +482,18 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
           </div>
 
           <div><Label>Notes</Label><Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any additional notes" className="mt-1" /></div>
+
+          <div className="flex items-start gap-2 rounded-lg border border-border p-3">
+            <Checkbox
+              checked={form.is_sample || false}
+              onCheckedChange={v => setForm(f => ({ ...f, is_sample: v === true }))}
+              className="mt-0.5"
+            />
+            <div>
+              <Label className="flex items-center gap-1.5 cursor-pointer"><Gift className="w-3.5 h-3.5" /> Mark as sample / promotional</Label>
+              {form.is_sample && <p className="text-xs text-amber-600 mt-0.5">Sample dispatches are excluded from excise LAL calculations.</p>}
+            </div>
+          </div>
 
           <Button onClick={() => dispatchMutation.mutate()} disabled={dispatchMutation.isPending || !canSubmit} className="w-full h-12 text-base font-semibold">
             {dispatchMutation.isPending ? 'Saving…' : `Record Dispatch (${totalBottles} bottles${dispatchedFrom === 'Bluff' ? allocationMode === 'fifo' ? ', FIFO' : ', Manual' : ''})`}

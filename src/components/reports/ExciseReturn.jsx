@@ -65,7 +65,13 @@ export default function ExciseReturn({
 
   // --- LALs Dispatched (total_lals from dispatches in month) ---
   const monthDispatches = dispatches.filter(d => inMonth(d.dispatch_date));
-  const lalsDispatched = monthDispatches.reduce((s, d) => s + (d.total_lals || 0), 0);
+  const lalsDispatched = monthDispatches
+    .filter(d => !d.is_sample)
+    .reduce((s, d) => s + (d.total_lals || 0), 0);
+  const lalsSamples = monthDispatches
+    .filter(d => d.is_sample)
+    .reduce((s, d) => s + (d.total_lals || 0), 0);
+  const lalsDispatchedAll = lalsDispatched + lalsSamples;
 
   // --- LALs Wasted (lals from wastage records in month) ---
   const monthWastage = wastage.filter(w => inMonth(w.date));
@@ -75,10 +81,10 @@ export default function ExciseReturn({
   // Add back dispatches and wastage within the month (they reduced stock)
   // Subtract distillation hearts produced in the month (they increased stock)
   // Bottling doesn't change total LALs (just moves from tank to bottles)
-  const openingLALs = currentTotalLALs + lalsDispatched + lalsWasted - lalsProduced;
+  const openingLALs = currentTotalLALs + lalsDispatchedAll + lalsWasted - lalsProduced;
 
   // --- Closing LALs: Opening + Produced - Dispatched - Wasted ---
-  const closingLALs = openingLALs + lalsProduced - lalsDispatched - lalsWasted;
+  const closingLALs = openingLALs + lalsProduced - lalsDispatchedAll - lalsWasted;
 
   // --- Mass balance check ---
   const discrepancy = Math.abs(closingLALs - currentTotalLALs);
@@ -89,9 +95,11 @@ export default function ExciseReturn({
     const map = {};
     monthDispatches.forEach(d => {
       const name = d.customer_name || 'Unknown';
-      map[name] = (map[name] || 0) + (d.total_lals || 0);
+      if (!map[name]) map[name] = { name, lals: 0, hasSamples: false };
+      map[name].lals += d.total_lals || 0;
+      if (d.is_sample) map[name].hasSamples = true;
     });
-    return Object.entries(map).map(([name, lals]) => ({ name, lals })).sort((a, b) => b.lals - a.lals);
+    return Object.values(map).sort((a, b) => b.lals - a.lals);
   }, [monthDispatches]);
 
   // --- Breakdown: LALs produced by batch ---
@@ -113,6 +121,7 @@ export default function ExciseReturn({
       `LALs Produced:          ${lalsProduced.toFixed(3)}`,
       `LALs Bottled:           ${lalsBottled.toFixed(3)}`,
       `LALs Dispatched (sold): ${lalsDispatched.toFixed(3)}`,
+      `LALs Samples/Promo:     ${lalsSamples.toFixed(3)}`,
       `LALs Wasted:            ${lalsWasted.toFixed(3)}`,
       `Closing LALs:           ${closingLALs.toFixed(3)}`,
       ``,
@@ -170,12 +179,14 @@ export default function ExciseReturn({
           <ExciseRow label="Opening LALs" value={openingLALs} sub={`Total stock at start of ${monthLabel}`} />
           <ExciseRow label="LALs Produced" value={lalsProduced} sub={`${monthDistillations.length} distillation run(s)`} />
           <ExciseRow label="LALs Bottled" value={lalsBottled} sub={`${monthBottlings.length} bottling run(s) — no net change to total LALs`} />
-          <ExciseRow label="LALs Dispatched (sold)" value={lalsDispatched} sub={`${monthDispatches.length} dispatch(es)`} />
+          <ExciseRow label="LALs Dispatched (sold)" value={lalsDispatched} sub={`${monthDispatches.filter(d => !d.is_sample).length} dispatch(es) (excl. samples)`} />
+          <ExciseRow label="LALs — Samples / Promotional" value={lalsSamples} sub={`${monthDispatches.filter(d => d.is_sample).length} sample dispatch(es)`} />
           <ExciseRow label="LALs Wasted" value={lalsWasted} sub={`${monthWastage.length} wastage record(s)`} />
           <ExciseRow label="Closing LALs" value={closingLALs} sub={`Opening + Produced - Dispatched - Wasted`} highlight />
         </div>
-        <div className="px-4 py-3 border-t border-border bg-muted/20">
-          <p className="text-xs text-muted-foreground mb-1">Current system stock (for reference): {currentTotalLALs.toFixed(3)} LALs</p>
+        <div className="px-4 py-3 border-t border-border bg-muted/20 space-y-1">
+          <p className="text-xs text-muted-foreground">Current system stock (for reference): {currentTotalLALs.toFixed(3)} LALs</p>
+          <p className="text-xs text-amber-600">Samples are excluded from taxable dispatches. Verify sample treatment with your customs broker.</p>
         </div>
       </Card>
 
@@ -220,14 +231,19 @@ export default function ExciseReturn({
                   <TableRow><TableCell colSpan={2} className="text-center py-6 text-muted-foreground">No dispatches in this period</TableCell></TableRow>
                 ) : dispatchByCustomer.map(c => (
                   <TableRow key={c.name}>
-                    <TableCell className="text-sm font-medium">{c.name}</TableCell>
+                    <TableCell className="text-sm font-medium">
+                      <div className="flex items-center gap-1.5">
+                        {c.name}
+                        {c.hasSamples && <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold border border-amber-300">S</span>}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm font-mono font-semibold text-right">{c.lals.toFixed(3)}</TableCell>
                   </TableRow>
                 ))}
                 {dispatchByCustomer.length > 0 && (
                   <TableRow className="border-t-2 bg-muted/30">
                     <TableCell className="font-bold text-sm">Total</TableCell>
-                    <TableCell className="font-bold text-sm font-mono text-right">{lalsDispatched.toFixed(3)}</TableCell>
+                    <TableCell className="font-bold text-sm font-mono text-right">{lalsDispatchedAll.toFixed(3)}</TableCell>
                   </TableRow>
                 )}
               </TableBody>

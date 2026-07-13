@@ -89,6 +89,11 @@
       "default": "wholesale",
       "description": "Sales channel for this dispatch"
     },
+    "is_sample": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this dispatch is a free sample / promotional (excluded from excise LAL totals)"
+    },
     "order_reference": {
       "type": "string",
       "description": "Order reference number (for direct sales)"
