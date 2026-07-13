@@ -13,32 +13,14 @@ import { toast } from 'sonner';
 export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [], allDispatches = [] }) {
   const qc = useQueryClient();
   const [rows, setRows] = useState([{ fgId: '', qty: '' }]);
+  const [transferDate, setTransferDate] = useState(() => new Date().toISOString().split('T')[0]);
 
-  // Build dispatched totals per product+batch+bottle_size — only Bluff dispatches reduce Bluff stock
-  const dispatchedByBatch = useMemo(() => {
-    const map = {};
-    allDispatches.forEach(d => {
-      const isBluff = !(d.dispatched_from || '').includes('Auckland');
-      if (!isBluff) return;
-      const key = `${d.batch_number}||${d.product_name}||${d.bottle_size_ml || 'unknown'}`;
-      map[key] = (map[key] || 0) + (d.quantity_bottles || 0);
-    });
-    return map;
-  }, [allDispatches]);
-
-  // Compute net available stock at Bluff: bottled - dispatched from Bluff
+  // quantity_bottles is already the correct post-dispatch figure — use directly
   const bluffStock = useMemo(() => finishedGoods
-    .map(g => {
-      const key = `${g.batch_number}||${g.product_name}||${g.bottle_size_ml || 'unknown'}`;
-      const dispatched = dispatchedByBatch[key] || 0;
-      const bottled = g.quantity_bottles || 0;
-      const remaining = Math.max(0, bottled - dispatched);
-      const lalsPerBottle = bottled > 0 && g.total_lals ? g.total_lals / bottled : 0;
-      return { ...g, available_bottles: remaining, available_lals: parseFloat((remaining * lalsPerBottle).toFixed(4)) };
-    })
+    .map(g => ({ ...g, available_bottles: g.quantity_bottles || 0 }))
     .filter(g => g.available_bottles > 0)
     .sort((a, b) => `${a.product_name} ${a.batch_number}`.localeCompare(`${b.product_name} ${b.batch_number}`)),
-    [finishedGoods, dispatchedByBatch]);
+    [finishedGoods]);
 
   // Track how many bottles of each fgId are already allocated across other rows
   const allocatedByFgId = useMemo(() => {
@@ -89,17 +71,19 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
           total_lals: parseFloat(((fg.quantity_bottles - transferQty) * lalsPerBottle).toFixed(4)),
         });
 
-        const existing = await base44.entities.WarehouseStock.filter({
-          product_name: fg.product_name,
-          batch_number: fg.batch_number,
-          bottle_size_ml: fg.bottle_size_ml,
-        });
+        const allWS = await base44.entities.WarehouseStock.list('-date_transferred_in', 2000);
+        const existing = allWS.filter(w =>
+          w.product_name === fg.product_name &&
+          w.batch_number === fg.batch_number &&
+          Number(w.bottle_size_ml) === Number(fg.bottle_size_ml)
+        );
 
         if (existing.length > 0) {
           const ws = existing[0];
           await base44.entities.WarehouseStock.update(ws.id, {
             quantity_bottles: (ws.quantity_bottles || 0) + transferQty,
             total_lals: parseFloat(((ws.total_lals || 0) + transferLals).toFixed(4)),
+            transfer_date: transferDate,
           });
         } else {
           await base44.entities.WarehouseStock.create({
@@ -109,7 +93,8 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
             abv_percent: fg.abv_percent,
             quantity_bottles: transferQty,
             total_lals: transferLals,
-            date_transferred_in: new Date().toISOString().split('T')[0],
+            date_transferred_in: transferDate,
+            transfer_date: transferDate,
           });
         }
       }
@@ -121,6 +106,7 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
       qc.invalidateQueries({ queryKey: ['dispatches-all'] });
       toast.success(`${totalBottles} bottles across ${validRows.length} batch(es) transferred to Auckland 3PL`);
       setRows([{ fgId: '', qty: '' }]);
+      setTransferDate(() => new Date().toISOString().split('T')[0]);
       onClose();
     },
     onError: (err) => toast.error(err.message || 'Transfer failed'),
@@ -128,6 +114,7 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
 
   const handleClose = () => {
     setRows([{ fgId: '', qty: '' }]);
+    setTransferDate(() => new Date().toISOString().split('T')[0]);
     onClose();
   };
 
@@ -137,6 +124,11 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><ArrowRightLeft className="w-4 h-4" /> Transfer to Auckland 3PL</DialogTitle>
         </DialogHeader>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Transfer Date</Label>
+          <Input type="date" value={transferDate} onChange={e => setTransferDate(e.target.value)} className="text-sm" />
+        </div>
 
         {bluffStock.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No stock available at Bluff to transfer.</p>

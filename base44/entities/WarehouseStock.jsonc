@@ -31,6 +31,11 @@
       "format": "date",
       "description": "Date stock was transferred to warehouse"
     },
+    "transfer_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date stock was transferred to this location"
+    },
     "notes": {
       "type": "string",
       "description": "Additional notes"

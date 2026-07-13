@@ -30,6 +30,7 @@ export default function StockLocationDialog({ location, finishedGoods = [], ware
         abv_percent: ws.abv_percent,
         quantity_bottles: ws.quantity_bottles || 0,
         total_lals: ws.total_lals || 0,
+        transfer_date: ws.transfer_date,
       }))
       .sort((a, b) => (a.product_name || '').localeCompare(b.product_name || ''));
   }, [isBluff, finishedGoods, warehouseStock]);
@@ -93,6 +94,7 @@ export default function StockLocationDialog({ location, finishedGoods = [], ware
                       <TableHead className="text-xs">ABV</TableHead>
                       <TableHead className="text-xs text-right">Bottles</TableHead>
                       <TableHead className="text-xs text-right">LALs</TableHead>
+                      {!isBluff && <TableHead className="text-xs">Transferred</TableHead>}
                       {isBluff && <TableHead className="text-xs"></TableHead>}
                     </TableRow>
                   </TableHeader>
@@ -104,6 +106,9 @@ export default function StockLocationDialog({ location, finishedGoods = [], ware
                         <TableCell className="text-xs">{b.abv_percent ? `${b.abv_percent}%` : '—'}</TableCell>
                         <TableCell className="text-right font-semibold text-sm">{b.quantity_bottles.toLocaleString()}</TableCell>
                         <TableCell className="text-right text-xs">{(b.total_lals || 0).toFixed(3)}</TableCell>
+                        {!isBluff && (
+                          <TableCell className="text-xs text-muted-foreground">{b.transfer_date || '—'}</TableCell>
+                        )}
                         {isBluff && (
                           <TableCell className="text-right">
                             {b.quantity_bottles > 0 && (
