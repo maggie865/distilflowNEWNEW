@@ -37,14 +37,29 @@ Deno.serve(async (req) => {
       return Response.json({ skipped: true, reason: `wastage record already exists for ${subBatchCode}` });
     }
 
-    // Create the wastage record from the dumped data
+    // Calculate dumped LALs from mass balance instead of trusting stored values
+    // Balance: dumped_lals = input_lals - (heads_lals + hearts_lals + tails_lals)
+    const inputLals = runData.input_lals || 0;
+    const collectedLals = (runData.heads_lals || 0) + (runData.hearts_lals || 0) + (runData.tails_lals || 0);
+    const balancedDumpedLals = Math.max(0, inputLals - collectedLals);
+    const balancedDumpedAbv = runData.dumped_volume > 0 ? (balancedDumpedLals / runData.dumped_volume * 100) : 0;
+
+    // Also fix the distillation run if stored dumped values are impossible (>100% ABV or negative LALs)
+    if (runData.dumped_abv > 100 || (runData.dumped_lals || 0) < 0) {
+      await base44.asServiceRole.entities.DistillationRun.update(runData.id, {
+        dumped_lals: balancedDumpedLals,
+        dumped_abv: balancedDumpedAbv
+      });
+    }
+
+    // Create the wastage record from the balanced dumped data
     const wastageRecord = await base44.asServiceRole.entities.WastageRecord.create({
       date: runData.date,
       batch_number: subBatchCode,
       product_name: runData.product_name || 'Unknown',
       volume: runData.dumped_volume,
-      abv: runData.dumped_abv,
-      lals: runData.dumped_lals,
+      abv: balancedDumpedAbv,
+      lals: balancedDumpedLals,
       reason: `Still waste from ${subBatchCode}`,
       source: 'distillation',
       run_id: runData.id || event?.entity_id
