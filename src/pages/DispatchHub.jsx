@@ -22,6 +22,7 @@ import DispatchForm from '@/components/dispatch/DispatchForm.jsx';
 import DirectSalesForm from '@/components/dispatch/DirectSalesForm.jsx';
 import StockLocationDialog from '@/components/dispatch/StockLocationDialog.jsx';
 import TransferTo3PLDialog from '@/components/dispatch/TransferTo3PLDialog.jsx';
+import ExciseFlags from '@/components/dispatch/ExciseFlags.jsx';
 import DeliveryMap from '@/components/sales/DeliveryMap';
 
 const DISTILLERY_ORIGIN = '250 Ocean Beach Road, Bluff, New Zealand';
@@ -313,7 +314,14 @@ export default function DispatchHub() {
                   <TableCell>{d.transport_distance_km ? `${d.transport_distance_km} km` : '—'}</TableCell>
                   <TableCell className="capitalize">{d.transport_method || '—'}</TableCell>
                   <TableCell className="font-semibold text-green-600">{d.co2e_kg ? `${parseFloat(d.co2e_kg).toFixed(2)} kg` : '—'}</TableCell>
-                  <TableCell><StatusBadge status={d.status} /></TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <StatusBadge status={d.status} />
+                      {d.is_sample && <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">Sample</span>}
+                      {d.duty_free && <span className="px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">Duty Free</span>}
+                      {d.is_export && <span className="px-1.5 py-0.5 text-xs rounded-full bg-green-100 text-green-700 font-medium">Export</span>}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {d.id && (
                       <div className="flex gap-1 justify-end">
@@ -325,8 +333,9 @@ export default function DispatchHub() {
                             total_lals: d.total_lals || '', parcel_weight_kg: d.parcel_weight_kg || '', transport_distance_km: d.transport_distance_km || '',
                             transport_method: d.transport_method || 'road', customer_name: d.customer_name || '', customer_address: d.customer_address || '',
                             dispatched_from: d.dispatched_from || 'Bluff',
-                          });
-                        }}><Pencil className="w-3.5 h-3.5" /></Button>
+                            is_sample: d.is_sample || false, duty_free: d.duty_free || false, is_export: d.is_export || false,
+                            });
+                            }}><Pencil className="w-3.5 h-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:text-amber-700" title="Return stock" onClick={() => setReturningDispatch(d)}><RotateCcw className="w-3.5 h-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Delete" onClick={() => setDeletingDispatch(d)}><Trash2 className="w-3.5 h-3.5" /></Button>
                       </div>
@@ -349,6 +358,9 @@ export default function DispatchHub() {
                 <>
                   <Badge variant={d.dispatched_from === 'Auckland 3PL' ? 'secondary' : 'outline'} className="text-xs">{d.dispatched_from || 'Bluff'}</Badge>
                   <StatusBadge status={d.status} />
+                  {d.is_sample && <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">Sample</span>}
+                  {d.duty_free && <span className="px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">Duty Free</span>}
+                  {d.is_export && <span className="px-1.5 py-0.5 text-xs rounded-full bg-green-100 text-green-700 font-medium">Export</span>}
                   {d.xero_invoice_id && (
                     <button onClick={() => toast.info(`Xero Invoice ID: ${d.xero_invoice_id}`)}>
                       <FileCheck className="w-3.5 h-3.5 text-sky-600" />
@@ -367,8 +379,9 @@ export default function DispatchHub() {
                       total_lals: d.total_lals || '', parcel_weight_kg: d.parcel_weight_kg || '', transport_distance_km: d.transport_distance_km || '',
                       transport_method: d.transport_method || 'road', customer_name: d.customer_name || '', customer_address: d.customer_address || '',
                       dispatched_from: d.dispatched_from || 'Bluff',
-                    });
-                  }}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+                      is_sample: d.is_sample || false, duty_free: d.duty_free || false, is_export: d.is_export || false,
+                      });
+                      }}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
                   <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-amber-600" onClick={() => setReturningDispatch(d)}><RotateCcw className="w-3.5 h-3.5" /> Return</Button>
                   <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => setDeletingDispatch(d)}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
                 </>
@@ -437,6 +450,7 @@ export default function DispatchHub() {
               </Select></div>
             </div>
             <div><Label>Notes</Label><Input value={editForm.notes || ''} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} className="mt-1" /></div>
+            <ExciseFlags form={editForm} setForm={setEditForm} dispatchedFrom={editForm.dispatched_from || 'Bluff'} />
             <Button onClick={() => editMutation.mutate(editForm)} disabled={editMutation.isPending} className="w-full">{editMutation.isPending ? 'Saving…' : 'Save Changes'}</Button>
           </div>
         </DialogContent>
