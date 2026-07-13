@@ -24,7 +24,7 @@ const DISTILLERY_ADDRESS = '250 Ocean Beach Road, Bluff, New Zealand';
 const BLANK_FORM = {
   material_name: '', material_type: '', quantity: '', unit: 'litres',
   abv_percent: '', supplier_id: '', supplier_name: '', transport_distance_km: '', transport_method: 'road',
-  weight_kg: '', cost_per_unit: '', batch_number: '',
+  weight_kg: '', cost_per_unit: '', batch_number: '', packing_slip_number: '',
   date_received: new Date().toISOString().split('T')[0], notes: '', packing_slip_url: ''
 };
 
@@ -109,6 +109,7 @@ export default function Receiving() {
       weight_kg: r.weight_kg != null ? String(r.weight_kg) : '',
       cost_per_unit: r.cost_per_unit != null ? String(r.cost_per_unit) : '',
       batch_number: r.batch_number || '',
+      packing_slip_number: r.packing_slip_number || '',
       date_received: r.date_received || new Date().toISOString().split('T')[0],
       notes: r.notes || '',
       packing_slip_url: r.packing_slip_url || '',
@@ -256,6 +257,7 @@ export default function Receiving() {
       co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined,
       cost_per_unit: data.cost_per_unit ? parseFloat(data.cost_per_unit) : undefined,
       batch_number: data.batch_number || undefined,
+      packing_slip_number: data.packing_slip_number || undefined,
       date_received: data.date_received,
       notes: data.notes || undefined,
       packing_slip_url: data.packing_slip_url || undefined,
@@ -265,13 +267,30 @@ export default function Receiving() {
   const createMutation = useMutation({
     mutationFn: async (data) => {
       const payload = buildPayload(data);
-      await base44.entities.Receiving.create(payload);
+      const created = await base44.entities.Receiving.create(payload);
+
+      // Create linked RawMaterial for FIFO tracking
+      const TYPE_MAP = { 'Ethanol': 'ethanol', 'Botanicals': 'botanical', 'Packaging': 'packaging', 'Grain': 'grain', 'Sugar': 'sugar', 'Water': 'water', 'Flavoring': 'flavoring', 'Other': 'other' };
+      await base44.entities.RawMaterial.create({
+        name: payload.material_name,
+        type: TYPE_MAP[payload.material_type] || 'other',
+        quantity: payload.quantity,
+        unit: payload.unit,
+        lals: payload.lals,
+        abv_percent: payload.abv_percent,
+        batch_number: payload.batch_number,
+        supplier: payload.supplier_name,
+        cost_per_unit: payload.cost_per_unit,
+        date_received: payload.date_received,
+        receiving_id: created.id,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
+      queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       setOpen(false);
       setForm(BLANK_FORM);
-      toast.success('Material received successfully');
+      toast.success('Material received and inventory updated');
     },
     onError: (err) => {
       toast.error('Failed to save: ' + (err?.message || 'Unknown error'));
@@ -282,9 +301,19 @@ export default function Receiving() {
     mutationFn: async (data) => {
       const payload = buildPayload(data);
       await base44.entities.Receiving.update(editingId, payload);
+
+      // If quantity changed, sync linked RawMaterial
+      const original = receivingsQuery.data?.find(r => r.id === editingId);
+      if (original && parseFloat(data.quantity) !== original.quantity) {
+        const linked = await base44.entities.RawMaterial.filter({ receiving_id: editingId });
+        for (const rm of linked) {
+          await base44.entities.RawMaterial.update(rm.id, { quantity: parseFloat(data.quantity) });
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
+      queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       setOpen(false);
       setEditingId(null);
       setForm(BLANK_FORM);
@@ -307,6 +336,11 @@ export default function Receiving() {
 
   const deleteMutation = useMutation({
     mutationFn: async (record) => {
+      // Delete linked RawMaterial records
+      const linked = await base44.entities.RawMaterial.filter({ receiving_id: record.id });
+      for (const rm of linked) {
+        await base44.entities.RawMaterial.delete(rm.id);
+      }
       await base44.entities.Receiving.delete(record.id);
     },
     onSuccess: () => {
@@ -486,6 +520,10 @@ export default function Receiving() {
               <div>
                 <Label>Batch Number</Label>
                 <Input value={form.batch_number} onChange={e => set('batch_number', e.target.value)} />
+              </div>
+              <div>
+                <Label>Packing Slip #</Label>
+                <Input value={form.packing_slip_number} onChange={e => set('packing_slip_number', e.target.value)} placeholder="Packing slip reference" />
               </div>
             </div>
             <div>

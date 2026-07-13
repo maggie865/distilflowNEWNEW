@@ -53,6 +53,15 @@
       "type": "string",
       "description": "Batch or lot number"
     },
+    "date_received": {
+      "type": "string",
+      "format": "date",
+      "description": "Date the material was received"
+    },
+    "receiving_id": {
+      "type": "string",
+      "description": "ID of the linked Receiving record (for traceability to the packing slip)"
+    },
     "notes": {
       "type": "string",
       "description": "Additional notes"
