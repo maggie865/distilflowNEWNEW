@@ -322,15 +322,23 @@ export default function SNSDistillation() {
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <Label className="flex items-center gap-1">Input Volume (L) <Calculator className="w-3 h-3 text-primary" /></Label>
-                  <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold">
-                    {form.input_volume || '—'}
-                  </div>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={form.input_volume}
+                    onChange={e => set('input_volume', e.target.value)}
+                    placeholder="e.g. 200"
+                  />
                 </div>
                 <div>
                   <Label className="flex items-center gap-1">Input ABV % <Calculator className="w-3 h-3 text-primary" /></Label>
-                  <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold">
-                    {form.input_abv || '—'}
-                  </div>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={form.input_abv}
+                    onChange={e => set('input_abv', e.target.value)}
+                    placeholder="e.g. 55"
+                  />
                 </div>
                 <div>
                   <Label className="flex items-center gap-1">Input LALs <Calculator className="w-3 h-3 text-primary" /></Label>
