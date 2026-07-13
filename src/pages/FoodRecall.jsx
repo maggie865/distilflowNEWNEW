@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
+import Pagination from '@/components/ui/Pagination';
 
 const RECALL_STEPS = [
   { num: 1, key: 'step1_notes', label: 'Investigate', desc: 'Gather info, identify affected batches, put stock on hold', color: 'bg-orange-500' },
@@ -178,8 +179,12 @@ function MockRecallCard({ mockRecall, onEdit, onDelete }) {
   );
 }
 
-function RecallCard({ recall, dispatches, onEdit }) {
+function RecallCard({ recall, dispatches, subBatches, receivings, distillationRuns, masterBatches, onEdit }) {
   const [expanded, setExpanded] = useState(false);
+  const [distPage, setDistPage] = useState(1);
+  const [distPageSize, setDistPageSize] = useState(50);
+  const [rmPage, setRmPage] = useState(1);
+  const [rmPageSize, setRmPageSize] = useState(50);
   const currentStep = STATUS_STEP_MAP[recall.status] || 1;
 
   // Build distribution list from dispatch records
@@ -188,6 +193,79 @@ function RecallCard({ recall, dispatches, onEdit }) {
     affectedBatches.some(b => (d.batch_number || '').toLowerCase().includes(b.toLowerCase()))
   );
   const customerList = [...new Map(involvedDispatches.map(d => [d.customer_name, d])).values()];
+  const pagedDispatches = involvedDispatches.slice((distPage - 1) * distPageSize, distPage * distPageSize);
+
+  // --- Raw Material Traceability ---
+  const rawMaterialLots = useMemo(() => {
+    const lots = [];
+    const seen = new Set();
+    for (const batchNumber of affectedBatches) {
+      const subsForBatch = subBatches.filter(sb => sb.master_batch_code === batchNumber);
+      const distRunsForBatch = distillationRuns.filter(dr => dr.batch_number === batchNumber);
+
+      // Ethanol lot codes from distillation runs
+      const ethanolLots = [...new Set(distRunsForBatch.map(dr => dr.ethanol_lot_code).filter(Boolean))];
+
+      // Botanical lot codes from sub-batches (stored as "Ingredient (LOT-CODE), ...")
+      const botanicalStr = subsForBatch.map(sb => sb.botanical_lots).filter(Boolean).join(', ');
+      const botanicalLots = [];
+      if (botanicalStr) {
+        const matches = botanicalStr.match(/\(([^)]+)\)/g);
+        if (matches) {
+          matches.forEach(m => {
+            const code = m.replace(/[()]/g, '').trim();
+            if (code) botanicalLots.push(code);
+          });
+        }
+      }
+
+      const allLotCodes = [...ethanolLots, ...botanicalLots];
+      const subBatchLabel = subsForBatch.map(sb => sb.sub_batch_code).filter(Boolean).join(', ') || batchNumber;
+
+      for (const lotCode of allLotCodes) {
+        if (seen.has(lotCode + '|' + subBatchLabel)) continue;
+        seen.add(lotCode + '|' + subBatchLabel);
+        const recv = receivings.find(r => r.batch_number === lotCode);
+        lots.push({
+          materialName: recv?.material_name || lotCode,
+          lotCode,
+          supplier: recv?.supplier_name || '—',
+          dateReceived: recv?.date_received || '—',
+          packingSlip: recv?.packing_slip_number || '—',
+          quantityReceived: recv?.quantity || 0,
+          unit: recv?.unit || '',
+          usedInSubBatch: subBatchLabel,
+        });
+      }
+    }
+    return lots;
+  }, [affectedBatches, subBatches, distillationRuns, receivings]);
+
+  const pagedRawMaterials = rawMaterialLots.slice((rmPage - 1) * rmPageSize, rmPage * rmPageSize);
+
+  // --- Upstream: other batches that used the same ethanol lots ---
+  const upstreamBatches = useMemo(() => {
+    const ethanolLots = new Set();
+    for (const batchNumber of affectedBatches) {
+      distillationRuns
+        .filter(dr => dr.batch_number === batchNumber && dr.ethanol_lot_code)
+        .forEach(dr => ethanolLots.add(dr.ethanol_lot_code));
+    }
+    if (ethanolLots.size === 0) return [];
+    const otherBatchCodes = new Set();
+    distillationRuns.forEach(dr => {
+      if (dr.ethanol_lot_code && ethanolLots.has(dr.ethanol_lot_code) && !affectedBatches.includes(dr.batch_number)) {
+        otherBatchCodes.add(dr.batch_number);
+      }
+    });
+    return [...otherBatchCodes].map(code => {
+      const mb = masterBatches.find(m => m.batch_code === code);
+      const matchedLot = [...ethanolLots].find(lot =>
+        distillationRuns.some(dr => dr.batch_number === code && dr.ethanol_lot_code === lot)
+      );
+      return { batchCode: code, productName: mb?.product_name || '—', ethanolLot: matchedLot || '—' };
+    });
+  }, [affectedBatches, distillationRuns, masterBatches]);
 
   const statusColors = {
     investigating: 'bg-orange-100 text-orange-800',
@@ -276,7 +354,7 @@ function RecallCard({ recall, dispatches, onEdit }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {involvedDispatches.map((d, i) => (
+                    {pagedDispatches.map((d, i) => (
                       <tr key={i} className="border-t border-border">
                         <td className="px-3 py-2 font-medium">{d.customer_name}</td>
                         <td className="px-3 py-2 text-muted-foreground">{d.customer_address || '—'}</td>
@@ -288,6 +366,70 @@ function RecallCard({ recall, dispatches, onEdit }) {
                   </tbody>
                 </table>
               </div>
+              {involvedDispatches.length > distPageSize && (
+                <div className="mt-2">
+                  <Pagination total={involvedDispatches.length} page={distPage} pageSize={distPageSize} onPageChange={setDistPage} onPageSizeChange={(s) => { setDistPageSize(s); setDistPage(1); }} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Raw Material Traceability */}
+          {rawMaterialLots.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold mb-2 flex items-center gap-1.5"><FlaskConical className="w-4 h-4 text-primary" /> Affected Raw Material Lots</p>
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium">Material name</th>
+                        <th className="text-left px-3 py-2 font-medium">Lot / batch code</th>
+                        <th className="text-left px-3 py-2 font-medium">Supplier</th>
+                        <th className="text-left px-3 py-2 font-medium">Date received</th>
+                        <th className="text-left px-3 py-2 font-medium">Packing slip #</th>
+                        <th className="text-right px-3 py-2 font-medium">Qty received</th>
+                        <th className="text-left px-3 py-2 font-medium">Used in sub-batch</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedRawMaterials.map((lot, i) => (
+                        <tr key={i} className="border-t border-border">
+                          <td className="px-3 py-2 font-medium">{lot.materialName}</td>
+                          <td className="px-3 py-2 font-mono">{lot.lotCode}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{lot.supplier}</td>
+                          <td className="px-3 py-2">{lot.dateReceived !== '—' ? format(new Date(lot.dateReceived), 'MMM d, yyyy') : '—'}</td>
+                          <td className="px-3 py-2 font-mono">{lot.packingSlip}</td>
+                          <td className="px-3 py-2 text-right">{lot.quantityReceived} {lot.unit}</td>
+                          <td className="px-3 py-2 font-mono text-muted-foreground">{lot.usedInSubBatch}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              {rawMaterialLots.length > rmPageSize && (
+                <div className="mt-2">
+                  <Pagination total={rawMaterialLots.length} page={rmPage} pageSize={rmPageSize} onPageChange={setRmPage} onPageSizeChange={(s) => { setRmPageSize(s); setRmPage(1); }} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Upstream: other batches that may also be affected */}
+          {upstreamBatches.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-800 mb-2 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" /> Other batches that may also be affected (shared ethanol lot)</p>
+              <div className="space-y-1">
+                {upstreamBatches.map(b => (
+                  <div key={b.batchCode} className="flex items-center gap-2 text-sm">
+                    <span className="font-mono font-semibold">{b.batchCode}</span>
+                    <span className="text-amber-700">— {b.productName}</span>
+                    <span className="text-xs text-amber-600 ml-auto">Ethanol lot: {b.ethanolLot}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-amber-600 mt-2">These batches used the same ethanol lot as the recalled batches. Consider extending the recall if contamination is confirmed in the raw material.</p>
             </div>
           )}
 
@@ -340,7 +482,7 @@ export default function FoodRecallManager() {
 
   const { data: dispatches = [] } = useQuery({
     queryKey: ['dispatches'],
-    queryFn: () => base44.entities.Dispatch.list('-dispatch_date', 2000),
+    queryFn: () => base44.entities.Dispatch.list('-dispatch_date', 5000),
   });
 
   const { data: masterBatches = [] } = useQuery({
@@ -350,7 +492,22 @@ export default function FoodRecallManager() {
 
   const { data: bottlingRuns = [] } = useQuery({
     queryKey: ['bottlingRuns'],
-    queryFn: () => base44.entities.BottlingRun.list('-date', 200),
+    queryFn: () => base44.entities.BottlingRun.list('-date', 5000),
+  });
+
+  const { data: subBatches = [] } = useQuery({
+    queryKey: ['subBatches'],
+    queryFn: () => base44.entities.SubBatch.list('-date', 5000),
+  });
+
+  const { data: receivings = [] } = useQuery({
+    queryKey: ['receivings'],
+    queryFn: () => base44.entities.Receiving.list('-date_received', 5000),
+  });
+
+  const { data: distillationRuns = [] } = useQuery({
+    queryKey: ['distillationRuns'],
+    queryFn: () => base44.entities.DistillationRun.list('-date', 5000),
   });
 
   const { data: mockRecalls = [], isLoading: loadingMocks } = useQuery({
@@ -485,7 +642,7 @@ export default function FoodRecallManager() {
       ) : (
         <div className="space-y-3">
           {recalls.map(r => (
-            <RecallCard key={r.id} recall={r} dispatches={dispatches} onEdit={openEdit} />
+            <RecallCard key={r.id} recall={r} dispatches={dispatches} subBatches={subBatches} receivings={receivings} distillationRuns={distillationRuns} masterBatches={masterBatches} onEdit={openEdit} />
           ))}
         </div>
       )}
