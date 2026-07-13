@@ -147,13 +147,21 @@ export default function SNSDistillation() {
         });
       }
 
-      // 3. Delete the SNS run record
+      // 3. Delete linked WastageRecords
+      const allWastage = await db.WastageRecord.list('-date', 5000);
+      const linked = allWastage.filter(w => w.source === 'sns_distillation' && w.run_id === run.id);
+      for (const w of linked) {
+        await db.WastageRecord.delete(w.id);
+      }
+
+      // 4. Delete the SNS run record
       await db.SNSRun.delete(run.id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['snsRuns'] });
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
       queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
+      queryClient.invalidateQueries({ queryKey: ['wastage'] });
       setDeletingRun(null);
       toast.success('SNS run deleted and tank changes reversed');
     },
@@ -261,8 +269,30 @@ export default function SNSDistillation() {
         destination_tank_ids: form.destination_tank_ids,
       };
       
-      await db.SNSRun.create(finalPayload);
-      
+      const createdRun = await db.SNSRun.create(finalPayload);
+
+      // Create WastageRecord for dumped material (mass balance: input LALs − hearts LALs)
+      if (finalPayload.dumped_volume > 0) {
+        const inputLals = (parseFloat(finalPayload.input_volume) * parseFloat(finalPayload.input_abv)) / 100 || 0;
+        const heartsLals = finalPayload.hearts_lals || 0;
+        const dumpedLals = Math.max(0, inputLals - heartsLals);
+        const dumpedAbv = finalPayload.dumped_volume > 0
+          ? (dumpedLals / finalPayload.dumped_volume) * 100
+          : 0;
+
+        await db.WastageRecord.create({
+          date: finalPayload.date,
+          batch_number: finalPayload.batch_number || '',
+          product_name: finalPayload.product_name || 'SNS Run',
+          volume: finalPayload.dumped_volume,
+          abv: parseFloat(dumpedAbv.toFixed(2)),
+          lals: parseFloat(dumpedLals.toFixed(4)),
+          reason: finalPayload.dumped_notes || 'SNS still waste',
+          source: 'sns_distillation',
+          run_id: createdRun.id,
+        });
+      }
+
       // Distribute hearts across destination tanks with overflow
       if (form.destination_tank_ids && form.destination_tank_ids.length > 0) {
         let remainingVolume = parseFloat(form.hearts_volume);
@@ -306,6 +336,7 @@ export default function SNSDistillation() {
 
     queryClient.invalidateQueries({ queryKey: ['snsRuns'] });
     queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+    queryClient.invalidateQueries({ queryKey: ['wastage'] });
     setOpen(false);
     setForm(BLANK_FORM);
   };

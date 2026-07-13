@@ -37,6 +37,7 @@
         "distillation",
         "bottling",
         "tank",
+        "sns_distillation",
         "other"
       ],
       "description": "Source process of the wastage"

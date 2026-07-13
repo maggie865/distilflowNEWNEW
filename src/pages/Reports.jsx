@@ -134,11 +134,14 @@ export default function Reports() {
   const avgCostPerLalWasted = totalWastedLals > 0 ? (totalWastageCost / totalWastedLals).toFixed(2) : '0.00';
 
   // Wastage by source for bar chart
-  const wastageBySource = ['distillation', 'bottling', 'tank', 'other'].map(src => ({
-    source: src.charAt(0).toUpperCase() + src.slice(1),
-    lals: parseFloat(combinedWastage.filter(w => w.source === src).reduce((s, w) => s + (w.lals || 0), 0).toFixed(3)),
-    volume: parseFloat(combinedWastage.filter(w => w.source === src).reduce((s, w) => s + (w.volume || 0), 0).toFixed(2)),
-  })).filter(d => d.lals > 0 || d.volume > 0);
+  const wastageBySource = ['distillation', 'bottling', 'tank', 'sns_distillation', 'other'].map(src => {
+    const label = src === 'sns_distillation' ? 'SNS Distillation' : src.charAt(0).toUpperCase() + src.slice(1);
+    return {
+      source: label,
+      lals: parseFloat(combinedWastage.filter(w => w.source === src).reduce((s, w) => s + (w.lals || 0), 0).toFixed(3)),
+      volume: parseFloat(combinedWastage.filter(w => w.source === src).reduce((s, w) => s + (w.volume || 0), 0).toFixed(2)),
+    };
+  }).filter(d => d.lals > 0 || d.volume > 0);
 
   // 6-month trend (always last 6 calendar months regardless of date range)
   const trendData = Array.from({ length: 6 }, (_, i) => {
