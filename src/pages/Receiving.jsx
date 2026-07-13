@@ -18,7 +18,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import Pagination from '@/components/ui/Pagination';
 
 const MATERIAL_TYPES = ['Ethanol', 'Botanicals', 'Packaging', 'Grain', 'Sugar', 'Water', 'Flavoring', 'Other'];
-const TRANSPORT_METHODS = ['road', 'courier', 'air', 'sea'];
+const TRANSPORT_METHODS = ['road', 'courier', 'air', 'sea', 'pickup'];
 const UNITS = ['litres', 'kg', 'units'];
 const DISTILLERY_ADDRESS = '250 Ocean Beach Road, Bluff, New Zealand';
 
@@ -226,22 +226,22 @@ export default function Receiving() {
     }
   };
 
+  const calcReceivingCo2e = (data = form) => {
+    const weight = data.weight_kg ? parseFloat(data.weight_kg) : 0;
+    const distance = data.transport_distance_km ? parseFloat(data.transport_distance_km) : 0;
+    if (data.transport_method === 'pickup' || weight <= 0 || distance <= 0) return 0;
+    return weight / 1000 / 56 * distance * 0.21;
+  };
+
   const buildPayload = (data) => {
     const lals = data.material_type === 'Ethanol' && data.abv_percent
       ? (parseFloat(data.quantity) * parseFloat(data.abv_percent) / 100)
       : undefined;
 
-    let co2e = 0;
     const weight = data.weight_kg ? parseFloat(data.weight_kg) : 0;
     const distance = data.transport_distance_km ? parseFloat(data.transport_distance_km) : 0;
     const method = data.transport_method || 'road';
-
-    if (weight > 0 && distance > 0) {
-      if (method === 'road') co2e = (distance * weight / 1000) * 0.12;
-      else if (method === 'courier') co2e = (distance * weight / 1000) * 0.15;
-      else if (method === 'air') co2e = (distance * weight / 1000) * 0.55;
-      else if (method === 'sea') co2e = (distance * weight / 1000) * 0.008;
-    }
+    const co2e = calcReceivingCo2e(data);
 
     return {
       material_name: data.material_name,
@@ -526,6 +526,12 @@ export default function Receiving() {
                     {TRANSPORT_METHODS.map(m => <SelectItem key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</SelectItem>)}
                   </SelectContent>
                 </Select>
+              </div>
+              <div>
+                <Label>CO2e (kg)</Label>
+                <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold text-green-600">
+                  {calcReceivingCo2e() > 0 ? `${calcReceivingCo2e().toFixed(3)} kg` : '—'}
+                </div>
               </div>
               <div>
                 <Label>Cost per Unit</Label>

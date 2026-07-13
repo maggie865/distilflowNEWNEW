@@ -10,10 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowRightLeft, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+const BOTTLE_WEIGHT_KG = 1.2;
+
 export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [], allDispatches = [] }) {
   const qc = useQueryClient();
   const [rows, setRows] = useState([{ fgId: '', qty: '' }]);
   const [transferDate, setTransferDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [transferDistance, setTransferDistance] = useState('1500');
 
   // quantity_bottles is already the correct post-dispatch figure — use directly
   const bluffStock = useMemo(() => finishedGoods
@@ -44,6 +47,12 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
 
   const validRows = rows.filter(r => r.fgId && parseInt(r.qty) > 0);
   const totalBottles = validRows.reduce((sum, r) => sum + (parseInt(r.qty) || 0), 0);
+  const transferCo2e = (() => {
+    const weight = totalBottles * BOTTLE_WEIGHT_KG;
+    const distance = parseFloat(transferDistance) || 0;
+    if (weight <= 0 || distance <= 0) return 0;
+    return weight / 1000 / 56 * distance * 0.21;
+  })();
   const hasInvalid = rows.some(r => {
     if (!r.fgId) return false;
     const qty = parseInt(r.qty) || 0;
@@ -78,12 +87,16 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
           Number(w.bottle_size_ml) === Number(fg.bottle_size_ml)
         );
 
+        const batchWeight = transferQty * BOTTLE_WEIGHT_KG;
+        const batchCo2e = batchWeight / 1000 / 56 * parseFloat(transferDistance) * 0.21;
         if (existing.length > 0) {
           const ws = existing[0];
           await base44.entities.WarehouseStock.update(ws.id, {
             quantity_bottles: (ws.quantity_bottles || 0) + transferQty,
             total_lals: parseFloat(((ws.total_lals || 0) + transferLals).toFixed(4)),
             transfer_date: transferDate,
+            co2e_kg: parseFloat(((ws.co2e_kg || 0) + batchCo2e).toFixed(3)),
+            transport_distance_km: parseFloat(transferDistance),
           });
         } else {
           await base44.entities.WarehouseStock.create({
@@ -95,6 +108,8 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
             total_lals: transferLals,
             date_transferred_in: transferDate,
             transfer_date: transferDate,
+            co2e_kg: parseFloat(batchCo2e.toFixed(3)),
+            transport_distance_km: parseFloat(transferDistance),
           });
         }
       }
@@ -107,6 +122,7 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
       toast.success(`${totalBottles} bottles across ${validRows.length} batch(es) transferred to Auckland 3PL`);
       setRows([{ fgId: '', qty: '' }]);
       setTransferDate(() => new Date().toISOString().split('T')[0]);
+      setTransferDistance('1500');
       onClose();
     },
     onError: (err) => toast.error(err.message || 'Transfer failed'),
@@ -115,6 +131,7 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
   const handleClose = () => {
     setRows([{ fgId: '', qty: '' }]);
     setTransferDate(() => new Date().toISOString().split('T')[0]);
+    setTransferDistance('1500');
     onClose();
   };
 
@@ -128,6 +145,19 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [],
         <div className="space-y-1">
           <Label className="text-xs">Transfer Date</Label>
           <Input type="date" value={transferDate} onChange={e => setTransferDate(e.target.value)} className="text-sm" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Distance (km)</Label>
+            <Input type="number" step="1" value={transferDistance} onChange={e => setTransferDistance(e.target.value)} className="text-sm" placeholder="1500" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">CO2e (kg)</Label>
+            <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold text-blue-600">
+              {transferCo2e > 0 ? `${transferCo2e.toFixed(3)} kg` : '—'}
+            </div>
+          </div>
         </div>
 
         {bluffStock.length === 0 ? (

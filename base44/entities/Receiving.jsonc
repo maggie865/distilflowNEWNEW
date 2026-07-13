@@ -59,7 +59,8 @@
         "road",
         "courier",
         "air",
-        "sea"
+        "sea",
+        "pickup"
       ],
       "description": "Transport method from supplier"
     },

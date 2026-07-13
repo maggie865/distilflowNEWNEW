@@ -36,6 +36,14 @@
       "format": "date",
       "description": "Date stock was transferred to this location"
     },
+    "transport_distance_km": {
+      "type": "number",
+      "description": "Distance travelled for this 3PL transfer in km"
+    },
+    "co2e_kg": {
+      "type": "number",
+      "description": "CO2e emissions in kg for this 3PL transfer"
+    },
     "notes": {
       "type": "string",
       "description": "Additional notes"
