@@ -14,14 +14,73 @@
     "maintenance_type": {
       "type": "string",
       "enum": [
-        "scheduled",
+        "pre_use_check",
+        "monthly_check",
+        "yearly_check",
         "repair",
         "calibration",
         "cleaning",
-        "inspection"
+        "inspection",
+        "scheduled"
       ],
       "default": "scheduled",
       "description": "Type of maintenance"
+    },
+    "check_item_name": {
+      "type": "string",
+      "description": "Name of the specific check item"
+    },
+    "check_springs": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "oiled_resolved",
+        "oiled_unresolved",
+        "not_resolved"
+      ],
+      "description": "Bottle wash spring check result"
+    },
+    "wash_abv": {
+      "type": "number",
+      "description": "ABV reading of wash solution"
+    },
+    "alcohol_condition": {
+      "type": "string",
+      "enum": [
+        "good",
+        "change_required",
+        "changed_today"
+      ],
+      "description": "State of the wash alcohol"
+    },
+    "filter_cleaned": {
+      "type": "boolean",
+      "description": "Whether filter was cleaned"
+    },
+    "requires_followup": {
+      "type": "boolean",
+      "description": "Flags record for follow-up action"
+    },
+    "result": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "needs_attention"
+      ],
+      "description": "Result of check"
+    },
+    "certificate_number": {
+      "type": "string",
+      "description": "Certificate or reference number"
+    },
+    "inspector_name": {
+      "type": "string",
+      "description": "Inspector or certifier name"
+    },
+    "certifier_company": {
+      "type": "string",
+      "description": "Company that performed certification"
     },
     "description": {
       "type": "string",
