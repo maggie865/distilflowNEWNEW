@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/api/supabaseClient';
 import { Button } from '@/components/ui/button';
@@ -50,6 +50,9 @@ export default function DispatchHub() {
 
   const [editingDispatch, setEditingDispatch] = useState(null);
   const [editForm, setEditForm] = useState({});
+  const editFormRef = useRef({});
+  // Keep ref in sync with state so Save button always uses latest values
+  useEffect(() => { editFormRef.current = editForm; }, [editForm]);
   const [editCalcingDistance, setEditCalcingDistance] = useState(false);
   const [returningDispatch, setReturningDispatch] = useState(null);
   const [deletingDispatch, setDeletingDispatch] = useState(null);
@@ -466,7 +469,7 @@ export default function DispatchHub() {
             </div>
             <div><Label>Notes</Label><Input value={editForm.notes || ''} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} className="mt-1" /></div>
             <ExciseFlags form={editForm} setForm={setEditForm} dispatchedFrom={editForm.dispatched_from || 'Bluff'} />
-            <Button onClick={() => editMutation.mutate(editForm)} disabled={editMutation.isPending} className="w-full">{editMutation.isPending ? 'Saving…' : 'Save Changes'}</Button>
+            <Button onClick={() => editMutation.mutate(editFormRef.current)} disabled={editMutation.isPending} className="w-full">{editMutation.isPending ? 'Saving…' : 'Save Changes'}</Button>
           </div>
         </DialogContent>
       </Dialog>
