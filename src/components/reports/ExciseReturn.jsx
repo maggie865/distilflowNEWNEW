@@ -158,6 +158,21 @@ export default function ExciseReturn({
   // 4. Net taxable 3PL LALs = transfers to 3PL minus exempt dispatches
   const net3PLTaxableLals = Math.max(0, transferLals - exemptFrom3PL);
 
+  // Debug — log all dispatch records contributing to bluffDispatchLals
+  console.log('[ExciseReturn] Month:', selectedMonth);
+  console.log('[ExciseReturn] All month dispatches:', monthDispatches.length, 'records');
+  const bluffDispatches = monthDispatches.filter(d => isBluffDispatch(d) && d.duty_free !== true && d.is_export !== true);
+  console.log('[ExciseReturn] Bluff taxable dispatches:', bluffDispatches.map(d => ({
+    date: d.dispatch_date,
+    customer: d.customer_name,
+    product: d.product_name,
+    bottles: d.quantity_bottles,
+    lals: d.total_lals,
+    from: d.dispatched_from,
+  })));
+  console.log('[ExciseReturn] bluffDispatchLals:', bluffDispatchLals, '| transferLals:', transferLals, '| net3PLTaxableLals:', net3PLTaxableLals);
+  console.log('[ExciseReturn] 3PL transfers in month:', transfersToWarehouse.map(ws => ({ date: ws.transfer_date || ws.date_transferred_in, product: ws.product_name, lals: ws.total_lals })));
+
   // 5. Total excise payable LALs
   const totalTaxableLals = bluffDispatchLals + net3PLTaxableLals;
 
