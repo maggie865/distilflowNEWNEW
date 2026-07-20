@@ -113,11 +113,18 @@ export default function ExciseReturn({
 
   // === EXCISE CALCULATION ===
 
-  // 1. Taxable distillery dispatches — standard sales and samples only
+  // 1. Taxable distillery dispatches — must be explicitly from Bluff (not 3PL, not unknown)
   // Duty free and export dispatches from Bluff are excise exempt
+  const isBluffDispatch = (d) => {
+    const from = (d.dispatched_from || '').toLowerCase().trim();
+    // Exclude anything with 'auckland' or '3pl' — everything else is Bluff
+    // This correctly handles null/blank dispatched_from (older records = Bluff)
+    return !from.includes('auckland') && !from.includes('3pl');
+  };
+
   const bluffDispatchLals = monthDispatches
     .filter(d =>
-      !(d.dispatched_from || '').includes('Auckland') &&
+      isBluffDispatch(d) &&
       d.duty_free !== true &&
       d.is_export !== true
     )
@@ -125,10 +132,10 @@ export default function ExciseReturn({
 
   // Exempt distillery dispatches — duty free and export from Bluff
   const dutyFreeFromBluff = monthDispatches
-    .filter(d => !(d.dispatched_from || '').includes('Auckland') && d.duty_free === true)
+    .filter(d => isBluffDispatch(d) && d.duty_free === true)
     .reduce((s, d) => s + (d.total_lals || 0), 0);
   const exportFromBluff = monthDispatches
-    .filter(d => !(d.dispatched_from || '').includes('Auckland') && d.is_export === true)
+    .filter(d => isBluffDispatch(d) && d.is_export === true)
     .reduce((s, d) => s + (d.total_lals || 0), 0);
   const bluffExemptLals = dutyFreeFromBluff + exportFromBluff;
 
@@ -165,7 +172,7 @@ export default function ExciseReturn({
     .reduce((s, d) => s + (d.total_lals || 0), 0);
 
   const lalsSamples = monthDispatches
-    .filter(d => d.sample_dispatch && !(d.dispatched_from || '').includes('Auckland'))
+    .filter(d => d.sample_dispatch && isBluffDispatch(d))
     .reduce((s, d) => s + (d.total_lals || 0), 0);
 
   // --- All dispatched LALs (for mass balance) ---
