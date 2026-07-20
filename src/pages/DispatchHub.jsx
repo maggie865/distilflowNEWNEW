@@ -124,9 +124,14 @@ export default function DispatchHub() {
       if (distance && weight && method) co2e = calcCO2e(distance, weight, method);
       const cleanData = Object.fromEntries(Object.entries({ ...data, co2e_kg: co2e }).filter(([, v]) => v !== ''));
       // Ensure boolean flags are always saved as explicit booleans, not undefined/null
-      cleanData.is_sample = data.is_sample === true;
-      cleanData.duty_free = data.duty_free === true;
-      cleanData.is_export = data.is_export === true;
+      // Force explicit boolean save — Base44 SDK may skip false values
+      // so we explicitly include them in the update payload
+      const flagPayload = {
+        is_sample: data.is_sample === true,
+        duty_free: data.duty_free === true,
+        is_export: data.is_export === true,
+      };
+      Object.assign(cleanData, flagPayload);
 
       // If stock-relevant fields changed, return stock to old batch and deplete from new batch
       if (stockFieldsChanged(editingDispatch, data)) {
@@ -134,7 +139,8 @@ export default function DispatchHub() {
         await depleteStock(data);
       }
 
-      await db.Dispatch.update(editingDispatch.id, cleanData);
+      // Merge flags separately to guarantee they are always sent
+      await db.Dispatch.update(editingDispatch.id, { ...cleanData, ...flagPayload });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dispatches'] });
@@ -320,9 +326,9 @@ export default function DispatchHub() {
                   <TableCell>
                     <div className="flex items-center gap-1 flex-wrap">
                       <StatusBadge status={d.status} />
-                      {d.is_sample && <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">Sample</span>}
-                      {d.duty_free && <span className="px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">Duty Free</span>}
-                      {d.is_export && <span className="px-1.5 py-0.5 text-xs rounded-full bg-green-100 text-green-700 font-medium">Export</span>}
+                      {d.is_sample === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">Sample</span>}
+                      {d.duty_free === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">Duty Free</span>}
+                      {d.is_export === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-green-100 text-green-700 font-medium">Export</span>}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -361,9 +367,9 @@ export default function DispatchHub() {
                 <>
                   <Badge variant={d.dispatched_from === 'Auckland 3PL' ? 'secondary' : 'outline'} className="text-xs">{d.dispatched_from || 'Bluff'}</Badge>
                   <StatusBadge status={d.status} />
-                  {d.is_sample && <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">Sample</span>}
-                  {d.duty_free && <span className="px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">Duty Free</span>}
-                  {d.is_export && <span className="px-1.5 py-0.5 text-xs rounded-full bg-green-100 text-green-700 font-medium">Export</span>}
+                  {d.is_sample === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">Sample</span>}
+                  {d.duty_free === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">Duty Free</span>}
+                  {d.is_export === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-green-100 text-green-700 font-medium">Export</span>}
                   {d.xero_invoice_id && (
                     <button onClick={() => toast.info(`Xero Invoice ID: ${d.xero_invoice_id}`)}>
                       <FileCheck className="w-3.5 h-3.5 text-sky-600" />
