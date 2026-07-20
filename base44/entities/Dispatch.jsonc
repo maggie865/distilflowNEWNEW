@@ -94,6 +94,11 @@
       "default": false,
       "description": "Whether this dispatch is a free sample / promotional"
     },
+    "sample_dispatch": {
+      "type": "boolean",
+      "default": false,
+      "description": "Sample dispatch flag (use this field \u2014 is_sample has a Base44 schema issue)"
+    },
     "duty_free": {
       "type": "boolean",
       "default": false,
