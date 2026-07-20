@@ -36,7 +36,7 @@ const EMPTY_FORM = {
   transport_distance_km: '',
   transport_method: 'road',
   status: 'dispatched',
-  is_sample: false,
+  sample_dispatch: false,
   duty_free: false,
   is_export: false,
   notes: '',
@@ -280,7 +280,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
             parcel_weight_kg: a.weightKg,
             co2e_kg: a.co2e,
             dispatched_from: 'Bluff',
-            is_sample: form.is_sample === true,
+            sample_dispatch: form.sample_dispatch === true,
             duty_free: form.duty_free === true,
             is_export: form.is_export === true,
           });
@@ -303,7 +303,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
             quantity_bottles: qty, total_lals: parseFloat(lals.toFixed(4)), parcel_weight_kg: weight,
             transport_distance_km: distanceKm || undefined, transport_method: transportMethod,
             co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined, status: form.status || 'dispatched',
-            is_sample: form.is_sample === true, duty_free: form.duty_free === true, is_export: form.is_export === true, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
+            sample_dispatch: form.sample_dispatch === true, duty_free: form.duty_free === true, is_export: form.is_export === true, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
           });
           const newQty = Math.max(0, ws.quantity_bottles - qty);
           const newLals = Math.max(0, (ws.total_lals || 0) - lals);
@@ -493,13 +493,13 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
 
           <div className="flex items-start gap-2 rounded-lg border border-border p-3">
             <Checkbox
-              checked={form.is_sample || false}
-              onCheckedChange={v => setForm(f => ({ ...f, is_sample: v === true }))}
+              checked={form.sample_dispatch || false}
+              onCheckedChange={v => setForm(f => ({ ...f, sample_dispatch: v === true }))}
               className="mt-0.5"
             />
             <div>
               <Label className="flex items-center gap-1.5 cursor-pointer"><Gift className="w-3.5 h-3.5" /> Mark as sample / promotional</Label>
-              {form.is_sample && <p className="text-xs text-amber-600 mt-0.5">Samples are taxable at standard rates — shown for reference in the excise return.</p>}
+              {form.sample_dispatch && <p className="text-xs text-amber-600 mt-0.5">Samples are taxable at standard rates — shown for reference in the excise return.</p>}
             </div>
           </div>
 
