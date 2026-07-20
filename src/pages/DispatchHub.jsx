@@ -144,9 +144,16 @@ export default function DispatchHub() {
 
       // Merge flags separately to guarantee they are always sent
       const finalPayload = { ...cleanData, ...flagPayload };
-      console.log('[DispatchHub] Saving dispatch update:', editingDispatch.id, 'flags:', JSON.stringify(flagPayload), 'full payload keys:', Object.keys(finalPayload));
-      const result = await db.Dispatch.update(editingDispatch.id, finalPayload);
-      console.log('[DispatchHub] Update result:', JSON.stringify(result));
+      console.log('[DispatchHub] Saving dispatch update:', editingDispatch.id, 'flags:', JSON.stringify(flagPayload));
+      // Save main fields first
+      await db.Dispatch.update(editingDispatch.id, finalPayload);
+      // Then force boolean flags in a separate update call to ensure they are not skipped
+      const flagResult = await db.Dispatch.update(editingDispatch.id, {
+        is_sample: flagPayload.is_sample,
+        duty_free: flagPayload.duty_free,
+        is_export: flagPayload.is_export,
+      });
+      console.log('[DispatchHub] Flag update result is_sample:', flagResult?.is_sample, 'duty_free:', flagResult?.duty_free, 'is_export:', flagResult?.is_export);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dispatches'] });
