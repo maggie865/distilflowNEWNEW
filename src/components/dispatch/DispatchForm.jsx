@@ -270,10 +270,19 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
 
         for (const a of allAllocations) {
           await db.Dispatch.create({
-            ...form, product_name: a.batch.product_name, batch_number: a.batch.batch_number,
-            bottle_size_ml: a.batch.bottle_size_ml || null, quantity_bottles: a.take,
-            transport_distance_km: distanceKm, total_lals: parseFloat(a.lals.toFixed(4)),
-            parcel_weight_kg: a.weightKg, co2e_kg: a.co2e, dispatched_from: 'Bluff',
+            ...form,
+            product_name: a.batch.product_name,
+            batch_number: a.batch.batch_number,
+            bottle_size_ml: a.batch.bottle_size_ml || null,
+            quantity_bottles: a.take,
+            transport_distance_km: distanceKm,
+            total_lals: parseFloat(a.lals.toFixed(4)),
+            parcel_weight_kg: a.weightKg,
+            co2e_kg: a.co2e,
+            dispatched_from: 'Bluff',
+            is_sample: form.is_sample === true,
+            duty_free: form.duty_free === true,
+            is_export: form.is_export === true,
           });
           const newQty = (a.batch.quantity_bottles || 0) - a.take;
           const newLals = Math.max(0, (a.batch.total_lals || 0) - parseFloat(a.lals.toFixed(4)));
@@ -294,7 +303,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
             quantity_bottles: qty, total_lals: parseFloat(lals.toFixed(4)), parcel_weight_kg: weight,
             transport_distance_km: distanceKm || undefined, transport_method: transportMethod,
             co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined, status: form.status || 'dispatched',
-            is_sample: form.is_sample || undefined, duty_free: form.duty_free || undefined, is_export: form.is_export || undefined, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
+            is_sample: form.is_sample === true, duty_free: form.duty_free === true, is_export: form.is_export === true, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
           });
           const newQty = Math.max(0, ws.quantity_bottles - qty);
           const newLals = Math.max(0, (ws.total_lals || 0) - lals);
