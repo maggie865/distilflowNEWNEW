@@ -10,6 +10,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { FileSpreadsheet, Loader2, TrendingDown, PackageCheck, ArrowDownToLine, ArrowUpFromLine, Building2, Truck, MapPin } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PageHeader from '@/components/shared/PageHeader';
 import Pagination from '@/components/ui/Pagination';
 import InventoryReport from '@/components/reports/InventoryReport';
@@ -28,6 +29,34 @@ function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent b
       </div>
       <p className={`text-2xl font-bold font-display ${color}`}>{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+      {/* CSV Copy Modal — fallback if download is blocked */}
+      {csvModal && (
+        <Dialog open={!!csvModal} onOpenChange={() => setCsvModal(null)}>
+          <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="font-display flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5" />
+                {csvModal.filename}
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">If the file didn't download automatically, copy the content below and paste it into Excel or Google Sheets.</p>
+            <div className="flex-1 overflow-auto">
+              <textarea
+                readOnly
+                value={csvModal.content}
+                className="w-full h-64 text-xs font-mono border border-border rounded p-2 bg-muted resize-none"
+                onClick={e => e.target.select()}
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button className="flex-1" onClick={() => {
+                navigator.clipboard.writeText(csvModal.content).then(() => toast.success('Copied to clipboard')).catch(() => toast.error('Copy failed — select all text and copy manually'));
+              }}>Copy to Clipboard</Button>
+              <Button variant="outline" onClick={() => setCsvModal(null)}>Close</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
@@ -158,6 +187,8 @@ export default function Reports() {
     };
   });
 
+  const [csvModal, setCsvModal] = useState(null); // { filename, content }
+
   const exportCSV = (filename, rows, headers) => {
     const escape = (v) => {
       if (v === null || v === undefined) return '';
@@ -165,11 +196,20 @@ export default function Reports() {
       return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const csv = [headers.join(','), ...rows.map(r => headers.map(h => escape(r[h])).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename; a.click();
-    URL.revokeObjectURL(url);
+    // Try direct download first
+    try {
+      const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+      const a = document.createElement('a');
+      a.setAttribute('href', dataUri);
+      a.setAttribute('download', filename);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      // Fall back to copy modal if download is blocked
+    }
+    // Always show the copy modal so user can copy if download was blocked
+    setCsvModal({ filename, content: csv });
   };
 
   const handleExport = () => {
@@ -231,6 +271,39 @@ export default function Reports() {
           const headers = ['product_name','batch_number','bottle_size_ml','bottles_produced','raw_material_cost_per_bottle','packaging_cost_per_bottle','total_cogs_per_bottle','selling_price','gross_margin_pct'];
           exportCSV(`cogs_${label}.csv`, [], headers);
           toast.info('COGS export uses data from the Cost of Goods tab — make sure it has loaded first.');
+          break;
+        }
+        case 'excise': {
+          // Export the excise summary as CSV
+          // Pull the calculated values from the ExciseReturn component via the shared data
+          const headers = ['description', 'lals', 'amount_nzd'];
+          const exciseRate = new Date(startDate) >= new Date('2026-07-01') ? 71.034 : 68.915;
+          const monthD = dispatches.filter(d => {
+            const dd = d.dispatch_date || '';
+            return dd >= startDate && dd <= endDate;
+          });
+          const bluffTaxable = monthD.filter(d => !(d.dispatched_from||'').includes('Auckland') && d.duty_free !== true && d.is_export !== true).reduce((s,d)=>s+(d.total_lals||0),0);
+          const bluffExempt = monthD.filter(d => !(d.dispatched_from||'').includes('Auckland') && (d.duty_free===true||d.is_export===true)).reduce((s,d)=>s+(d.total_lals||0),0);
+          const transferLals = warehouseStock ? warehouseStock.filter(ws => { const t = ws.transfer_date||ws.date_transferred_in||''; return t >= startDate && t <= endDate; }).reduce((s,ws)=>s+(ws.total_lals||0),0) : 0;
+          const exempt3PL = monthD.filter(d => (d.dispatched_from||'').includes('Auckland') && (d.duty_free===true||d.is_export===true)).reduce((s,d)=>s+(d.total_lals||0),0);
+          const net3PL = Math.max(0, transferLals - exempt3PL);
+          const totalTaxable = bluffTaxable + net3PL;
+          const exciseDue = totalTaxable * exciseRate;
+          const gst = exciseDue * 0.15;
+          const rows = [
+            { description: `Excise Return ${startDate} to ${endDate}`, lals: '', amount_nzd: '' },
+            { description: 'Distillery dispatches (taxable)', lals: bluffTaxable.toFixed(4), amount_nzd: '' },
+            { description: 'Less: Duty free / export from Distillery', lals: `-${bluffExempt.toFixed(4)}`, amount_nzd: '' },
+            { description: 'Transferred to 3PL', lals: transferLals.toFixed(4), amount_nzd: '' },
+            { description: 'Less: Duty free / export from 3PL', lals: `-${exempt3PL.toFixed(4)}`, amount_nzd: '' },
+            { description: 'Net 3PL taxable LALs', lals: net3PL.toFixed(4), amount_nzd: '' },
+            { description: 'TOTAL TAXABLE LALs', lals: totalTaxable.toFixed(4), amount_nzd: '' },
+            { description: `Excise rate (spirits >23% vol)`, lals: '', amount_nzd: `$${exciseRate}/LAL` },
+            { description: 'Excise due (GST excl.)', lals: '', amount_nzd: `$${exciseDue.toFixed(2)}` },
+            { description: 'GST (15%)', lals: '', amount_nzd: `$${gst.toFixed(2)}` },
+            { description: 'Total excise due (GST incl.)', lals: '', amount_nzd: `$${(exciseDue+gst).toFixed(2)}` },
+          ];
+          exportCSV(`excise_return_${label}.csv`, rows, headers);
           break;
         }
         default:
@@ -413,6 +486,34 @@ export default function Reports() {
           />
         </TabsContent>
       </Tabs>
+      {/* CSV Copy Modal — fallback if download is blocked */}
+      {csvModal && (
+        <Dialog open={!!csvModal} onOpenChange={() => setCsvModal(null)}>
+          <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="font-display flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5" />
+                {csvModal.filename}
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">If the file didn't download automatically, copy the content below and paste it into Excel or Google Sheets.</p>
+            <div className="flex-1 overflow-auto">
+              <textarea
+                readOnly
+                value={csvModal.content}
+                className="w-full h-64 text-xs font-mono border border-border rounded p-2 bg-muted resize-none"
+                onClick={e => e.target.select()}
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button className="flex-1" onClick={() => {
+                navigator.clipboard.writeText(csvModal.content).then(() => toast.success('Copied to clipboard')).catch(() => toast.error('Copy failed — select all text and copy manually'));
+              }}>Copy to Clipboard</Button>
+              <Button variant="outline" onClick={() => setCsvModal(null)}>Close</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
