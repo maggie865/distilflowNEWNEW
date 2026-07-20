@@ -123,6 +123,10 @@ export default function DispatchHub() {
       const method = data.transport_method || editingDispatch.transport_method;
       if (distance && weight && method) co2e = calcCO2e(distance, weight, method);
       const cleanData = Object.fromEntries(Object.entries({ ...data, co2e_kg: co2e }).filter(([, v]) => v !== ''));
+      // Ensure boolean flags are always saved as explicit booleans, not undefined/null
+      cleanData.is_sample = data.is_sample === true;
+      cleanData.duty_free = data.duty_free === true;
+      cleanData.is_export = data.is_export === true;
 
       // If stock-relevant fields changed, return stock to old batch and deplete from new batch
       if (stockFieldsChanged(editingDispatch, data)) {
