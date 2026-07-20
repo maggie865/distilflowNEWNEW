@@ -37,6 +37,7 @@ export default function Reports() {
   const [startDate, setStartDate] = useState(format(startOfMonth(now), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(now, 'yyyy-MM-dd'));
   const [exporting, setExporting] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
   const [recvPage, setRecvPage] = useState(1);
   const [recvPageSize, setRecvPageSize] = useState(50);
   const [dispPage, setDispPage] = useState(1);
@@ -157,11 +158,85 @@ export default function Reports() {
     };
   });
 
-  const handleExport = async () => {
+  const exportCSV = (filename, rows, headers) => {
+    const escape = (v) => {
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [headers.join(','), ...rows.map(r => headers.map(h => escape(r[h])).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = () => {
     setExporting(true);
     try {
-      // Google Sheets export removed — data now in Supabase
-      toast.info('Export to Google Sheets is currently disabled.');
+      const label = `${startDate}_to_${endDate}`;
+      switch (activeTab) {
+        case 'overview': {
+          const headers = ['product_name','batch_number','bottle_size_ml','abv_percent','quantity_bottles','total_lals'];
+          const rows = finishedGoodsWithStock.map(g => ({
+            product_name: g.product_name, batch_number: g.batch_number,
+            bottle_size_ml: g.bottle_size_ml, abv_percent: g.abv_percent,
+            quantity_bottles: g.quantity_bottles, total_lals: g.total_lals,
+          }));
+          exportCSV(`inventory_snapshot_${label}.csv`, rows, headers);
+          break;
+        }
+        case 'movements': {
+          const recvHeaders = ['date_received','packing_slip_number','material_name','supplier','quantity','unit','lals','cost_per_unit'];
+          const recvRows = monthReceiving.map(r => ({
+            date_received: r.date_received, packing_slip_number: r.packing_slip_number,
+            material_name: r.material_name, supplier: r.supplier,
+            quantity: r.quantity, unit: r.unit, lals: r.lals, cost_per_unit: r.cost_per_unit,
+          }));
+          exportCSV(`inbound_movements_${label}.csv`, recvRows, recvHeaders);
+          const dispHeaders = ['dispatch_date','customer_name','product_name','batch_number','bottle_size_ml','quantity_bottles','total_lals','dispatched_from','sales_channel','order_reference','is_sample','duty_free','is_export'];
+          const dispRows = monthDispatches.map(d => ({
+            dispatch_date: d.dispatch_date, customer_name: d.customer_name,
+            product_name: d.product_name, batch_number: d.batch_number,
+            bottle_size_ml: d.bottle_size_ml, quantity_bottles: d.quantity_bottles,
+            total_lals: d.total_lals, dispatched_from: d.dispatched_from,
+            sales_channel: d.sales_channel, order_reference: d.order_reference,
+            is_sample: d.is_sample, duty_free: d.duty_free, is_export: d.is_export,
+          }));
+          exportCSV(`outbound_dispatches_${label}.csv`, dispRows, dispHeaders);
+          break;
+        }
+        case 'wastage': {
+          const headers = ['date','batch_number','product_name','source','volume','abv','lals','reason'];
+          const rows = wastageWithCost.map(w => ({
+            date: w.date, batch_number: w.batch_number, product_name: w.product_name,
+            source: w.source, volume: w.volume, abv: w.abv, lals: w.lals, reason: w.reason,
+          }));
+          exportCSV(`wastage_${label}.csv`, rows, headers);
+          break;
+        }
+        case 'carbon': {
+          const headers = ['dispatch_date','customer_name','product_name','quantity_bottles','transport_method','transport_distance_km','co2e_kg','dispatched_from'];
+          const rows = monthDispatches.filter(d => d.co2e_kg > 0).map(d => ({
+            dispatch_date: d.dispatch_date, customer_name: d.customer_name,
+            product_name: d.product_name, quantity_bottles: d.quantity_bottles,
+            transport_method: d.transport_method, transport_distance_km: d.transport_distance_km,
+            co2e_kg: d.co2e_kg, dispatched_from: d.dispatched_from,
+          }));
+          exportCSV(`carbon_footprint_${label}.csv`, rows, headers);
+          break;
+        }
+        case 'cogs': {
+          const headers = ['product_name','batch_number','bottle_size_ml','bottles_produced','raw_material_cost_per_bottle','packaging_cost_per_bottle','total_cogs_per_bottle','selling_price','gross_margin_pct'];
+          exportCSV(`cogs_${label}.csv`, [], headers);
+          toast.info('COGS export uses data from the Cost of Goods tab — make sure it has loaded first.');
+          break;
+        }
+        default:
+          toast.info('Switch to a tab to export its data.');
+      }
+      toast.success('Export downloaded successfully');
     } catch (err) {
       toast.error('Export failed: ' + err.message);
     } finally {
@@ -189,12 +264,12 @@ export default function Reports() {
           </div>
           <Button onClick={handleExport} disabled={exporting} className="gap-2">
             {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-            {exporting ? 'Exporting…' : 'Export to Google Sheets'}
+            {exporting ? 'Exporting…' : 'Export CSV'}
           </Button>
         </div>
       </PageHeader>
 
-      <Tabs defaultValue="overview" className="space-y-6">
+      <Tabs defaultValue="overview" className="space-y-6" onValueChange={setActiveTab}>
         <TabsList>
            <TabsTrigger value="overview">Inventory Snapshot</TabsTrigger>
            <TabsTrigger value="cogs">Cost of Goods</TabsTrigger>
