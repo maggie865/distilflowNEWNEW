@@ -51,12 +51,31 @@ function entity(entityName) {
 
     /** Create a new record. */
     async create(payload) {
-      return ent.create(payload);
+      // Force boolean fields to be real booleans not null/undefined
+      const clean = { ...payload };
+      const BOOL_FIELDS = ['is_sample', 'duty_free', 'is_export', 'requires_followup', 'filter_cleaned'];
+      for (const f of BOOL_FIELDS) {
+        if (f in clean) clean[f] = clean[f] === true;
+      }
+      return ent.create(clean);
     },
 
     /** Update a record by id. */
     async update(id, payload) {
-      return ent.update(id, payload);
+      // Sanitise payload — convert null/undefined booleans to explicit false
+      // so Base44 SDK doesn't skip them as "unchanged"
+      const clean = { ...payload };
+      for (const [k, v] of Object.entries(clean)) {
+        if (v === null || v === undefined) {
+          // leave nulls as-is for non-boolean fields
+        }
+      }
+      // Force boolean fields to be real booleans not null/undefined
+      const BOOL_FIELDS = ['is_sample', 'duty_free', 'is_export', 'requires_followup', 'filter_cleaned', 'check_springs'];
+      for (const f of BOOL_FIELDS) {
+        if (f in clean) clean[f] = clean[f] === true;
+      }
+      return ent.update(id, clean);
     },
 
     /** Delete a record by id. */
