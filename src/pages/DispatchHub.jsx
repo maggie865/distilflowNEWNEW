@@ -140,13 +140,19 @@ export default function DispatchHub() {
       }
 
       // Merge flags separately to guarantee they are always sent
-      await db.Dispatch.update(editingDispatch.id, { ...cleanData, ...flagPayload });
+      const finalPayload = { ...cleanData, ...flagPayload };
+      console.log('[DispatchHub] Saving dispatch update:', editingDispatch.id, 'flags:', JSON.stringify(flagPayload), 'full payload keys:', Object.keys(finalPayload));
+      const result = await db.Dispatch.update(editingDispatch.id, finalPayload);
+      console.log('[DispatchHub] Update result:', JSON.stringify(result));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dispatches'] });
       queryClient.invalidateQueries({ queryKey: ['dispatches-all'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
       queryClient.invalidateQueries({ queryKey: ['warehouseStock'] });
+      // Force refetch to ensure we see the saved values not stale cache
+      queryClient.refetchQueries({ queryKey: ['dispatches'] });
+      queryClient.refetchQueries({ queryKey: ['dispatches-all'] });
       setEditingDispatch(null);
       toast.success('Dispatch updated');
     },
