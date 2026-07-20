@@ -161,11 +161,11 @@ export default function ExciseReturn({
 
   // --- Non-taxable categories (for info only) ---
   const standard3PLDispatchLals = monthDispatches
-    .filter(d => (d.dispatched_from || '').includes('Auckland') && !d.duty_free && !d.is_export && !d.is_sample)
+    .filter(d => (d.dispatched_from || '').includes('Auckland') && !d.duty_free && !d.is_export && !d.sample_dispatch)
     .reduce((s, d) => s + (d.total_lals || 0), 0);
 
   const lalsSamples = monthDispatches
-    .filter(d => d.is_sample && !(d.dispatched_from || '').includes('Auckland'))
+    .filter(d => d.sample_dispatch && !(d.dispatched_from || '').includes('Auckland'))
     .reduce((s, d) => s + (d.total_lals || 0), 0);
 
   // --- All dispatched LALs (for mass balance) ---
@@ -186,7 +186,7 @@ export default function ExciseReturn({
       const name = d.customer_name || 'Unknown';
       if (!map[name]) map[name] = { name, lals: 0, hasSamples: false };
       map[name].lals += d.total_lals || 0;
-      if (d.is_sample) map[name].hasSamples = true;
+      if (d.sample_dispatch) map[name].hasSamples = true;
     });
     return Object.values(map).sort((a, b) => b.lals - a.lals);
   }, [monthDispatches]);
