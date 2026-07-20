@@ -29,34 +29,6 @@ function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent b
       </div>
       <p className={`text-2xl font-bold font-display ${color}`}>{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-      {/* CSV Copy Modal — fallback if download is blocked */}
-      {csvModal && (
-        <Dialog open={!!csvModal} onOpenChange={() => setCsvModal(null)}>
-          <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
-            <DialogHeader>
-              <DialogTitle className="font-display flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5" />
-                {csvModal.filename}
-              </DialogTitle>
-            </DialogHeader>
-            <p className="text-sm text-muted-foreground">If the file didn't download automatically, copy the content below and paste it into Excel or Google Sheets.</p>
-            <div className="flex-1 overflow-auto">
-              <textarea
-                readOnly
-                value={csvModal.content}
-                className="w-full h-64 text-xs font-mono border border-border rounded p-2 bg-muted resize-none"
-                onClick={e => e.target.select()}
-              />
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button className="flex-1" onClick={() => {
-                navigator.clipboard.writeText(csvModal.content).then(() => toast.success('Copied to clipboard')).catch(() => toast.error('Copy failed — select all text and copy manually'));
-              }}>Copy to Clipboard</Button>
-              <Button variant="outline" onClick={() => setCsvModal(null)}>Close</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 }
