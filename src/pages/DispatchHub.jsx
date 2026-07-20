@@ -130,7 +130,7 @@ export default function DispatchHub() {
       // Force explicit boolean save — Base44 SDK may skip false values
       // so we explicitly include them in the update payload
       const flagPayload = {
-        is_sample: data.is_sample === true,
+        sample_dispatch: data.sample_dispatch === true,
         duty_free: data.duty_free === true,
         is_export: data.is_export === true,
       };
@@ -149,11 +149,11 @@ export default function DispatchHub() {
       await db.Dispatch.update(editingDispatch.id, finalPayload);
       // Then force boolean flags in a separate update call to ensure they are not skipped
       const flagResult = await db.Dispatch.update(editingDispatch.id, {
-        is_sample: flagPayload.is_sample,
+        sample_dispatch: flagPayload.sample_dispatch,
         duty_free: flagPayload.duty_free,
         is_export: flagPayload.is_export,
       });
-      console.log('[DispatchHub] Flag update result is_sample:', flagResult?.is_sample, 'duty_free:', flagResult?.duty_free, 'is_export:', flagResult?.is_export);
+      console.log('[DispatchHub] Flag update result sample_dispatch:', flagResult?.sample_dispatch, 'duty_free:', flagResult?.duty_free, 'is_export:', flagResult?.is_export);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dispatches'] });
@@ -342,7 +342,7 @@ export default function DispatchHub() {
                   <TableCell>
                     <div className="flex items-center gap-1 flex-wrap">
                       <StatusBadge status={d.status} />
-                      {d.is_sample === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">Sample</span>}
+                      {d.sample_dispatch === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">Sample</span>}
                       {d.duty_free === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">Duty Free</span>}
                       {d.is_export === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-green-100 text-green-700 font-medium">Export</span>}
                     </div>
@@ -358,7 +358,7 @@ export default function DispatchHub() {
                             total_lals: d.total_lals || '', parcel_weight_kg: d.parcel_weight_kg || '', transport_distance_km: d.transport_distance_km || '',
                             transport_method: d.transport_method || 'road', customer_name: d.customer_name || '', customer_address: d.customer_address || '',
                             dispatched_from: d.dispatched_from || 'Bluff',
-                            is_sample: d.is_sample || false, duty_free: d.duty_free || false, is_export: d.is_export || false,
+                            sample_dispatch: d.sample_dispatch || false, duty_free: d.duty_free || false, is_export: d.is_export || false,
                             });
                             }}><Pencil className="w-3.5 h-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:text-amber-700" title="Return stock" onClick={() => setReturningDispatch(d)}><RotateCcw className="w-3.5 h-3.5" /></Button>
@@ -383,7 +383,7 @@ export default function DispatchHub() {
                 <>
                   <Badge variant={d.dispatched_from === 'Auckland 3PL' ? 'secondary' : 'outline'} className="text-xs">{d.dispatched_from || 'Bluff'}</Badge>
                   <StatusBadge status={d.status} />
-                  {d.is_sample === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">Sample</span>}
+                  {d.sample_dispatch === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">Sample</span>}
                   {d.duty_free === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">Duty Free</span>}
                   {d.is_export === true && <span className="px-1.5 py-0.5 text-xs rounded-full bg-green-100 text-green-700 font-medium">Export</span>}
                   {d.xero_invoice_id && (
@@ -404,7 +404,7 @@ export default function DispatchHub() {
                       total_lals: d.total_lals || '', parcel_weight_kg: d.parcel_weight_kg || '', transport_distance_km: d.transport_distance_km || '',
                       transport_method: d.transport_method || 'road', customer_name: d.customer_name || '', customer_address: d.customer_address || '',
                       dispatched_from: d.dispatched_from || 'Bluff',
-                      is_sample: d.is_sample || false, duty_free: d.duty_free || false, is_export: d.is_export || false,
+                      sample_dispatch: d.sample_dispatch || false, duty_free: d.duty_free || false, is_export: d.is_export || false,
                       });
                       }}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
                   <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-amber-600" onClick={() => setReturningDispatch(d)}><RotateCcw className="w-3.5 h-3.5" /> Return</Button>
