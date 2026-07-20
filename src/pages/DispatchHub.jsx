@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/api/supabaseClient';
 import { Button } from '@/components/ui/button';
@@ -50,6 +50,9 @@ export default function DispatchHub() {
 
   const [editingDispatch, setEditingDispatch] = useState(null);
   const [editForm, setEditForm] = useState({});
+  const editFormRef = useRef({});
+  // Keep ref in sync with state so Save button always uses latest values
+  useEffect(() => { editFormRef.current = editForm; }, [editForm]);
   const [editCalcingDistance, setEditCalcingDistance] = useState(false);
   const [returningDispatch, setReturningDispatch] = useState(null);
   const [deletingDispatch, setDeletingDispatch] = useState(null);
@@ -123,10 +126,15 @@ export default function DispatchHub() {
       const method = data.transport_method || editingDispatch.transport_method;
       if (distance && weight && method) co2e = calcCO2e(distance, weight, method);
       const cleanData = Object.fromEntries(Object.entries({ ...data, co2e_kg: co2e }).filter(([, v]) => v !== ''));
-      // Force boolean flags to explicit booleans
-      cleanData.is_sample = data.is_sample === true;
-      cleanData.duty_free = data.duty_free === true;
-      cleanData.is_export = data.is_export === true;
+      // Ensure boolean flags are always saved as explicit booleans, not undefined/null
+      // Force explicit boolean save — Base44 SDK may skip false values
+      // so we explicitly include them in the update payload
+      const flagPayload = {
+        is_sample: data.is_sample === true,
+        duty_free: data.duty_free === true,
+        is_export: data.is_export === true,
+      };
+      Object.assign(cleanData, flagPayload);
 
       // If stock-relevant fields changed, return stock to old batch and deplete from new batch
       if (stockFieldsChanged(editingDispatch, data)) {
@@ -134,7 +142,18 @@ export default function DispatchHub() {
         await depleteStock(data);
       }
 
-      await db.Dispatch.update(editingDispatch.id, cleanData);
+      // Merge flags separately to guarantee they are always sent
+      const finalPayload = { ...cleanData, ...flagPayload };
+      console.log('[DispatchHub] Saving dispatch update:', editingDispatch.id, 'flags:', JSON.stringify(flagPayload));
+      // Save main fields first
+      await db.Dispatch.update(editingDispatch.id, finalPayload);
+      // Then force boolean flags in a separate update call to ensure they are not skipped
+      const flagResult = await db.Dispatch.update(editingDispatch.id, {
+        is_sample: flagPayload.is_sample,
+        duty_free: flagPayload.duty_free,
+        is_export: flagPayload.is_export,
+      });
+      console.log('[DispatchHub] Flag update result is_sample:', flagResult?.is_sample, 'duty_free:', flagResult?.duty_free, 'is_export:', flagResult?.is_export);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dispatches'] });
@@ -457,7 +476,7 @@ export default function DispatchHub() {
             </div>
             <div><Label>Notes</Label><Input value={editForm.notes || ''} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} className="mt-1" /></div>
             <ExciseFlags form={editForm} setForm={setEditForm} dispatchedFrom={editForm.dispatched_from || 'Bluff'} />
-            <Button onClick={() => editMutation.mutate(editForm)} disabled={editMutation.isPending} className="w-full">{editMutation.isPending ? 'Saving…' : 'Save Changes'}</Button>
+            <Button onClick={() => editMutation.mutate(editFormRef.current)} disabled={editMutation.isPending} className="w-full">{editMutation.isPending ? 'Saving…' : 'Save Changes'}</Button>
           </div>
         </DialogContent>
       </Dialog>
