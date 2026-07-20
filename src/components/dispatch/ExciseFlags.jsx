@@ -18,7 +18,7 @@ export default function ExciseFlags({ form, setForm, dispatchedFrom }) {
     if (isBluff && (form.duty_free || form.is_export)) {
       return '⚠ Duty free and export exemptions only apply to 3PL dispatches. Bluff dispatches are always taxable.';
     }
-    if (form.is_sample) return 'Sample dispatch — excise is still payable on samples';
+    if (form.sample_dispatch) return 'Sample dispatch — excise is still payable on samples';
     if (form.duty_free) return 'Duty free — excise exempt. Will be deducted from 3PL transfer LALs in excise return.';
     if (form.is_export) return 'Export dispatch — excise exempt. Will be deducted from 3PL transfer LALs in excise return.';
     return 'Standard dispatch — excise paid';
@@ -30,10 +30,10 @@ export default function ExciseFlags({ form, setForm, dispatchedFrom }) {
       <div className="flex gap-2 mt-1">
         <Button
           type="button"
-          variant={form.is_sample ? 'default' : 'outline'}
+          variant={form.sample_dispatch ? 'default' : 'outline'}
           size="sm"
-          onClick={() => toggle('is_sample')}
-          className={form.is_sample ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600' : ''}
+          onClick={() => toggle('sample_dispatch')}
+          className={form.sample_dispatch ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600' : ''}
         >
           Sample
         </Button>
