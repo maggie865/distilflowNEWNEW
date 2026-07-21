@@ -219,13 +219,14 @@ export default function BottlingFloor() {
       }
 
       // 3. Update main finished goods stock (cases + extra bottles)
-      // Use product_name + bottle size as a composite key to guarantee separate records
-      const fgProductName = activeRun.product_name + ' ' + activeRun.bottle_size_ml + 'ml';
+      // Match by product_name + batch_number + bottle_size_ml (bottle size is a separate field, not in the name)
+      const fgProductName = activeRun.product_name;
       if (totalBottles > 0) {
         const allFG = await db.FinishedGood.list('product_name', 5000);
         const fg = allFG.find(g =>
           g.product_name === fgProductName &&
-          g.batch_number === activeRun.batch_code
+          g.batch_number === activeRun.batch_code &&
+          Number(g.bottle_size_ml) === Number(activeRun.bottle_size_ml)
         );
         if (fg) {
           await db.FinishedGood.update(fg.id, {
@@ -364,11 +365,12 @@ export default function BottlingFloor() {
 
       // 2. Deduct from finished goods
       if (bottlesProduced > 0) {
-        const fgProductName = run.product_name + ' ' + (run.bottle_size_ml || 700) + 'ml';
+        const fgProductName = run.product_name;
         const allFG = await db.FinishedGood.list('product_name', 5000);
         const fg = allFG.find(g =>
           g.product_name === fgProductName &&
-          g.batch_number === run.batch_number
+          g.batch_number === run.batch_number &&
+          Number(g.bottle_size_ml) === Number(run.bottle_size_ml)
         );
         if (fg) {
           const newQty = Math.max(0, (fg.quantity_bottles || 0) - bottlesProduced);
