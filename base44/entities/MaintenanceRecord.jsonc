@@ -17,6 +17,7 @@
         "pre_use_check",
         "monthly_check",
         "yearly_check",
+        "fire_extinguisher_service",
         "repair",
         "calibration",
         "cleaning",
