@@ -59,33 +59,9 @@
     "product_name"
   ],
   "rls": {
-    "create": {
-      "created_by_id": "{{user.id}}"
-    },
+    "create": {},
     "read": {},
-    "update": {
-      "$or": [
-        {
-          "created_by_id": "{{user.id}}"
-        },
-        {
-          "user_condition": {
-            "role": "admin"
-          }
-        }
-      ]
-    },
-    "delete": {
-      "$or": [
-        {
-          "created_by_id": "{{user.id}}"
-        },
-        {
-          "user_condition": {
-            "role": "admin"
-          }
-        }
-      ]
-    }
+    "update": {},
+    "delete": {}
   }
 }
