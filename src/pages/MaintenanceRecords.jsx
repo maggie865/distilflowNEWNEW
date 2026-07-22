@@ -9,6 +9,7 @@ import YearlyChecksTab from '@/components/maintenance/YearlyChecksTab';
 import LegacyRecords from '@/components/maintenance/LegacyRecords';
 
 const LEGACY_TYPES = ['scheduled', 'repair', 'calibration', 'cleaning', 'inspection'];
+const ACTIVE_TYPES = ['pre_use_check', 'monthly_check', 'yearly_check', 'fire_extinguisher_service'];
 
 export default function MaintenanceRecords() {
   const queryClient = useQueryClient();
@@ -33,6 +34,11 @@ export default function MaintenanceRecords() {
 
   const legacyRecords = records.filter(r => !r.maintenance_type || LEGACY_TYPES.includes(r.maintenance_type));
 
+  const updateRecord = async (id, payload) => {
+    await base44.entities.MaintenanceRecord.update(id, payload);
+    await queryClient.invalidateQueries({ queryKey: ['maintenanceRecords'] });
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -53,7 +59,7 @@ export default function MaintenanceRecords() {
           <MonthlyChecksTab records={records} onCreate={createRecords} saving={saving} />
         </TabsContent>
         <TabsContent value="yearly" className="mt-4">
-          <YearlyChecksTab records={records} onCreate={createRecords} saving={saving} />
+          <YearlyChecksTab records={records} onCreate={createRecords} onUpdate={updateRecord} saving={saving} />
         </TabsContent>
       </Tabs>
 
