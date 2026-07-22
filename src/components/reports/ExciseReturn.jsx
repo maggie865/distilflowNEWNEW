@@ -155,8 +155,45 @@ export default function ExciseReturn({
     .reduce((s, d) => s + (d.total_lals || 0), 0);
   const exemptFrom3PL = dutyFreeFrom3PL + exportFrom3PL;
 
-  // 4. Net taxable 3PL LALs = transfers to 3PL minus exempt dispatches
-  const net3PLTaxableLals = Math.max(0, transferLals - exemptFrom3PL);
+  // 4. Net taxable 3PL LALs
+  // If there was a transfer this month: taxable = transfer LALs minus exempt dispatches from 3PL
+  // If there was NO transfer this month: the exempt dispatches are still a deduction (excise
+  // was pre-paid when stock was originally transferred — duty free/export dispatches get a credit)
+  const net3PLTaxableLals = transferLals - exemptFrom3PL;
+  // Note: net3PLTaxableLals can be negative (credit) when exempt dispatches exceed transfers
+
+  // 5. Bottle size breakdowns for each category
+  const breakdownBySize = (dispatchList) => {
+    const sizes = {};
+    dispatchList.forEach(d => {
+      const size = d.bottle_size_ml ? `${d.bottle_size_ml}ml` : 'Unknown';
+      if (!sizes[size]) sizes[size] = { bottles: 0, lals: 0 };
+      sizes[size].bottles += d.quantity_bottles || 0;
+      sizes[size].lals += d.total_lals || 0;
+    });
+    return Object.entries(sizes).sort(([a],[b]) => parseInt(b) - parseInt(a));
+  };
+
+  const bluffTaxableDispatches = monthDispatches.filter(d => isBluffDispatch(d) && d.duty_free !== true && d.is_export !== true);
+  const bluffDutyFreeDispatches = monthDispatches.filter(d => isBluffDispatch(d) && d.duty_free === true);
+  const bluffExportDispatches = monthDispatches.filter(d => isBluffDispatch(d) && d.is_export === true);
+  const threePLDutyFreeDispatches = monthDispatches.filter(d => (d.dispatched_from||'').includes('Auckland') && d.duty_free === true);
+  const threePLExportDispatches = monthDispatches.filter(d => (d.dispatched_from||'').includes('Auckland') && d.is_export === true);
+
+  const bluffTaxableBreakdown = breakdownBySize(bluffTaxableDispatches);
+  const bluffDutyFreeBreakdown = breakdownBySize(bluffDutyFreeDispatches);
+  const bluffExportBreakdown = breakdownBySize(bluffExportDispatches);
+  const threePLTransferBreakdown = breakdownBySize(transfersToWarehouse.map(ws => ({ bottle_size_ml: ws.bottle_size_ml, quantity_bottles: ws.quantity_bottles, total_lals: ws.total_lals })));
+  const threePLDutyFreeBreakdown = breakdownBySize(threePLDutyFreeDispatches);
+  const threePLExportBreakdown = breakdownBySize(threePLExportDispatches);
+
+  // Debug — log exempt records to find what's being incorrectly flagged
+  const exportRecords = monthDispatches.filter(d => isBluffDispatch(d) && d.is_export === true);
+  const dutyFreeRecords = monthDispatches.filter(d => isBluffDispatch(d) && d.duty_free === true);
+  const df3PLRecords = monthDispatches.filter(d => (d.dispatched_from||'').includes('Auckland') && d.duty_free === true);
+  console.log('[ExciseReturn] Export from Bluff records:', exportRecords.map(d => ({ customer: d.customer_name, bottles: d.quantity_bottles, lals: d.total_lals, is_export: d.is_export, duty_free: d.duty_free, dispatched_from: d.dispatched_from })));
+  console.log('[ExciseReturn] Duty Free from Bluff records:', dutyFreeRecords.map(d => ({ customer: d.customer_name, bottles: d.quantity_bottles, lals: d.total_lals, duty_free: d.duty_free })));
+  console.log('[ExciseReturn] Duty Free from 3PL records:', df3PLRecords.map(d => ({ customer: d.customer_name, bottles: d.quantity_bottles, lals: d.total_lals, duty_free: d.duty_free, dispatched_from: d.dispatched_from })));
 
   // Debug — log all dispatch records contributing to bluffDispatchLals
   console.log('[ExciseReturn] Month:', selectedMonth);
@@ -174,7 +211,8 @@ export default function ExciseReturn({
   console.log('[ExciseReturn] 3PL transfers in month:', transfersToWarehouse.map(ws => ({ date: ws.transfer_date || ws.date_transferred_in, product: ws.product_name, lals: ws.total_lals })));
 
   // 5. Total excise payable LALs
-  const totalTaxableLals = bluffDispatchLals + net3PLTaxableLals;
+  // Total taxable = bluff taxable + net 3PL (net3PL can be negative = credit when no transfer this month)
+  const totalTaxableLals = Math.max(0, bluffDispatchLals + net3PLTaxableLals);
 
   // Excise due (GST exclusive + GST inclusive at 15%)
   const exciseDueGSTExcl = totalTaxableLals * exciseRate;
@@ -298,14 +336,79 @@ export default function ExciseReturn({
 
           {/* Taxable Dispatches section */}
           <SectionHeader label="Taxable Dispatches" />
-          <ExciseRow label="Distillery dispatches (std + samples)" value={bluffDispatchLals} sub="taxable" indent />
+          <ExciseRow label="Gross Distillery Dispatches" value={bluffDispatchLals + bluffExemptLals} sub="all dispatches incl. exempt" indent />
+          {bluffTaxableBreakdown.length > 0 && (
+            <div className="px-8 py-1.5 bg-muted/30 space-y-0.5">
+              {bluffTaxableBreakdown.map(([size, d]) => (
+                <div key={size} className="flex justify-between text-xs text-muted-foreground">
+                  <span>{size} — {d.bottles} bottles</span>
+                  <span className="font-mono">{d.lals.toFixed(4)} LALs</span>
+                </div>
+              ))}
+            </div>
+          )}
           <ExciseRow label="Less: Duty Free from Distillery" value={dutyFreeFromBluff} displayValue={dutyFreeFromBluff > 0 ? `(${dutyFreeFromBluff.toFixed(3)})` : '0.000'} sub="exempt" indent />
+          {bluffDutyFreeBreakdown.length > 0 && (
+            <div className="px-8 py-1 bg-amber-50 space-y-0.5">
+              {bluffDutyFreeBreakdown.map(([size, d]) => (
+                <div key={size} className="flex justify-between text-xs text-amber-600">
+                  <span>{size} — {d.bottles} bottles</span>
+                  <span className="font-mono">({d.lals.toFixed(4)} LALs)</span>
+                </div>
+              ))}
+            </div>
+          )}
           <ExciseRow label="Less: Export from Distillery" value={exportFromBluff} displayValue={exportFromBluff > 0 ? `(${exportFromBluff.toFixed(3)})` : '0.000'} sub="exempt" indent />
-          <ExciseRow label="Net Distillery Taxable LALs" value={bluffDispatchLals} sub="std + samples only" indent />
-          <ExciseRow label="Transferred to 3PL" value={transferLals} sub="taxable at point of transfer" indent />
-          <ExciseRow label="Less: Duty Free from 3PL" value={dutyFreeFrom3PL} displayValue={dutyFreeFrom3PL > 0 ? `(${dutyFreeFrom3PL.toFixed(3)})` : '0.000'} sub="exempt" indent />
-          <ExciseRow label="Less: Export / Overseas from 3PL" value={exportFrom3PL} displayValue={exportFrom3PL > 0 ? `(${exportFrom3PL.toFixed(3)})` : '0.000'} sub="exempt" indent />
-          <ExciseRow label="Net 3PL Taxable LALs" value={net3PLTaxableLals} sub="Transfers minus exempt dispatches" indent />
+          {bluffExportBreakdown.length > 0 && (
+            <div className="px-8 py-1 bg-green-50 space-y-0.5">
+              {bluffExportBreakdown.map(([size, d]) => (
+                <div key={size} className="flex justify-between text-xs text-green-600">
+                  <span>{size} — {d.bottles} bottles</span>
+                  <span className="font-mono">({d.lals.toFixed(4)} LALs)</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <ExciseRow label="Net Distillery Taxable LALs" value={bluffDispatchLals} sub="gross minus duty free and export" indent />
+          <ExciseRow label="Transferred to 3PL" value={transferLals} sub={transferLals === 0 ? "no transfer this month" : "taxable at point of transfer"} indent />
+          {threePLTransferBreakdown.length > 0 && (
+            <div className="px-8 py-1.5 bg-muted/30 space-y-0.5">
+              {threePLTransferBreakdown.map(([size, d]) => (
+                <div key={size} className="flex justify-between text-xs text-muted-foreground">
+                  <span>{size} — {d.bottles} bottles</span>
+                  <span className="font-mono">{d.lals.toFixed(4)} LALs</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <ExciseRow label="Less: Duty Free from 3PL" value={dutyFreeFrom3PL} displayValue={dutyFreeFrom3PL > 0 ? `(${dutyFreeFrom3PL.toFixed(3)})` : '0.000'} sub="exempt — deducted from payable" indent />
+          {threePLDutyFreeBreakdown.length > 0 && (
+            <div className="px-8 py-1 bg-amber-50 space-y-0.5">
+              {threePLDutyFreeBreakdown.map(([size, d]) => (
+                <div key={size} className="flex justify-between text-xs text-amber-600">
+                  <span>{size} — {d.bottles} bottles</span>
+                  <span className="font-mono">({d.lals.toFixed(4)} LALs)</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <ExciseRow label="Less: Export / Overseas from 3PL" value={exportFrom3PL} displayValue={exportFrom3PL > 0 ? `(${exportFrom3PL.toFixed(3)})` : '0.000'} sub="exempt — deducted from payable" indent />
+          {threePLExportBreakdown.length > 0 && (
+            <div className="px-8 py-1 bg-green-50 space-y-0.5">
+              {threePLExportBreakdown.map(([size, d]) => (
+                <div key={size} className="flex justify-between text-xs text-green-600">
+                  <span>{size} — {d.bottles} bottles</span>
+                  <span className="font-mono">({d.lals.toFixed(4)} LALs)</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {net3PLTaxableLals < 0 && (
+            <div className="px-6 py-2 bg-blue-50 border-l-4 border-blue-400">
+              <p className="text-xs text-blue-700">ℹ No 3PL transfer this month — duty free/export dispatches ({exemptFrom3PL.toFixed(3)} LALs) are deducted from total payable as a credit against prior transfer excise.</p>
+            </div>
+          )}
+          <ExciseRow label="Net 3PL Taxable LALs" value={net3PLTaxableLals} displayValue={net3PLTaxableLals < 0 ? `(${Math.abs(net3PLTaxableLals).toFixed(3)}) credit` : net3PLTaxableLals.toFixed(3)} sub={transferLals === 0 && exemptFrom3PL > 0 ? "credit — exempt dispatches exceed transfers" : "transfers minus exempt dispatches"} indent />
 
           {/* Total */}
           <ExciseRow label="TOTAL EXCISE PAYABLE LALs" value={totalTaxableLals} sub="Net distillery + Net 3PL taxable" highlight />
