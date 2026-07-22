@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { useRawMaterialsNetStock } from '@/hooks/useRawMaterialsNetStock';
@@ -56,7 +56,28 @@ function AdjustDialog({ item, entity, onClose, queryKey }) {
       const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
       return entityMap[entity].update(item.id, update);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: [queryKey] }); onClose(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [queryKey] });
+      onClose();
+      // Show undo toast for 10 seconds
+      toast('Record updated', {
+        description: 'Changes saved successfully',
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
+            if (lastSavedState.id && lastSavedState.previous) {
+              await entityMap[lastSavedState.entity].update(lastSavedState.id, lastSavedState.previous);
+              qc.invalidateQueries({ queryKey: [queryKey] });
+              toast.success('Change undone successfully');
+              lastSavedState.id = null;
+              lastSavedState.previous = null;
+            }
+          },
+        },
+        duration: 10000,
+      });
+    },
   });
 
   return (
@@ -87,16 +108,49 @@ function AdjustDialog({ item, entity, onClose, queryKey }) {
 }
 
 // ── Edit Dialog ──────────────────────────────────────────────────────────────
+// Store last saved state globally so undo works after dialog closes
+const lastSavedState = { id: null, entity: null, previous: null };
+
 function EditDialog({ item, entity, fields, onClose, queryKey }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({ ...item });
+  const formRef = React.useRef(form);
+  React.useEffect(() => { formRef.current = form; }, [form]);
 
   const mutation = useMutation({
     mutationFn: () => {
       const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
-      return entityMap[entity].update(item.id, form);
+      // Use ref to get latest form values — avoids stale closure bug
+      const latestForm = formRef.current;
+      // Save previous state for undo before updating
+      lastSavedState.id = item.id;
+      lastSavedState.entity = entity;
+      lastSavedState.previous = { ...item };
+      console.log('[EditDialog] Saving:', JSON.stringify(latestForm));
+      return entityMap[entity].update(item.id, latestForm);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: [queryKey] }); onClose(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [queryKey] });
+      onClose();
+      // Show undo toast for 10 seconds
+      toast('Record updated', {
+        description: 'Changes saved successfully',
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
+            if (lastSavedState.id && lastSavedState.previous) {
+              await entityMap[lastSavedState.entity].update(lastSavedState.id, lastSavedState.previous);
+              qc.invalidateQueries({ queryKey: [queryKey] });
+              toast.success('Change undone successfully');
+              lastSavedState.id = null;
+              lastSavedState.previous = null;
+            }
+          },
+        },
+        duration: 10000,
+      });
+    },
   });
 
   return (
@@ -120,7 +174,7 @@ function EditDialog({ item, entity, fields, onClose, queryKey }) {
                 <Input
                   type={f.type || 'text'}
                   value={form[f.key] ?? ''}
-                  onChange={e => setForm(p => ({ ...p, [f.key]: f.type === 'number' ? parseFloat(e.target.value) || '' : e.target.value }))}
+                  onChange={e => setForm(p => ({ ...p, [f.key]: f.type === 'number' ? (e.target.value === '' ? '' : parseFloat(e.target.value)) : e.target.value }))}
                 />
               )}
             </div>
@@ -145,7 +199,28 @@ function DeleteConfirm({ item, entity, label, onClose, queryKey }) {
       const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
       return entityMap[entity].delete(item.id);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: [queryKey] }); onClose(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [queryKey] });
+      onClose();
+      // Show undo toast for 10 seconds
+      toast('Record updated', {
+        description: 'Changes saved successfully',
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
+            if (lastSavedState.id && lastSavedState.previous) {
+              await entityMap[lastSavedState.entity].update(lastSavedState.id, lastSavedState.previous);
+              qc.invalidateQueries({ queryKey: [queryKey] });
+              toast.success('Change undone successfully');
+              lastSavedState.id = null;
+              lastSavedState.previous = null;
+            }
+          },
+        },
+        duration: 10000,
+      });
+    },
   });
   return (
     <AlertDialog open onOpenChange={onClose}>
