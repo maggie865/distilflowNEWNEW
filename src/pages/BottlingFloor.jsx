@@ -285,30 +285,30 @@ export default function BottlingFloor() {
           source: 'bottling',
           bottle_size_ml: activeRun.bottle_size_ml,
           quantity_bottles: tastingBottles,
-        });
-      }
-    },
-      // 5. Deduct packaging materials from RawMaterial inventory using the recipe
-      const recipe = activeRun.recipe;
-      if (recipe?.packaging?.length && totalBottles > 0) {
-        const allRM = await db.RawMaterial.list('name', 5000);
-        for (const pkg of recipe.packaging) {
+          });
+          }
+
+          // 5. Deduct packaging materials from RawMaterial inventory using the recipe
+          const recipe = activeRun.recipe;
+          if (recipe?.packaging?.length && totalBottles > 0) {
+          const allRM = await db.RawMaterial.list('name', 5000);
+          for (const pkg of recipe.packaging) {
           if (!pkg.name) continue;
           // Packaging quantities are per bottle (1 bottle, 1 label, 1 cap per bottle)
           const totalNeeded = (pkg.quantity || 1) * totalBottles;
           const rm = allRM.find(r =>
-            (r.name || '').toLowerCase().trim() === (pkg.name || '').toLowerCase().trim()
+           (r.name || '').toLowerCase().trim() === (pkg.name || '').toLowerCase().trim()
           );
           if (rm) {
-            const newQty = Math.max(0, (rm.quantity || 0) - totalNeeded);
-            await db.RawMaterial.update(rm.id, {
-              quantity: parseFloat(newQty.toFixed(4)),
-            });
+           const newQty = Math.max(0, (rm.quantity || 0) - totalNeeded);
+           await db.RawMaterial.update(rm.id, {
+             quantity: parseFloat(newQty.toFixed(4)),
+           });
           }
-        }
-      }
-
-    onSuccess: () => {
+          }
+          }
+          },
+          onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bottlingFloorRuns'] });
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
