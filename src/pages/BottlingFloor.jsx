@@ -314,9 +314,7 @@ export default function BottlingFloor() {
           if (rm) {
             const newQty = Math.max(0, (rm.quantity || 0) - totalNeeded);
             await db.RawMaterial.update(rm.id, { quantity: parseFloat(newQty.toFixed(4)) });
-            console.log(`[BottlingFloor] Deducted ${totalNeeded} x ${pkg.name} from inventory (matched: ${rm.name}), new qty: ${newQty}`);
           } else {
-            console.warn(`[BottlingFloor] Could not find RawMaterial for packaging item: "${pkg.name}" — not deducted`);
             toast.warning(`Packaging item "${pkg.name}" not found in inventory — please check your inventory records`);
           }
         }
