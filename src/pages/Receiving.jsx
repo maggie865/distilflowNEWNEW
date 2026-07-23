@@ -270,21 +270,37 @@ export default function Receiving() {
       const payload = buildPayload(data);
       const created = await base44.entities.Receiving.create(payload);
 
-      // Create linked RawMaterial for FIFO tracking
+      // Create or update linked RawMaterial for inventory tracking
       const TYPE_MAP = { 'Ethanol': 'ethanol', 'Botanicals': 'botanical', 'Packaging': 'packaging', 'Grain': 'grain', 'Sugar': 'sugar', 'Water': 'water', 'Flavoring': 'flavoring', 'Other': 'other' };
-      await base44.entities.RawMaterial.create({
-        name: payload.material_name,
-        type: TYPE_MAP[payload.material_type] || 'other',
-        quantity: payload.quantity,
-        unit: payload.unit,
-        lals: payload.lals,
-        abv_percent: payload.abv_percent,
-        batch_number: payload.batch_number,
-        supplier: payload.supplier_name,
-        cost_per_unit: payload.cost_per_unit,
-        date_received: payload.date_received,
-        receiving_id: created.id,
-      });
+      const allRM = await base44.entities.RawMaterial.list('name', 5000);
+      const existingRM = allRM.find(r =>
+        (r.name || '').toLowerCase().trim() === (payload.material_name || '').toLowerCase().trim()
+      );
+      if (existingRM) {
+        // Add to existing inventory record
+        await base44.entities.RawMaterial.update(existingRM.id, {
+          quantity: parseFloat(((existingRM.quantity || 0) + (payload.quantity || 0)).toFixed(4)),
+          lals: parseFloat(((existingRM.lals || 0) + (payload.lals || 0)).toFixed(4)),
+          // Update cost to latest received price
+          cost_per_unit: payload.cost_per_unit || existingRM.cost_per_unit,
+          date_received: payload.date_received,
+        });
+      } else {
+        // Create new inventory record
+        await base44.entities.RawMaterial.create({
+          name: payload.material_name,
+          type: TYPE_MAP[payload.material_type] || 'other',
+          quantity: payload.quantity,
+          unit: payload.unit,
+          lals: payload.lals,
+          abv_percent: payload.abv_percent,
+          batch_number: payload.batch_number,
+          supplier: payload.supplier_name,
+          cost_per_unit: payload.cost_per_unit,
+          date_received: payload.date_received,
+          receiving_id: created.id,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivings'] });
