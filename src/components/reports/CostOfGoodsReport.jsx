@@ -52,11 +52,11 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
     return 0;
   };
 
-  // Per-batch COGS: group ALL bottling runs by batch_number for a true batch total
+  // Per-batch COGS: one row per batch showing full batch costs
   const batchCogs = useMemo(() => {
     if (!bottlingRuns || bottlingRuns.length === 0) return [];
 
-    // Group bottling runs by batch_number
+    // Group all bottling runs by batch_number
     const byBatch = {};
     for (const br of bottlingRuns) {
       if (!br.batch_number || !(br.bottles_produced > 0)) continue;
@@ -65,11 +65,10 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
     }
 
     return Object.entries(byBatch).map(([batchNumber, runs]) => {
-      // 1. Find linked MasterBatch
       const masterBatch = (masterBatches || []).find(mb => mb.batch_code === batchNumber);
-
-      // 2. Find Recipe
       const productName = masterBatch?.product_name || runs[0].product_name;
+
+      // Find spirit recipe
       const recipe = (recipes || [])
         .filter(r => r.recipe_type === 'spirit' && r.base_ethanol_volume)
         .find(r =>
@@ -78,76 +77,74 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
           r.name?.toLowerCase().includes(productName?.toLowerCase())
         );
 
-      // 3. Find packaging recipe by bottle size
-      const bottleSize = runs[0].bottle_size_ml;
-      const packagingRecipe = (recipes || []).find(r =>
-        r.recipe_type === 'packaging' &&
-        r.name?.toLowerCase().includes(String(bottleSize || '').toLowerCase())
-      );
-
-      // 4. Total bottles across all runs in this batch
+      // Total bottles and runs
       const bottlesProduced = runs.reduce((s, r) => s + (r.bottles_produced || 0), 0);
+      const bottles700 = runs.filter(r => r.bottle_size_ml === 700).reduce((s, r) => s + (r.bottles_produced || 0), 0);
+      const bottles200 = runs.filter(r => r.bottle_size_ml === 200).reduce((s, r) => s + (r.bottles_produced || 0), 0);
 
-      // 5. Total distillation input for this batch
+      // Total distillation input for this batch
       const distRuns = (distillationRuns || []).filter(dr => dr.batch_number === batchNumber);
       const totalDistInput = distRuns.reduce((s, dr) => s + (dr.input_volume || 0), 0);
+      const totalInputLals = distRuns.reduce((s, dr) => s + (dr.input_lals || 0), 0);
 
-      // 6. Raw material cost scaled to actual distillation input
-      let rawMaterialCost = 0;
+      // Ethanol cost from actual LALs used
+      const ethanolCostTotal = totalInputLals * avgEthanolCostPerLal;
+
+      // Botanical/ingredient cost scaled to actual distillation input
+      let botanicalCostTotal = 0;
       if (recipe && recipe.base_ethanol_volume) {
         const scale = totalDistInput > 0 ? totalDistInput / recipe.base_ethanol_volume : 1;
         for (const ing of (recipe.ingredients || [])) {
           const cpu = findCostPerUnit(ing.name);
-          if (cpu) rawMaterialCost += (ing.quantity || 0) * scale * cpu;
+          if (cpu) botanicalCostTotal += (ing.quantity || 0) * scale * cpu;
         }
       }
-      const rawMaterialCostPerBottle = bottlesProduced > 0 ? rawMaterialCost / bottlesProduced : 0;
 
-      // 7. Packaging cost per bottle from packaging recipe OR spirit recipe
-      let packagingCostPerBottle = 0;
-      const pkgSource = packagingRecipe || recipe;
-      if (pkgSource?.packaging?.length) {
-        for (const pkg of pkgSource.packaging) {
-          if (!pkg.name) continue;
-          packagingCostPerBottle += (pkg.quantity || 1) * findCostPerUnit(pkg.name);
-        }
-      }
-      if (packagingCostPerBottle === 0) packagingCostPerBottle = pkgSource?.packaging_cost_per_bottle || 0;
-
-      const totalCogsPerBottle = rawMaterialCostPerBottle + packagingCostPerBottle;
-      const totalCogsForBatch = totalCogsPerBottle * bottlesProduced;
-      const packagingCostTotal = packagingCostPerBottle * bottlesProduced;
-
-      // 8. Selling price from FinishedGood
-      const fg = (finishedGoodsWithStock || []).find(
-        g => (g.product_name === productName || g.batch_number === batchNumber)
-          && (bottleSize ? Number(g.bottle_size_ml) === Number(bottleSize) : true)
+      // Packaging cost — calculate for each bottle size separately then sum
+      let packagingCostTotal = 0;
+      const pkgRecipe700 = (recipes || []).find(r =>
+        r.recipe_type === 'packaging' && r.name?.toLowerCase().includes('700')
       );
-      const sellingPrice = fg?.product_price || 0;
-      const grossMargin = sellingPrice - totalCogsPerBottle;
-      const grossMarginPct = sellingPrice > 0 ? (grossMargin / sellingPrice) * 100 : 0;
+      const pkgRecipe200 = (recipes || []).find(r =>
+        r.recipe_type === 'packaging' && r.name?.toLowerCase().includes('200')
+      );
+
+      const calcPkgCostPerBottle = (pkgRecipe) => {
+        if (!pkgRecipe?.packaging?.length) return 0;
+        return pkgRecipe.packaging.reduce((s, pkg) =>
+          s + (pkg.quantity || 1) * findCostPerUnit(pkg.name), 0);
+      };
+
+      packagingCostTotal += bottles700 * calcPkgCostPerBottle(pkgRecipe700 || recipe);
+      packagingCostTotal += bottles200 * calcPkgCostPerBottle(pkgRecipe200 || recipe);
+
+      const totalBatchCost = ethanolCostTotal + botanicalCostTotal + packagingCostTotal;
+      const costPerBottle = bottlesProduced > 0 ? totalBatchCost / bottlesProduced : 0;
+
+      // Selling prices — may differ by size
+      const fg700 = (finishedGoodsWithStock || []).find(g => g.batch_number === batchNumber && Number(g.bottle_size_ml) === 700);
+      const fg200 = (finishedGoodsWithStock || []).find(g => g.batch_number === batchNumber && Number(g.bottle_size_ml) === 200);
 
       return {
         batch_number: batchNumber,
         productName,
-        bottle_size_ml: bottleSize,
         recipeName: recipe?.name || null,
-        packagingRecipeName: packagingRecipe?.name || null,
         bottlingRunCount: runs.length,
         bottlesProduced,
-        totalDistInput,
-        rawMaterialCost,
-        rawMaterialCostPerBottle,
-        packagingCostPerBottle,
-        packagingCostTotal,
-        totalCogsPerBottle,
-        totalCogsForBatch,
-        sellingPrice,
-        grossMargin,
-        grossMarginPct,
+        bottles700,
+        bottles200,
+        totalDistInput: parseFloat(totalDistInput.toFixed(3)),
+        totalInputLals: parseFloat(totalInputLals.toFixed(4)),
+        ethanolCostTotal: parseFloat(ethanolCostTotal.toFixed(2)),
+        botanicalCostTotal: parseFloat(botanicalCostTotal.toFixed(2)),
+        packagingCostTotal: parseFloat(packagingCostTotal.toFixed(2)),
+        totalBatchCost: parseFloat(totalBatchCost.toFixed(2)),
+        costPerBottle: parseFloat(costPerBottle.toFixed(4)),
+        sellingPrice700: fg700?.product_price || 0,
+        sellingPrice200: fg200?.product_price || 0,
       };
     }).sort((a, b) => a.batch_number.localeCompare(b.batch_number));
-  }, [bottlingRuns, masterBatches, recipes, distillationRuns, finishedGoodsWithStock, findCostPerUnit]);
+  }, [bottlingRuns, masterBatches, recipes, distillationRuns, finishedGoodsWithStock, avgEthanolCostPerLal, findCostPerUnit]);
 
   const finishedGoodsCosts = useMemo(() => {
     return finishedGoodsWithStock
@@ -184,10 +181,17 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
           botanicalCost = botanicalPerBottle * (fg.quantity_bottles || 0);
 
           let packagingPerBottle = 0;
-          if (recipe.packaging) {
-            for (const pkg of recipe.packaging) {
+          // Find packaging recipe by bottle size for this finished good
+          const fgPackagingRecipe = (recipes || []).find(r =>
+            r.recipe_type === 'packaging' &&
+            r.name?.toLowerCase().includes(String(fg.bottle_size_ml || '').toLowerCase())
+          );
+          const pkgSource = fgPackagingRecipe || recipe;
+          if (pkgSource?.packaging) {
+            for (const pkg of pkgSource.packaging) {
+              // Use findCostPerUnit which now checks both rawMaterials and rawMaterialsNetStock
               const cpu = findCostPerUnit(pkg.name);
-              if (cpu) packagingPerBottle += (pkg.quantity * cpu);
+              if (cpu) packagingPerBottle += (pkg.quantity || 1) * cpu;
             }
           }
           packagingCost = packagingPerBottle * (fg.quantity_bottles || 0);
@@ -377,46 +381,52 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
       {/* Per-Batch COGS Analysis */}
       <Card className="p-4">
         <h4 className="text-sm font-semibold mb-4 flex items-center gap-2"><FlaskConical className="w-4 h-4 text-primary" /> Per-Batch COGS Analysis</h4>
-        <p className="text-xs text-muted-foreground mb-3">Raw material costs scaled to actual distillation input volume, plus packaging cost per bottle</p>
+        <p className="text-xs text-muted-foreground mb-3">Full batch cost: ethanol (from actual LALs used) + botanicals (scaled to distillation input) + packaging (from recipe × bottles produced)</p>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Product</TableHead>
                 <TableHead>Batch</TableHead>
-                <TableHead className="text-center">Runs</TableHead>
-                <TableHead>Bottles</TableHead>
-                <TableHead>Raw Mat. / Bottle</TableHead>
-                <TableHead>Packaging / Bottle</TableHead>
-                <TableHead>COGS / Bottle</TableHead>
-                <TableHead>Total COGS</TableHead>
-                <TableHead>Selling Price</TableHead>
-                <TableHead>Gross Margin</TableHead>
+                <TableHead>Product</TableHead>
+                <TableHead className="text-right">700ml</TableHead>
+                <TableHead className="text-right">200ml</TableHead>
+                <TableHead className="text-right">Ethanol Cost</TableHead>
+                <TableHead className="text-right">Botanicals</TableHead>
+                <TableHead className="text-right">Packaging</TableHead>
+                <TableHead className="text-right font-bold">Total Batch COGS</TableHead>
+                <TableHead className="text-right">Cost / Bottle</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {batchCogs.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-4 text-muted-foreground text-sm">No bottling runs with production data</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-4 text-muted-foreground text-sm">No bottling runs with production data</TableCell></TableRow>
               ) : batchCogs.map(b => (
-                <TableRow key={b.batch_number + (b.bottle_size_ml || '')}>
-                  <TableCell className="font-medium text-sm">{b.productName}{b.bottle_size_ml ? ` ${b.bottle_size_ml}ml` : ''}</TableCell>
-                  <TableCell className="font-mono text-xs">{b.batch_number}</TableCell>
-                  <TableCell className="text-sm text-center">{b.bottlingRunCount}</TableCell>
-                  <TableCell className="text-sm">{b.bottlesProduced.toLocaleString()}</TableCell>
-                  <TableCell className="text-sm">{money(b.rawMaterialCostPerBottle)}</TableCell>
-                  <TableCell className="text-sm">{b.packagingCostPerBottle > 0 ? money(b.packagingCostPerBottle) : <span className="text-muted-foreground text-xs">No recipe</span>}</TableCell>
-                  <TableCell className="text-sm font-semibold">{money(b.totalCogsPerBottle)}</TableCell>
-                  <TableCell className="text-sm font-bold">{money(b.totalCogsForBatch)}</TableCell>
-                  <TableCell className="text-sm">{b.sellingPrice ? money(b.sellingPrice) : '—'}</TableCell>
-                  <TableCell className="text-sm">
-                    {b.sellingPrice > 0 ? (
-                      <span className={b.grossMargin >= 0 ? 'text-green-600 font-medium' : 'text-destructive font-medium'}>
-                        {money(b.grossMargin)} ({b.grossMarginPct.toFixed(1)}%)
-                      </span>
-                    ) : '—'}
+                <TableRow key={b.batch_number}>
+                  <TableCell className="font-mono text-xs font-semibold">{b.batch_number}</TableCell>
+                  <TableCell className="text-sm font-medium">{b.productName}</TableCell>
+                  <TableCell className="text-sm text-right">{b.bottles700 > 0 ? b.bottles700.toLocaleString() : '—'}</TableCell>
+                  <TableCell className="text-sm text-right">{b.bottles200 > 0 ? b.bottles200.toLocaleString() : '—'}</TableCell>
+                  <TableCell className="text-sm text-right">{money(b.ethanolCostTotal)}</TableCell>
+                  <TableCell className="text-sm text-right">{b.botanicalCostTotal > 0 ? money(b.botanicalCostTotal) : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                  <TableCell className="text-sm text-right">{b.packagingCostTotal > 0 ? money(b.packagingCostTotal) : <span className="text-muted-foreground text-xs">No recipe</span>}</TableCell>
+                  <TableCell className="text-right">
+                    <span className="font-bold text-sm">{money(b.totalBatchCost)}</span>
                   </TableCell>
+                  <TableCell className="text-sm text-right text-muted-foreground">{money(b.costPerBottle)}</TableCell>
                 </TableRow>
               ))}
+              {batchCogs.length > 0 && (
+                <TableRow className="border-t-2 border-border font-bold bg-muted/30">
+                  <TableCell colSpan={2} className="text-sm">TOTAL</TableCell>
+                  <TableCell className="text-right text-sm">{batchCogs.reduce((s,b)=>s+b.bottles700,0).toLocaleString()}</TableCell>
+                  <TableCell className="text-right text-sm">{batchCogs.reduce((s,b)=>s+b.bottles200,0).toLocaleString()}</TableCell>
+                  <TableCell className="text-right text-sm">{money(batchCogs.reduce((s,b)=>s+b.ethanolCostTotal,0))}</TableCell>
+                  <TableCell className="text-right text-sm">{money(batchCogs.reduce((s,b)=>s+b.botanicalCostTotal,0))}</TableCell>
+                  <TableCell className="text-right text-sm">{money(batchCogs.reduce((s,b)=>s+b.packagingCostTotal,0))}</TableCell>
+                  <TableCell className="text-right text-sm">{money(batchCogs.reduce((s,b)=>s+b.totalBatchCost,0))}</TableCell>
+                  <TableCell></TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </div>
