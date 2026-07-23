@@ -200,19 +200,10 @@ export function useRawMaterialsNetStock() {
         }
       }
 
+      // Packaging: quantity is deducted directly in the database when bottling runs complete
+      // Do NOT subtract here — that would double-count the deduction
       if (effectiveType === 'packaging') {
-        const exactConsumed = packagingConsumedByName[nameLower];
-        if (exactConsumed !== undefined) {
-          consumedQty = exactConsumed;
-          netQty = Math.max(0, netQty - exactConsumed);
-        } else {
-          const partialKey = Object.keys(packagingConsumedByName)
-            .find(k => nameLower.includes(k.toLowerCase()) || k.toLowerCase().includes(nameLower));
-          if (partialKey) {
-            consumedQty = packagingConsumedByName[partialKey];
-            netQty = Math.max(0, netQty - consumedQty);
-          }
-        }
+        // netQty already reflects actual stock — no further deduction needed
       }
 
       netLals = m.abv_percent && (m.type === 'ethanol' || effectiveType === 'ethanol')
