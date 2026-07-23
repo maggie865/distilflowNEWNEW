@@ -287,7 +287,7 @@ export default function BottlingFloor() {
           quantity_bottles: tastingBottles,
         });
       }
-    },
+
       // 5. Deduct packaging materials from RawMaterial inventory using the recipe
       const recipe = activeRun.recipe;
       if (recipe?.packaging?.length && totalBottles > 0) {
@@ -307,7 +307,7 @@ export default function BottlingFloor() {
           }
         }
       }
-
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bottlingFloorRuns'] });
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
