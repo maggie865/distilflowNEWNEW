@@ -292,18 +292,32 @@ export default function BottlingFloor() {
       const recipe = activeRun.recipe;
       if (recipe?.packaging?.length && totalBottles > 0) {
         const allRM = await db.RawMaterial.list('name', 5000);
+
+        // Fuzzy name match — handles minor naming differences
+        const findRM = (pkgName) => {
+          const target = (pkgName || '').toLowerCase().trim();
+          // Exact match first
+          let match = allRM.find(r => (r.name || '').toLowerCase().trim() === target);
+          if (match) return match;
+          // Partial match — one contains the other
+          match = allRM.find(r => {
+            const name = (r.name || '').toLowerCase().trim();
+            return name.includes(target) || target.includes(name);
+          });
+          return match;
+        };
+
         for (const pkg of recipe.packaging) {
           if (!pkg.name) continue;
-          // Packaging quantities are per bottle (1 bottle, 1 label, 1 cap per bottle)
           const totalNeeded = (pkg.quantity || 1) * totalBottles;
-          const rm = allRM.find(r =>
-            (r.name || '').toLowerCase().trim() === (pkg.name || '').toLowerCase().trim()
-          );
+          const rm = findRM(pkg.name);
           if (rm) {
             const newQty = Math.max(0, (rm.quantity || 0) - totalNeeded);
-            await db.RawMaterial.update(rm.id, {
-              quantity: parseFloat(newQty.toFixed(4)),
-            });
+            await db.RawMaterial.update(rm.id, { quantity: parseFloat(newQty.toFixed(4)) });
+            console.log(`[BottlingFloor] Deducted ${totalNeeded} x ${pkg.name} from inventory (matched: ${rm.name}), new qty: ${newQty}`);
+          } else {
+            console.warn(`[BottlingFloor] Could not find RawMaterial for packaging item: "${pkg.name}" — not deducted`);
+            toast.warning(\`Packaging item "${pkg.name}" not found in inventory — please check your inventory records\`);
           }
         }
       }
@@ -417,12 +431,16 @@ export default function BottlingFloor() {
       const runRecipe = recipes.find(r => r.id === run.recipe_id);
       if (runRecipe?.packaging?.length && run.bottles_produced > 0) {
         const allRM = await db.RawMaterial.list('name', 5000);
+        const findRM2 = (pkgName) => {
+          const target = (pkgName || '').toLowerCase().trim();
+          let match = allRM.find(r => (r.name || '').toLowerCase().trim() === target);
+          if (!match) match = allRM.find(r => { const name = (r.name || '').toLowerCase().trim(); return name.includes(target) || target.includes(name); });
+          return match;
+        };
         for (const pkg of runRecipe.packaging) {
           if (!pkg.name) continue;
           const totalToRestore = (pkg.quantity || 1) * run.bottles_produced;
-          const rm = allRM.find(r =>
-            (r.name || '').toLowerCase().trim() === (pkg.name || '').toLowerCase().trim()
-          );
+          const rm = findRM2(pkg.name);
           if (rm) {
             await db.RawMaterial.update(rm.id, {
               quantity: parseFloat(((rm.quantity || 0) + totalToRestore).toFixed(4)),
