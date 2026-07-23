@@ -1,20 +1,27 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Thermometer, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react';
-import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
-import { format } from 'date-fns';
+import { Plus, Thermometer, AlertTriangle, CheckCircle2, Trash2, ChevronDown, Settings2 } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
+import Pagination from '@/components/ui/Pagination';
 
-const UNIT_TYPES = ['refrigerator','freezer','cool_room','ambient'];
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+// Default units — user can add/remove from Settings panel
+const DEFAULT_UNITS = [
+  { name: 'Fridge 1', type: 'refrigerator', min: 2, max: 5 },
+  { name: 'Fridge 2', type: 'refrigerator', min: 2, max: 5 },
+  { name: 'Freezer 1', type: 'freezer', min: -25, max: -15 },
+  { name: 'Freezer 2', type: 'freezer', min: -25, max: -15 },
+];
+
 const SAFE_RANGES = {
   refrigerator: { min: 2, max: 5 },
   freezer: { min: -25, max: -15 },
@@ -22,289 +29,446 @@ const SAFE_RANGES = {
   ambient: { min: 15, max: 25 },
 };
 
-const BLANK = {
-  date: new Date().toISOString().split('T')[0],
-  time: new Date().toTimeString().slice(0,5),
-  unit_name: '',
-  unit_type: 'refrigerator',
-  temperature_c: '',
-  min_safe_c: 2,
-  max_safe_c: 5,
-  recorded_by: '',
-  corrective_action: '',
-  notes: '',
+const TYPE_LABELS = {
+  refrigerator: '🧊 Fridge',
+  freezer: '❄️ Freezer',
+  cool_room: '🏠 Cool Room',
+  ambient: '🌡 Ambient',
 };
 
-export default function TemperatureLogs() {
+// ─── UNIT CARD ────────────────────────────────────────────────────────────────
+function UnitCard({ unit, logs, onLogTemp }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState(BLANK);
-  const [filterUnit, setFilterUnit] = useState('all');
-  const [filterType, setFilterType] = useState('all');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const unitLogs = useMemo(() =>
+    logs.filter(l => (l.unit_name || '').toLowerCase().trim() === unit.name.toLowerCase().trim())
+      .sort((a, b) => {
+        const da = `${a.date} ${a.time || ''}`;
+        const db = `${b.date} ${b.time || ''}`;
+        return db.localeCompare(da);
+      }),
+  [logs, unit.name]);
+
+  const latest = unitLogs[0];
+  const latestTemp = latest ? parseFloat(latest.temperature_c) : null;
+  const inRange = latest ? latest.in_range !== false : null;
+  const outOfRangeCount = unitLogs.filter(l => l.in_range === false).length;
+  const paged = unitLogs.slice((page - 1) * pageSize, page * pageSize);
+
+  const borderCls = inRange === false ? 'border-red-300 bg-red-50/30' : inRange === true ? 'border-emerald-300' : 'border-border';
+  const tempCls = inRange === false ? 'text-red-600' : inRange === true ? 'text-emerald-600' : 'text-muted-foreground';
+
+  return (
+    <Card className={`border-2 ${borderCls} overflow-hidden`}>
+      <div className="p-4 flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm">{unit.name}</span>
+            <span className="text-xs text-muted-foreground">{TYPE_LABELS[unit.type] || unit.type}</span>
+            <span className="text-xs text-muted-foreground">Safe: {unit.min}° to {unit.max}°C</span>
+          </div>
+          {latest ? (
+            <div className="flex items-center gap-3 mt-1 flex-wrap">
+              <span className={`text-2xl font-bold font-mono ${tempCls}`}>{latestTemp}°C</span>
+              {inRange === false ? (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                  <AlertTriangle className="w-3 h-3" /> Out of range
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                  <CheckCircle2 className="w-3 h-3" /> OK
+                </span>
+              )}
+              <span className="text-xs text-muted-foreground">
+                {latest.date ? format(parseISO(latest.date), 'd MMM') : ''} {latest.time || ''} — {latest.recorded_by || ''}
+              </span>
+              {outOfRangeCount > 0 && (
+                <span className="text-xs text-red-600 font-medium">{outOfRangeCount} out-of-range reading{outOfRangeCount !== 1 ? 's' : ''}</span>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1">No readings yet</p>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" onClick={() => onLogTemp(unit)} className="gap-1">
+            <Plus className="w-3.5 h-3.5" /> Log
+          </Button>
+          {unitLogs.length > 0 && (
+            <button onClick={() => setOpen(v => !v)} className="text-muted-foreground hover:text-foreground p-1">
+              <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {open && unitLogs.length > 0 && (
+        <div className="border-t border-border">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Temp °C</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Recorded by</TableHead>
+                  <TableHead>Corrective Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paged.map(l => (
+                  <TableRow key={l.id} className={l.in_range === false ? 'bg-red-50' : ''}>
+                    <TableCell className="text-sm whitespace-nowrap">{l.date ? format(parseISO(l.date), 'd MMM yyyy') : '—'}</TableCell>
+                    <TableCell className="text-sm font-mono">{l.time || '—'}</TableCell>
+                    <TableCell className={`text-sm font-bold ${l.in_range === false ? 'text-red-600' : 'text-emerald-600'}`}>{l.temperature_c}°C</TableCell>
+                    <TableCell>
+                      {l.in_range === false ? (
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700"><AlertTriangle className="w-3 h-3" /> Out</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-3 h-3" /> OK</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">{l.recorded_by || '—'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{l.corrective_action || '—'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {unitLogs.length > pageSize && (
+            <div className="p-3 border-t">
+              <Pagination total={unitLogs.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={() => {}} />
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── BULK LOG FORM ────────────────────────────────────────────────────────────
+function BulkLogForm({ units, onSave, saving }) {
+  const today = new Date().toISOString().split('T')[0];
+  const now = new Date().toTimeString().slice(0, 5);
+  const [date, setDate] = useState(today);
+  const [time, setTime] = useState(now);
+  const [recordedBy, setRecordedBy] = useState('');
+  const [temps, setTemps] = useState({});
+  const [actions, setActions] = useState({});
+  const [submitted, setSubmitted] = useState(false);
+
+  const setTemp = (name, val) => setTemps(t => ({ ...t, [name]: val }));
+  const setAction = (name, val) => setActions(a => ({ ...a, [name]: val }));
+
+  const getStatus = (unit) => {
+    const val = temps[unit.name];
+    if (val === '' || val === undefined) return null;
+    const t = parseFloat(val);
+    if (isNaN(t)) return null;
+    return t >= unit.min && t <= unit.max ? 'ok' : 'out';
+  };
+
+  const filledCount = units.filter(u => temps[u.name] !== '' && temps[u.name] !== undefined).length;
+
+  const handleSave = async () => {
+    if (!recordedBy.trim()) { toast.error('Please enter your name'); return; }
+    const toSave = units.filter(u => temps[u.name] !== '' && temps[u.name] !== undefined);
+    if (toSave.length === 0) { toast.error('Please enter at least one temperature reading'); return; }
+    await onSave(toSave.map(u => {
+      const temp = parseFloat(temps[u.name]);
+      const inRange = temp >= u.min && temp <= u.max;
+      return {
+        date, time, unit_name: u.name, unit_type: u.type,
+        temperature_c: temp, min_safe_c: u.min, max_safe_c: u.max,
+        recorded_by: recordedBy.trim(), in_range: inRange,
+        corrective_action: actions[u.name] || undefined,
+      };
+    }));
+    setTemps({});
+    setActions({});
+    setSubmitted(true);
+    setTimeout(() => setSubmitted(false), 3000);
+  };
+
+  return (
+    <Card className="p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <Thermometer className="w-5 h-5 text-primary" />
+        <h3 className="font-semibold">Log All Temperatures</h3>
+        {filledCount > 0 && <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{filledCount} of {units.length} filled</span>}
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <Label className="text-xs font-semibold">Date</Label>
+          <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="mt-1" />
+        </div>
+        <div>
+          <Label className="text-xs font-semibold">Time</Label>
+          <Input type="time" value={time} onChange={e => setTime(e.target.value)} className="mt-1" />
+        </div>
+        <div>
+          <Label className="text-xs font-semibold">Recorded by *</Label>
+          <Input value={recordedBy} onChange={e => setRecordedBy(e.target.value)} placeholder="Your name" className="mt-1" />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {units.map(unit => {
+          const status = getStatus(unit);
+          return (
+            <div key={unit.name} className={`rounded-lg border p-3 transition-colors ${status === 'out' ? 'bg-red-50 border-red-200' : status === 'ok' ? 'bg-emerald-50 border-emerald-200' : 'border-border'}`}>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">{unit.name}</span>
+                    <span className="text-xs text-muted-foreground">{TYPE_LABELS[unit.type]}</span>
+                    <span className="text-xs text-muted-foreground">({unit.min}° to {unit.max}°C)</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={temps[unit.name] ?? ''}
+                    onChange={e => setTemp(unit.name, e.target.value)}
+                    placeholder="°C"
+                    className={`w-24 h-10 text-center font-mono text-base font-bold ${status === 'out' ? 'border-red-400' : status === 'ok' ? 'border-emerald-400' : ''}`}
+                  />
+                  {status === 'ok' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
+                  {status === 'out' && <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />}
+                </div>
+              </div>
+              {status === 'out' && (
+                <div className="mt-2">
+                  <Input
+                    value={actions[unit.name] || ''}
+                    onChange={e => setAction(unit.name, e.target.value)}
+                    placeholder="Corrective action taken (required for out-of-range)"
+                    className="text-sm border-red-300"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {submitted ? (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-700 font-medium text-center">
+          ✅ Temperatures logged successfully
+        </div>
+      ) : (
+        <Button onClick={handleSave} disabled={saving || filledCount === 0} className="w-full">
+          {saving ? 'Saving...' : `Save ${filledCount > 0 ? filledCount : ''} Temperature Reading${filledCount !== 1 ? 's' : ''}`}
+        </Button>
+      )}
+    </Card>
+  );
+}
+
+// ─── UNIT SETTINGS ────────────────────────────────────────────────────────────
+function UnitSettings({ units, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [newUnit, setNewUnit] = useState({ name: '', type: 'refrigerator' });
+
+  const addUnit = () => {
+    if (!newUnit.name.trim()) return;
+    const range = SAFE_RANGES[newUnit.type] || { min: 0, max: 10 };
+    onChange([...units, { name: newUnit.name.trim(), type: newUnit.type, min: range.min, max: range.max }]);
+    setNewUnit({ name: '', type: 'refrigerator' });
+  };
+
+  const removeUnit = (name) => onChange(units.filter(u => u.name !== name));
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2">
+          <Settings2 className="w-4 h-4" /> Manage Units
+          <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <Card className="p-4 mt-2 space-y-3">
+          <p className="text-xs text-muted-foreground">Add or remove fridges and freezers. Changes are saved locally for this session.</p>
+          <div className="space-y-1">
+            {units.map(u => (
+              <div key={u.name} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
+                <span className="text-sm">{u.name} <span className="text-xs text-muted-foreground">({TYPE_LABELS[u.type]}, {u.min}° to {u.max}°C)</span></span>
+                <Button variant="ghost" size="sm" className="text-destructive h-7" onClick={() => removeUnit(u.name)}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Input value={newUnit.name} onChange={e => setNewUnit(n => ({ ...n, name: e.target.value }))} placeholder="Unit name (e.g. Fridge 3)" className="flex-1" />
+            <select value={newUnit.type} onChange={e => setNewUnit(n => ({ ...n, type: e.target.value }))} className="border border-border rounded-md px-2 text-sm">
+              {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <Button onClick={addUnit} disabled={!newUnit.name.trim()} size="sm">Add</Button>
+          </div>
+        </Card>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
+export default function TemperatureLogs() {
+  const [units, setUnits] = useState(DEFAULT_UNITS);
+  const [logTarget, setLogTarget] = useState(null); // single unit quick-log
+  const [singleTemp, setSingleTemp] = useState('');
+  const [singleAction, setSingleAction] = useState('');
+  const [singleBy, setSingleBy] = useState('');
   const qc = useQueryClient();
 
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['temperatureLogs'],
-    queryFn: () => base44.entities.TemperatureLog.list('-date', 500),
+    queryFn: () => base44.entities.TemperatureLog.list('-date', 5000),
   });
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const today = new Date().toISOString().split('T')[0];
+  const todayLogs = logs.filter(l => l.date === today);
+  const outOfRange = logs.filter(l => l.in_range === false).length;
 
-  const handleTypeChange = (type) => {
-    const range = SAFE_RANGES[type] || { min: 0, max: 10 };
-    setForm(f => ({ ...f, unit_type: type, min_safe_c: range.min, max_safe_c: range.max }));
-  };
-
-  const createMutation = useMutation({
-    mutationFn: async (data) => {
-      const temp = parseFloat(data.temperature_c);
-      const inRange = temp >= data.min_safe_c && temp <= data.max_safe_c;
-      await base44.entities.TemperatureLog.create({
-        ...data,
-        temperature_c: temp,
-        in_range: inRange,
-      });
+  const bulkMutation = useMutation({
+    mutationFn: async (entries) => {
+      for (const entry of entries) {
+        await base44.entities.TemperatureLog.create(entry);
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['temperatureLogs'] });
-      setOpen(false);
-      setForm(BLANK);
-      toast.success('Temperature logged');
+      toast.success('Temperatures saved');
     },
     onError: (e) => toast.error('Failed: ' + e.message),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.TemperatureLog.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['temperatureLogs'] }),
+  const singleMutation = useMutation({
+    mutationFn: async () => {
+      const temp = parseFloat(singleTemp);
+      const unit = logTarget;
+      await base44.entities.TemperatureLog.create({
+        date: today,
+        time: new Date().toTimeString().slice(0, 5),
+        unit_name: unit.name,
+        unit_type: unit.type,
+        temperature_c: temp,
+        min_safe_c: unit.min,
+        max_safe_c: unit.max,
+        recorded_by: singleBy.trim(),
+        in_range: temp >= unit.min && temp <= unit.max,
+        corrective_action: singleAction || undefined,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['temperatureLogs'] });
+      setLogTarget(null);
+      setSingleTemp('');
+      setSingleAction('');
+      toast.success(`${logTarget.name} temperature logged`);
+    },
+    onError: (e) => toast.error('Failed: ' + e.message),
   });
 
-  // Summary stats
-  const today = new Date().toISOString().split('T')[0];
-  const todayLogs = logs.filter(l => l.date === today);
-  const outOfRange = logs.filter(l => l.in_range === false).length;
-  const unitNames = [...new Set(logs.map(l => l.unit_name).filter(Boolean))].sort();
-  const filteredLogs = logs.filter(l =>
-    (filterUnit === 'all' || l.unit_name === filterUnit) &&
-    (filterType === 'all' || l.unit_type === filterType)
-  );
+  const singleStatus = singleTemp !== '' && !isNaN(parseFloat(singleTemp))
+    ? (parseFloat(singleTemp) >= (logTarget?.min || 0) && parseFloat(singleTemp) <= (logTarget?.max || 0) ? 'ok' : 'out')
+    : null;
 
   return (
-    <div className="pb-20 md:pb-0">
-      <PageHeader title="Temperature Logs" subtitle="Record fridge and freezer temperatures">
-        <Button onClick={() => setOpen(true)} className="gap-2">
-          <Plus className="w-4 h-4" /> Log Temperature
-        </Button>
+    <div className="pb-20 md:pb-0 space-y-5">
+      <PageHeader title="Temperature Logs" subtitle="Record and monitor fridge and freezer temperatures">
+        <UnitSettings units={units} onChange={setUnits} />
       </PageHeader>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        {[
-          { label: "Today's readings", value: todayLogs.length, icon: Thermometer, ok: true },
-          { label: 'Out of range (all time)', value: outOfRange, icon: AlertTriangle, ok: outOfRange === 0 },
-          { label: 'Units tracked', value: unitNames.length, icon: Thermometer, ok: true },
-          { label: 'Total readings', value: logs.length, icon: CheckCircle2, ok: true },
-        ].map(({ label, value, icon: Icon, ok }) => (
-          <div key={label} className="rounded-xl border p-4 bg-accent border-accent-foreground/10">
-            <div className="flex items-center gap-2 mb-1">
-              <Icon className={`w-4 h-4 ${ok ? 'text-primary' : 'text-destructive'}`} />
-              <span className="text-xs text-muted-foreground">{label}</span>
-            </div>
-            <p className={`text-2xl font-bold font-display ${ok ? 'text-primary' : 'text-destructive'}`}>{value}</p>
-          </div>
-        ))}
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl border p-4 bg-accent border-accent-foreground/10">
+          <p className="text-xs text-muted-foreground mb-1">Today's readings</p>
+          <p className="text-2xl font-bold font-display text-primary">{todayLogs.length}</p>
+        </div>
+        <div className="rounded-xl border p-4 bg-accent border-accent-foreground/10">
+          <p className="text-xs text-muted-foreground mb-1">Units tracked</p>
+          <p className="text-2xl font-bold font-display text-primary">{units.length}</p>
+        </div>
+        <div className={`rounded-xl border p-4 ${outOfRange > 0 ? 'bg-red-50 border-red-200' : 'bg-accent border-accent-foreground/10'}`}>
+          <p className="text-xs text-muted-foreground mb-1">Out of range</p>
+          <p className={`text-2xl font-bold font-display ${outOfRange > 0 ? 'text-red-600' : 'text-primary'}`}>{outOfRange}</p>
+        </div>
       </div>
 
       {outOfRange > 0 && (
-        <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 p-4 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+        <div className="rounded-xl border border-red-300 bg-red-50 p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-destructive">{outOfRange} out-of-range reading{outOfRange !== 1 ? 's' : ''} recorded</p>
-            <p className="text-xs text-destructive/80 mt-0.5">Review the table below and ensure corrective actions have been taken.</p>
+            <p className="text-sm font-semibold text-red-800">{outOfRange} out-of-range reading{outOfRange !== 1 ? 's' : ''} on record</p>
+            <p className="text-xs text-red-600 mt-0.5">Check the unit history below to ensure corrective actions have been taken.</p>
           </div>
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <div className="flex-1">
-          <Label className="text-xs text-muted-foreground">Filter by unit</Label>
-          <Select value={filterUnit} onValueChange={setFilterUnit}>
-            <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All units</SelectItem>
-              {unitNames.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex-1">
-          <Label className="text-xs text-muted-foreground">Filter by type</Label>
-          <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All types</SelectItem>
-              {UNIT_TYPES.map(t => <SelectItem key={t} value={t}>{t.replace('_', ' ')}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+      {/* Bulk log form */}
+      <BulkLogForm units={units} onSave={bulkMutation.mutateAsync} saving={bulkMutation.isPending} />
+
+      {/* Unit cards */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Unit History</h3>
+        {units.map(unit => (
+          <UnitCard
+            key={unit.name}
+            unit={unit}
+            logs={logs}
+            onLogTemp={(u) => { setLogTarget(u); setSingleTemp(''); setSingleAction(''); setSingleBy(''); }}
+          />
+        ))}
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="hidden md:block overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Time</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Temp °C</TableHead>
-                <TableHead>Safe range</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Recorded by</TableHead>
-                <TableHead>Corrective action</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
-              ) : filteredLogs.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No temperature logs match these filters</TableCell></TableRow>
-              ) : filteredLogs.map(l => (
-                <TableRow key={l.id} className={l.in_range === false ? 'bg-destructive/5' : ''}>
-                  <TableCell className="text-sm">{l.date ? format(new Date(l.date), 'MMM d, yyyy') : '—'}</TableCell>
-                  <TableCell className="text-sm font-mono">{l.time || '—'}</TableCell>
-                  <TableCell className="text-sm font-medium">{l.unit_name}</TableCell>
-                  <TableCell className="text-sm capitalize">{(l.unit_type || '').replace('_', ' ')}</TableCell>
-                  <TableCell className={`text-sm font-bold ${l.in_range === false ? 'text-destructive' : 'text-emerald-600'}`}>
-                    {l.temperature_c}°C
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{l.min_safe_c}° – {l.max_safe_c}°</TableCell>
-                  <TableCell>
-                    {l.in_range === false ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
-                        <AlertTriangle className="w-3 h-3" /> Out of range
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                        <CheckCircle2 className="w-3 h-3" /> OK
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm">{l.recorded_by || '—'}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate">{l.corrective_action || '—'}</TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => { if (confirm('Delete this log entry?')) deleteMutation.mutate(l.id); }}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        <MobileCardGrid>
-          {isLoading ? (
-            <p className="text-center py-8 text-muted-foreground text-sm">Loading...</p>
-          ) : filteredLogs.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground text-sm">No logs match these filters</p>
-          ) : filteredLogs.map(l => (
-            <MobileCard
-              key={l.id}
-              title={l.unit_name}
-              subtitle={`${l.date ? format(new Date(l.date), 'MMM d, yyyy') : '—'} • ${l.time || '—'} • ${l.recorded_by || '—'}`}
-              badge={
-                l.in_range === false ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-destructive/10 text-destructive"><AlertTriangle className="w-3 h-3" /> Out</span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-3 h-3" /> OK</span>
-                )
-              }
-              accent={<span className={`text-2xl font-bold ${l.in_range === false ? 'text-destructive' : 'text-emerald-600'}`}>{l.temperature_c}°</span>}
-              actions={
-                <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-destructive" onClick={() => { if (confirm('Delete this log entry?')) deleteMutation.mutate(l.id); }}><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
-              }
-            >
-              <MobileDetailRow label="Unit Type" value={(l.unit_type || '').replace('_', ' ')} />
-              <MobileDetailRow label="Safe Range" value={`${l.min_safe_c}° – ${l.max_safe_c}°`} />
-              {l.corrective_action && <MobileDetailRow label="Action Taken" value={l.corrective_action} />}
-            </MobileCard>
-          ))}
-        </MobileCardGrid>
-      </Card>
-
-      <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) setForm(BLANK); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle className="font-display">Log Temperature</DialogTitle></DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Date</Label>
-                <Input type="date" value={form.date} onChange={e => set('date', e.target.value)} className="mt-1" />
-              </div>
-              <div>
-                <Label>Time</Label>
-                <Input type="time" value={form.time} onChange={e => set('time', e.target.value)} className="mt-1" />
-              </div>
-            </div>
+      {/* Quick log for single unit (inline below its card, shown as modal-like overlay) */}
+      {logTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setLogTarget(null)}>
+          <div className="bg-background rounded-xl border shadow-lg w-full max-w-sm p-5 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold">Log — {logTarget.name}</h3>
+            <p className="text-xs text-muted-foreground">Safe range: {logTarget.min}°C to {logTarget.max}°C</p>
             <div>
-              <Label>Unit name</Label>
-              <Input value={form.unit_name} onChange={e => set('unit_name', e.target.value)} placeholder="e.g. Fridge 1, Lab Freezer" className="mt-1" />
+              <Label className="text-xs font-semibold">Temperature °C</Label>
+              <Input
+                type="number" step="0.1" autoFocus
+                value={singleTemp}
+                onChange={e => setSingleTemp(e.target.value)}
+                placeholder="e.g. 3.5"
+                className={`mt-1 text-center font-mono text-xl font-bold h-14 ${singleStatus === 'out' ? 'border-red-400' : singleStatus === 'ok' ? 'border-emerald-400' : ''}`}
+              />
+              {singleStatus === 'ok' && <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Within safe range</p>}
+              {singleStatus === 'out' && <p className="text-xs text-red-600 mt-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Out of safe range</p>}
             </div>
-            <div>
-              <Label>Unit type</Label>
-              <Select value={form.unit_type} onValueChange={handleTypeChange}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {UNIT_TYPES.map(t => <SelectItem key={t} value={t}>{t.replace('_', ' ')}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
+            {singleStatus === 'out' && (
               <div>
-                <Label>Temperature °C</Label>
-                <Input type="number" step="0.1" value={form.temperature_c} onChange={e => set('temperature_c', e.target.value)} className="mt-1" />
-              </div>
-              <div>
-                <Label>Min safe °C</Label>
-                <Input type="number" step="0.1" value={form.min_safe_c} onChange={e => set('min_safe_c', parseFloat(e.target.value))} className="mt-1" />
-              </div>
-              <div>
-                <Label>Max safe °C</Label>
-                <Input type="number" step="0.1" value={form.max_safe_c} onChange={e => set('max_safe_c', parseFloat(e.target.value))} className="mt-1" />
-              </div>
-            </div>
-            {form.temperature_c !== '' && (
-              <div className={`rounded-lg px-4 py-2.5 text-sm font-medium flex items-center gap-2 ${
-                parseFloat(form.temperature_c) >= form.min_safe_c && parseFloat(form.temperature_c) <= form.max_safe_c
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'bg-destructive/10 text-destructive border border-destructive/20'
-              }`}>
-                {parseFloat(form.temperature_c) >= form.min_safe_c && parseFloat(form.temperature_c) <= form.max_safe_c
-                  ? <><CheckCircle2 className="w-4 h-4" /> Within safe range</>
-                  : <><AlertTriangle className="w-4 h-4" /> Out of safe range — corrective action required</>
-                }
-              </div>
-            )}
-            {form.temperature_c !== '' && (parseFloat(form.temperature_c) < form.min_safe_c || parseFloat(form.temperature_c) > form.max_safe_c) && (
-              <div>
-                <Label>Corrective action taken</Label>
-                <Input value={form.corrective_action} onChange={e => set('corrective_action', e.target.value)} placeholder="e.g. Unit adjusted, contents moved to Fridge 2" className="mt-1" />
+                <Label className="text-xs font-semibold">Corrective action taken</Label>
+                <Input value={singleAction} onChange={e => setSingleAction(e.target.value)} placeholder="e.g. Unit adjusted, contents moved" className="mt-1" />
               </div>
             )}
             <div>
-              <Label>Recorded by</Label>
-              <Input value={form.recorded_by} onChange={e => set('recorded_by', e.target.value)} placeholder="Your name" className="mt-1" />
+              <Label className="text-xs font-semibold">Recorded by</Label>
+              <Input value={singleBy} onChange={e => setSingleBy(e.target.value)} placeholder="Your name" className="mt-1" />
             </div>
-            <Button
-              className="w-full"
-              onClick={() => createMutation.mutate(form)}
-              disabled={createMutation.isPending || !form.unit_name || form.temperature_c === ''}
-            >
-              {createMutation.isPending ? 'Saving...' : 'Log Temperature'}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                onClick={() => singleMutation.mutate()}
+                disabled={singleMutation.isPending || !singleTemp || !singleBy.trim()}
+              >
+                {singleMutation.isPending ? 'Saving...' : 'Save Reading'}
+              </Button>
+              <Button variant="outline" onClick={() => setLogTarget(null)}>Cancel</Button>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
   );
 }
