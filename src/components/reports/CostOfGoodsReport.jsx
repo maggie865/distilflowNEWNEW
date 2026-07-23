@@ -30,108 +30,123 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
 
   const materialCostLookup = useMemo(() => {
     const lookup = {};
-    for (const m of rawMaterialsNetStock) {
-      if (m.cost_per_unit) {
-        lookup[m.name?.toLowerCase().trim()] = m.cost_per_unit;
+    // Build from both rawMaterials (db records) and rawMaterialsNetStock (computed)
+    // rawMaterials takes priority as it has the actual cost_per_unit from the database
+    const allMats = [...(rawMaterialsNetStock || []), ...(rawMaterials || [])];
+    for (const m of allMats) {
+      if (m.cost_per_unit && m.name) {
+        lookup[m.name.toLowerCase().trim()] = m.cost_per_unit;
       }
     }
     return lookup;
-  }, [rawMaterialsNetStock]);
+  }, [rawMaterialsNetStock, rawMaterials]);
 
   const findCostPerUnit = (name) => {
     if (!name) return 0;
     const lower = name.toLowerCase().trim();
     if (materialCostLookup[lower]) return materialCostLookup[lower];
+    // Fuzzy match
     for (const [key, cost] of Object.entries(materialCostLookup)) {
       if (key.includes(lower) || lower.includes(key)) return cost;
     }
     return 0;
   };
 
-  // Per-batch COGS: BottlingRun → MasterBatch → Recipe → scale ingredients by actual distillation input
+  // Per-batch COGS: group ALL bottling runs by batch_number for a true batch total
   const batchCogs = useMemo(() => {
     if (!bottlingRuns || bottlingRuns.length === 0) return [];
 
-    return bottlingRuns
-      .filter(br => (br.bottles_produced || 0) > 0)
-      .map(br => {
-        // 1. Find linked MasterBatch via batch_number
-        const masterBatch = (masterBatches || []).find(
-          mb => mb.batch_code === br.batch_number
+    // Group bottling runs by batch_number
+    const byBatch = {};
+    for (const br of bottlingRuns) {
+      if (!br.batch_number || !(br.bottles_produced > 0)) continue;
+      if (!byBatch[br.batch_number]) byBatch[br.batch_number] = [];
+      byBatch[br.batch_number].push(br);
+    }
+
+    return Object.entries(byBatch).map(([batchNumber, runs]) => {
+      // 1. Find linked MasterBatch
+      const masterBatch = (masterBatches || []).find(mb => mb.batch_code === batchNumber);
+
+      // 2. Find Recipe
+      const productName = masterBatch?.product_name || runs[0].product_name;
+      const recipe = (recipes || [])
+        .filter(r => r.recipe_type === 'spirit' && r.base_ethanol_volume)
+        .find(r =>
+          r.name === productName ||
+          productName?.toLowerCase().includes(r.name?.toLowerCase()) ||
+          r.name?.toLowerCase().includes(productName?.toLowerCase())
         );
 
-        // 2. Find Recipe by product name match
-        const productName = masterBatch?.product_name || br.product_name;
-        const recipe = (recipes || [])
-          .filter(r => r.recipe_type === 'spirit' && r.base_ethanol_volume)
-          .find(r =>
-            r.name === productName ||
-            productName?.toLowerCase().includes(r.name?.toLowerCase()) ||
-            r.name?.toLowerCase().includes(productName?.toLowerCase())
-          );
+      // 3. Find packaging recipe by bottle size
+      const bottleSize = runs[0].bottle_size_ml;
+      const packagingRecipe = (recipes || []).find(r =>
+        r.recipe_type === 'packaging' &&
+        r.name?.toLowerCase().includes(String(bottleSize || '').toLowerCase())
+      );
 
-        // 3. Sum distillation run input_volume for this batch
-        const distRuns = (distillationRuns || []).filter(
-          dr => dr.batch_number === br.batch_number
-        );
-        const totalDistInput = distRuns.reduce((s, dr) => s + (dr.input_volume || 0), 0);
+      // 4. Total bottles across all runs in this batch
+      const bottlesProduced = runs.reduce((s, r) => s + (r.bottles_produced || 0), 0);
 
-        // 4. Scale ingredient quantities to actual input and sum costs
-        let rawMaterialCost = 0;
-        if (recipe && recipe.base_ethanol_volume) {
-          const scale = totalDistInput > 0 ? totalDistInput / recipe.base_ethanol_volume : 1;
-          for (const ing of (recipe.ingredients || [])) {
-            const cpu = findCostPerUnit(ing.name);
-            if (cpu) rawMaterialCost += (ing.quantity || 0) * scale * cpu;
-          }
+      // 5. Total distillation input for this batch
+      const distRuns = (distillationRuns || []).filter(dr => dr.batch_number === batchNumber);
+      const totalDistInput = distRuns.reduce((s, dr) => s + (dr.input_volume || 0), 0);
+
+      // 6. Raw material cost scaled to actual distillation input
+      let rawMaterialCost = 0;
+      if (recipe && recipe.base_ethanol_volume) {
+        const scale = totalDistInput > 0 ? totalDistInput / recipe.base_ethanol_volume : 1;
+        for (const ing of (recipe.ingredients || [])) {
+          const cpu = findCostPerUnit(ing.name);
+          if (cpu) rawMaterialCost += (ing.quantity || 0) * scale * cpu;
         }
+      }
+      const rawMaterialCostPerBottle = bottlesProduced > 0 ? rawMaterialCost / bottlesProduced : 0;
 
-        const bottlesProduced = br.bottles_produced || 0;
-        const rawMaterialCostPerBottle = bottlesProduced > 0 ? rawMaterialCost / bottlesProduced : 0;
-        // Calculate packaging cost per bottle from recipe.packaging items and their RawMaterial costs
-        let packagingCostPerBottle = 0;
-        if (recipe?.packaging?.length) {
-          for (const pkg of recipe.packaging) {
-            if (!pkg.name) continue;
-            const pkgName = (pkg.name || '').toLowerCase().trim();
-            // Find cost from rawMaterials
-            const rm = (rawMaterials || []).find(m => {
-              const mName = (m.name || '').toLowerCase().trim();
-              return mName === pkgName || mName.includes(pkgName) || pkgName.includes(mName);
-            });
-            const costPerUnit = rm?.cost_per_unit || 0;
-            packagingCostPerBottle += (pkg.quantity || 1) * costPerUnit;
-          }
+      // 7. Packaging cost per bottle from packaging recipe OR spirit recipe
+      let packagingCostPerBottle = 0;
+      const pkgSource = packagingRecipe || recipe;
+      if (pkgSource?.packaging?.length) {
+        for (const pkg of pkgSource.packaging) {
+          if (!pkg.name) continue;
+          packagingCostPerBottle += (pkg.quantity || 1) * findCostPerUnit(pkg.name);
         }
-        // Fall back to recipe.packaging_cost_per_bottle if set manually
-        if (packagingCostPerBottle === 0) packagingCostPerBottle = recipe?.packaging_cost_per_bottle || 0;
-        const totalCogsPerBottle = rawMaterialCostPerBottle + packagingCostPerBottle;
-        const totalCogsForBatch = totalCogsPerBottle * bottlesProduced;
+      }
+      if (packagingCostPerBottle === 0) packagingCostPerBottle = pkgSource?.packaging_cost_per_bottle || 0;
 
-        // 5. Selling price from FinishedGood.product_price
-        const fg = (finishedGoodsWithStock || []).find(
-          g => g.product_name === br.product_name && g.batch_number === br.batch_number
-        );
-        const sellingPrice = fg?.product_price || 0;
-        const grossMargin = sellingPrice - totalCogsPerBottle;
-        const grossMarginPct = sellingPrice > 0 ? (grossMargin / sellingPrice) * 100 : 0;
+      const totalCogsPerBottle = rawMaterialCostPerBottle + packagingCostPerBottle;
+      const totalCogsForBatch = totalCogsPerBottle * bottlesProduced;
+      const packagingCostTotal = packagingCostPerBottle * bottlesProduced;
 
-        return {
-          ...br,
-          productName,
-          recipeName: recipe?.name || null,
-          bottlesProduced,
-          totalDistInput,
-          rawMaterialCost,
-          rawMaterialCostPerBottle,
-          packagingCostPerBottle,
-          totalCogsPerBottle,
-          totalCogsForBatch,
-          sellingPrice,
-          grossMargin,
-          grossMarginPct,
-        };
-      });
+      // 8. Selling price from FinishedGood
+      const fg = (finishedGoodsWithStock || []).find(
+        g => (g.product_name === productName || g.batch_number === batchNumber)
+          && (bottleSize ? Number(g.bottle_size_ml) === Number(bottleSize) : true)
+      );
+      const sellingPrice = fg?.product_price || 0;
+      const grossMargin = sellingPrice - totalCogsPerBottle;
+      const grossMarginPct = sellingPrice > 0 ? (grossMargin / sellingPrice) * 100 : 0;
+
+      return {
+        batch_number: batchNumber,
+        productName,
+        bottle_size_ml: bottleSize,
+        recipeName: recipe?.name || null,
+        packagingRecipeName: packagingRecipe?.name || null,
+        bottlingRunCount: runs.length,
+        bottlesProduced,
+        totalDistInput,
+        rawMaterialCost,
+        rawMaterialCostPerBottle,
+        packagingCostPerBottle,
+        packagingCostTotal,
+        totalCogsPerBottle,
+        totalCogsForBatch,
+        sellingPrice,
+        grossMargin,
+        grossMarginPct,
+      };
+    }).sort((a, b) => a.batch_number.localeCompare(b.batch_number));
   }, [bottlingRuns, masterBatches, recipes, distillationRuns, finishedGoodsWithStock, findCostPerUnit]);
 
   const finishedGoodsCosts = useMemo(() => {
@@ -369,6 +384,7 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
               <TableRow>
                 <TableHead>Product</TableHead>
                 <TableHead>Batch</TableHead>
+                <TableHead className="text-center">Runs</TableHead>
                 <TableHead>Bottles</TableHead>
                 <TableHead>Raw Mat. / Bottle</TableHead>
                 <TableHead>Packaging / Bottle</TableHead>
@@ -380,14 +396,15 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
             </TableHeader>
             <TableBody>
               {batchCogs.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center py-4 text-muted-foreground text-sm">No bottling runs with production data</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center py-4 text-muted-foreground text-sm">No bottling runs with production data</TableCell></TableRow>
               ) : batchCogs.map(b => (
-                <TableRow key={b.id}>
-                  <TableCell className="font-medium text-sm">{b.productName}</TableCell>
+                <TableRow key={b.batch_number + (b.bottle_size_ml || '')}>
+                  <TableCell className="font-medium text-sm">{b.productName}{b.bottle_size_ml ? ` ${b.bottle_size_ml}ml` : ''}</TableCell>
                   <TableCell className="font-mono text-xs">{b.batch_number}</TableCell>
+                  <TableCell className="text-sm text-center">{b.bottlingRunCount}</TableCell>
                   <TableCell className="text-sm">{b.bottlesProduced.toLocaleString()}</TableCell>
                   <TableCell className="text-sm">{money(b.rawMaterialCostPerBottle)}</TableCell>
-                  <TableCell className="text-sm">{money(b.packagingCostPerBottle)}</TableCell>
+                  <TableCell className="text-sm">{b.packagingCostPerBottle > 0 ? money(b.packagingCostPerBottle) : <span className="text-muted-foreground text-xs">No recipe</span>}</TableCell>
                   <TableCell className="text-sm font-semibold">{money(b.totalCogsPerBottle)}</TableCell>
                   <TableCell className="text-sm font-bold">{money(b.totalCogsForBatch)}</TableCell>
                   <TableCell className="text-sm">{b.sellingPrice ? money(b.sellingPrice) : '—'}</TableCell>
@@ -426,7 +443,7 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
             </TableHeader>
             <TableBody>
               {finishedGoodsCosts.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center py-4 text-muted-foreground text-sm">No finished goods in stock</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center py-4 text-muted-foreground text-sm">No finished goods in stock</TableCell></TableRow>
               ) : finishedGoodsCosts.map(fg => (
                 <TableRow key={fg.id}>
                   <TableCell className="font-medium text-sm">{fg.product_name}</TableCell>
@@ -474,7 +491,7 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
             </TableHeader>
             <TableBody>
               {tankStockCosts.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center py-4 text-muted-foreground text-sm">No spirit in tanks</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center py-4 text-muted-foreground text-sm">No spirit in tanks</TableCell></TableRow>
               ) : tankStockCosts.map(t => (
                 <TableRow key={t.id}>
                   <TableCell className="font-medium text-sm">{t.name}</TableCell>
