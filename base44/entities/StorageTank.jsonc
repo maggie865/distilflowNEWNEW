@@ -72,9 +72,7 @@
     "purpose"
   ],
   "rls": {
-    "create": {
-      "created_by_id": "{{user.id}}"
-    },
+    "create": {},
     "read": {},
     "update": {},
     "delete": {}
