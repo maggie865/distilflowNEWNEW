@@ -240,9 +240,65 @@ export default function Reports() {
           break;
         }
         case 'cogs': {
-          const headers = ['product_name','batch_number','bottle_size_ml','bottles_produced','raw_material_cost_per_bottle','packaging_cost_per_bottle','total_cogs_per_bottle','selling_price','gross_margin_pct'];
-          exportCSV(`cogs_${label}.csv`, [], headers);
-          toast.info('COGS export uses data from the Cost of Goods tab — make sure it has loaded first.');
+          // Rebuild batch COGS inline for export (mirrors CostOfGoodsReport logic)
+          const avgEthCost = (() => {
+            const em = rawMaterials.filter(m => (m.type === 'ethanol' || m.type === 'Ethanol') && m.cost_per_unit);
+            if (!em.length) return 3.5;
+            const tl = em.reduce((s,m)=>s+(m.quantity||0)*(m.abv_percent||96)/100,0);
+            const tc = em.reduce((s,m)=>s+(m.quantity||0)*(m.cost_per_unit||0),0);
+            return tl > 0 ? tc/tl : em.reduce((avg,m,_,arr)=>avg+m.cost_per_unit/arr.length,0);
+          })();
+          const allMats = [...rawMaterials];
+          const costLookup = {};
+          for (const m of allMats) if (m.cost_per_unit && m.name) costLookup[m.name.toLowerCase().trim()] = m.cost_per_unit;
+          const findCpu = (name) => {
+            if (!name) return 0;
+            const lower = name.toLowerCase().trim();
+            if (costLookup[lower]) return costLookup[lower];
+            for (const [k,v] of Object.entries(costLookup)) if (k.includes(lower)||lower.includes(k)) return v;
+            return 0;
+          };
+          const byBatch = {};
+          for (const br of bottlingRuns) {
+            if (!br.batch_number || !(br.bottles_produced > 0)) continue;
+            if (!byBatch[br.batch_number]) byBatch[br.batch_number] = [];
+            byBatch[br.batch_number].push(br);
+          }
+          const rows = Object.entries(byBatch).map(([batchNumber, runs]) => {
+            const mb = masterBatches.find(m => m.batch_code === batchNumber);
+            const pn = mb?.product_name || runs[0].product_name;
+            const recipe = recipes.filter(r=>r.recipe_type==='spirit'&&r.base_ethanol_volume).find(r=>r.name===pn||pn?.toLowerCase().includes(r.name?.toLowerCase())||r.name?.toLowerCase().includes(pn?.toLowerCase()));
+            const bottles700 = runs.filter(r=>r.bottle_size_ml===700).reduce((s,r)=>s+(r.bottles_produced||0),0);
+            const bottles200 = runs.filter(r=>r.bottle_size_ml===200).reduce((s,r)=>s+(r.bottles_produced||0),0);
+            const bottlesTotal = bottles700 + bottles200;
+            const distRuns = distillationRuns.filter(dr=>dr.batch_number===batchNumber);
+            const totalDistInput = distRuns.reduce((s,dr)=>s+(dr.input_volume||0),0);
+            const totalInputLals = distRuns.reduce((s,dr)=>s+(dr.input_lals||0),0);
+            const ethanolCost = totalInputLals * avgEthCost;
+            let botanicalCost = 0;
+            if (recipe?.base_ethanol_volume) {
+              const scale = totalDistInput > 0 ? totalDistInput / recipe.base_ethanol_volume : 1;
+              for (const ing of (recipe.ingredients||[])) botanicalCost += (ing.quantity||0) * scale * findCpu(ing.name);
+            }
+            const pkgRecipe700 = recipes.find(r=>r.recipe_type==='packaging'&&r.name?.toLowerCase().includes('700'));
+            const pkgRecipe200 = recipes.find(r=>r.recipe_type==='packaging'&&r.name?.toLowerCase().includes('200'));
+            const calcPkg = (pkgR) => pkgR?.packaging?.reduce((s,p)=>s+(p.quantity||1)*findCpu(p.name),0)||0;
+            const packagingCost = bottles700*calcPkg(pkgRecipe700||recipe) + bottles200*calcPkg(pkgRecipe200||recipe);
+            const totalCost = ethanolCost + botanicalCost + packagingCost;
+            return {
+              batch_number: batchNumber, product: pn,
+              bottles_700ml: bottles700, bottles_200ml: bottles200, total_bottles: bottlesTotal,
+              distillation_input_litres: totalDistInput.toFixed(3),
+              total_lals_used: totalInputLals.toFixed(4),
+              ethanol_cost: ethanolCost.toFixed(2),
+              botanical_cost: botanicalCost.toFixed(2),
+              packaging_cost: packagingCost.toFixed(2),
+              total_batch_cogs: totalCost.toFixed(2),
+              cost_per_bottle: bottlesTotal > 0 ? (totalCost/bottlesTotal).toFixed(4) : '0',
+            };
+          }).sort((a,b)=>a.batch_number.localeCompare(b.batch_number));
+          const headers = ['batch_number','product','bottles_700ml','bottles_200ml','total_bottles','distillation_input_litres','total_lals_used','ethanol_cost','botanical_cost','packaging_cost','total_batch_cogs','cost_per_bottle'];
+          exportCSV(`cogs_by_batch_${label}.csv`, rows, headers);
           break;
         }
         case 'excise': {
