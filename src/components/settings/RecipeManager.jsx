@@ -12,6 +12,15 @@ import { toast } from 'sonner';
 
 const EMPTY_INGREDIENT = { name: '', quantity: '', unit: 'g', notes: '' };
 const EMPTY_PACKAGING = { name: '', quantity: 1, unit: 'units', type: 'bottle' };
+
+// Fetch packaging items from RawMaterial stock for dropdown selection
+function usePackagingStock() {
+  const { data: rawMaterials = [] } = useQuery({
+    queryKey: ['rawMaterials'],
+    queryFn: () => base44.entities.RawMaterial.list('name', 5000),
+  });
+  return rawMaterials.filter(m => m.type === 'packaging' || m.type === 'Packaging');
+}
 const EMPTY_SPIRIT_FORM = {
   recipe_type: 'spirit',
   name: '', description: '', base_ethanol_volume: '', base_ethanol_abv: '',
@@ -20,6 +29,52 @@ const EMPTY_SPIRIT_FORM = {
   packaging: [],
   notes: ''
 };
+
+function PackagingSelect({ value, onChange }) {
+  const packagingStock = usePackagingStock();
+  const [custom, setCustom] = useState(false);
+
+  // If current value isn't in stock, show custom input
+  const inStock = packagingStock.some(m => m.name === value);
+
+  if (custom || (value && !inStock)) {
+    return (
+      <div className="flex gap-1">
+        <Input
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="Type packaging name"
+          className="flex-1"
+        />
+        {packagingStock.length > 0 && (
+          <button type="button" onClick={() => setCustom(false)} className="text-xs text-primary underline whitespace-nowrap">
+            Pick from stock
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-1">
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="flex-1 border border-border rounded-md px-2 py-1 text-sm bg-background"
+      >
+        <option value="">— Select packaging item —</option>
+        {packagingStock.map(m => (
+          <option key={m.id} value={m.name}>
+            {m.name} ({m.quantity || 0} {m.unit || 'units'} in stock)
+          </option>
+        ))}
+      </select>
+      <button type="button" onClick={() => setCustom(true)} className="text-xs text-muted-foreground underline whitespace-nowrap">
+        Custom
+      </button>
+    </div>
+  );
+}
 
 export default function RecipeManager() {
   const queryClient = useQueryClient();
@@ -279,10 +334,9 @@ export default function RecipeManager() {
               </div>
               {(recipeForm.packaging || []).map((p, i) => (
                 <div key={i} className="grid grid-cols-[1fr_70px_80px_auto] gap-2 items-end">
-                  <Input
+                  <PackagingSelect
                     value={p.name}
-                    onChange={(e) => handleSetPackaging(i, 'name', e.target.value)}
-                    placeholder="e.g. 700ml Bottle"
+                    onChange={(val) => handleSetPackaging(i, 'name', val)}
                   />
                   <Input
                     type="number"
