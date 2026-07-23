@@ -288,11 +288,32 @@ export default function BottlingFloor() {
         });
       }
     },
+      // 5. Deduct packaging materials from RawMaterial inventory using the recipe
+      const recipe = activeRun.recipe;
+      if (recipe?.packaging?.length && totalBottles > 0) {
+        const allRM = await db.RawMaterial.list('name', 5000);
+        for (const pkg of recipe.packaging) {
+          if (!pkg.name) continue;
+          // Packaging quantities are per bottle (1 bottle, 1 label, 1 cap per bottle)
+          const totalNeeded = (pkg.quantity || 1) * totalBottles;
+          const rm = allRM.find(r =>
+            (r.name || '').toLowerCase().trim() === (pkg.name || '').toLowerCase().trim()
+          );
+          if (rm) {
+            const newQty = Math.max(0, (rm.quantity || 0) - totalNeeded);
+            await db.RawMaterial.update(rm.id, {
+              quantity: parseFloat(newQty.toFixed(4)),
+            });
+          }
+        }
+      }
+
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bottlingFloorRuns'] });
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
       queryClient.invalidateQueries({ queryKey: ['wastageRecords'] });
+      queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       localStorage.removeItem(ACTIVE_RUN_KEY);
       setActiveRun(null);
       resetForm();
@@ -392,7 +413,25 @@ export default function BottlingFloor() {
         await db.WastageRecord.delete(wr.id);
       }
 
-      // 4. Delete the run record
+      // 4. Restore packaging materials to RawMaterial inventory
+      const runRecipe = recipes.find(r => r.id === run.recipe_id);
+      if (runRecipe?.packaging?.length && run.bottles_produced > 0) {
+        const allRM = await db.RawMaterial.list('name', 5000);
+        for (const pkg of runRecipe.packaging) {
+          if (!pkg.name) continue;
+          const totalToRestore = (pkg.quantity || 1) * run.bottles_produced;
+          const rm = allRM.find(r =>
+            (r.name || '').toLowerCase().trim() === (pkg.name || '').toLowerCase().trim()
+          );
+          if (rm) {
+            await db.RawMaterial.update(rm.id, {
+              quantity: parseFloat(((rm.quantity || 0) + totalToRestore).toFixed(4)),
+            });
+          }
+        }
+      }
+
+      // 5. Delete the run record
       await db.BottlingRun.delete(run.id);
     },
     onSuccess: () => {
@@ -400,6 +439,7 @@ export default function BottlingFloor() {
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
       queryClient.invalidateQueries({ queryKey: ['wastageRecords'] });
+      queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       setDeletingRun(null);
       toast.success('Run deleted and inventory reversed');
     },
