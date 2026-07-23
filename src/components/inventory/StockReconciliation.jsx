@@ -20,6 +20,94 @@ export default function StockReconciliation() {
   const [confirmed, setConfirmed] = useState({}); // { finishedGoodId: true }
   const [tastingExpanded, setTastingExpanded] = useState(false);
 
+  const [backfillPreview, setBackfillPreview] = useState(null);
+
+  const backfillPreviewMutation = useMutation({
+    mutationFn: async () => {
+      // Fetch all bottling runs, recipes and raw materials
+      const [allRuns, allRecipes, allRM] = await Promise.all([
+        base44.entities.BottlingRun.list('-date', 5000),
+        base44.entities.Recipe.list('name', 500),
+        base44.entities.RawMaterial.list('name', 5000),
+      ]);
+
+      const findRM = (pkgName) => {
+        const target = (pkgName || '').toLowerCase().trim();
+        let match = allRM.find(r => (r.name || '').toLowerCase().trim() === target);
+        if (!match) match = allRM.find(r => {
+          const name = (r.name || '').toLowerCase().trim();
+          return name.includes(target) || target.includes(name);
+        });
+        return match;
+      };
+
+      // Group deductions by RawMaterial id
+      const deductions = {};
+      const runDetails = [];
+
+      for (const run of allRuns) {
+        // Find recipe — match by recipe_id or by product_name + bottle_size
+        let recipe = allRecipes.find(r => r.id === run.recipe_id);
+        if (!recipe) {
+          recipe = allRecipes.find(r =>
+            r.recipe_type === 'packaging' &&
+            r.name?.toLowerCase().includes(String(run.bottle_size_ml || '').toLowerCase())
+          );
+        }
+        if (!recipe?.packaging?.length) continue;
+
+        const bottles = run.bottles_produced || 0;
+        if (bottles <= 0) continue;
+
+        const runItems = [];
+        for (const pkg of recipe.packaging) {
+          if (!pkg.name) continue;
+          const rm = findRM(pkg.name);
+          if (!rm) continue;
+          const needed = (pkg.quantity || 1) * bottles;
+          if (!deductions[rm.id]) deductions[rm.id] = { rm, total: 0 };
+          deductions[rm.id].total += needed;
+          runItems.push({ pkgName: pkg.name, rmName: rm.name, needed });
+        }
+        if (runItems.length > 0) {
+          runDetails.push({ run, recipe, items: runItems });
+        }
+      }
+
+      // Build summary of what will be deducted
+      return Object.values(deductions).map(({ rm, total }) => ({
+        id: rm.id,
+        name: rm.name,
+        currentQty: rm.quantity || 0,
+        deduction: total,
+        newQty: Math.max(0, (rm.quantity || 0) - total),
+        runs: runDetails.filter(r => r.items.some(i => i.rmName === rm.name)).length,
+      }));
+    },
+    onSuccess: (data) => {
+      setBackfillPreview(data);
+      if (data.length === 0) toast.info('No historical packaging deductions to apply — all runs either have no recipe or no packaging items matched');
+    },
+    onError: () => toast.error('Failed to calculate backfill'),
+  });
+
+  const backfillApplyMutation = useMutation({
+    mutationFn: async (items) => {
+      for (const item of items) {
+        await base44.entities.RawMaterial.update(item.id, {
+          quantity: parseFloat(item.newQty.toFixed(4)),
+        });
+      }
+      return items.length;
+    },
+    onSuccess: (count) => {
+      toast.success(`Applied packaging deductions to ${count} inventory items`);
+      setBackfillPreview(null);
+      qc.invalidateQueries({ queryKey: ['rawMaterials'] });
+    },
+    onError: () => toast.error('Failed to apply deductions'),
+  });
+
   const { data: finishedGoods = [], isLoading } = useQuery({
     queryKey: ['finishedGoodsReconcile'],
     queryFn: () => base44.entities.FinishedGood.list('product_name', 5000),
@@ -191,6 +279,59 @@ export default function StockReconciliation() {
 
   return (
     <div className="space-y-4">
+      {/* Packaging Backfill Tool */}
+      <div className="border border-purple-200 bg-purple-50 rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-purple-700">📦</span>
+            <h3 className="font-semibold text-purple-800 text-sm">Backfill Historical Packaging Deductions</h3>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => backfillPreviewMutation.mutate()} disabled={backfillPreviewMutation.isPending}>
+            {backfillPreviewMutation.isPending ? 'Calculating...' : 'Calculate Deductions'}
+          </Button>
+        </div>
+        <p className="text-xs text-purple-700">Scans all historical bottling runs and calculates the packaging that should have been deducted from inventory. Run this once to sync your packaging stock with actual usage.</p>
+        <div className="bg-amber-50 border border-amber-200 rounded p-2">
+          <p className="text-xs text-amber-700">⚠ This will deduct from your current inventory quantities based on ALL past bottling runs. Only run this once — running it again will double-deduct.</p>
+        </div>
+        {backfillPreview && backfillPreview.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-purple-800">The following packaging deductions will be applied:</p>
+            <div className="overflow-x-auto border rounded-lg bg-white">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left p-2">Packaging Item</th>
+                    <th className="text-right p-2">Current Stock</th>
+                    <th className="text-right p-2 text-red-600">Total Deduction</th>
+                    <th className="text-right p-2 text-purple-700 font-bold">New Stock</th>
+                    <th className="text-right p-2">Bottling Runs</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {backfillPreview.map(item => (
+                    <tr key={item.id} className={item.newQty === 0 ? 'bg-red-50' : ''}>
+                      <td className="p-2 font-medium">{item.name}</td>
+                      <td className="p-2 text-right">{item.currentQty}</td>
+                      <td className="p-2 text-right text-red-600">-{item.deduction.toFixed(0)}</td>
+                      <td className="p-2 text-right font-bold text-purple-700">{item.newQty.toFixed(0)}</td>
+                      <td className="p-2 text-right text-muted-foreground">{item.runs} runs</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-muted-foreground">If any "New Stock" values look wrong, adjust your current inventory quantities first before running this.</p>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => backfillApplyMutation.mutate(backfillPreview)} disabled={backfillApplyMutation.isPending} className="bg-purple-600 hover:bg-purple-700 text-white">
+                {backfillApplyMutation.isPending ? 'Applying...' : `Apply ${backfillPreview.length} Deduction${backfillPreview.length !== 1 ? 's' : ''}`}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setBackfillPreview(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Summary Banner */}
       <Card className="p-5">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
