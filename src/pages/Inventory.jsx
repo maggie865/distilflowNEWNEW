@@ -18,7 +18,6 @@ import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared
 import PageHeader from '@/components/shared/PageHeader';
 import StatCard from '@/components/shared/StatCard';
 import StockReconciliation from '@/components/inventory/StockReconciliation';
-import FixProductNames from '@/components/inventory/FixProductNames';
 import Pagination from '@/components/ui/Pagination';
 
 const typeColors = {
@@ -127,7 +126,6 @@ function EditDialog({ item, entity, fields, onClose, queryKey }) {
       lastSavedState.id = item.id;
       lastSavedState.entity = entity;
       lastSavedState.previous = { ...item };
-      console.log('[EditDialog] Saving:', JSON.stringify(latestForm));
       return entityMap[entity].update(item.id, latestForm);
     },
     onSuccess: () => {
@@ -797,7 +795,6 @@ export default function Inventory() {
         </TabsContent>
 
         <TabsContent value="reconcile">
-          <FixProductNames />
           <StockReconciliation />
         </TabsContent>
 
