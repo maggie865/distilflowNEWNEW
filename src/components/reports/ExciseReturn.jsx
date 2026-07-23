@@ -191,13 +191,11 @@ export default function ExciseReturn({
   const exportRecords = monthDispatches.filter(d => isBluffDispatch(d) && d.is_export === true);
   const dutyFreeRecords = monthDispatches.filter(d => isBluffDispatch(d) && d.duty_free === true);
   const df3PLRecords = monthDispatches.filter(d => (d.dispatched_from||'').includes('Auckland') && d.duty_free === true);
-  console.log('[ExciseReturn] Export from Bluff records:', exportRecords.map(d => ({ customer: d.customer_name, bottles: d.quantity_bottles, lals: d.total_lals, is_export: d.is_export, duty_free: d.duty_free, dispatched_from: d.dispatched_from })));
-  console.log('[ExciseReturn] Duty Free from Bluff records:', dutyFreeRecords.map(d => ({ customer: d.customer_name, bottles: d.quantity_bottles, lals: d.total_lals, duty_free: d.duty_free })));
-  console.log('[ExciseReturn] Duty Free from 3PL records:', df3PLRecords.map(d => ({ customer: d.customer_name, bottles: d.quantity_bottles, lals: d.total_lals, duty_free: d.duty_free, dispatched_from: d.dispatched_from })));
+
+
 
   // Debug — log all dispatch records contributing to bluffDispatchLals
-  console.log('[ExciseReturn] Month:', selectedMonth);
-  console.log('[ExciseReturn] All month dispatches:', monthDispatches.length, 'records');
+
   const bluffDispatches = monthDispatches.filter(d => isBluffDispatch(d) && d.duty_free !== true && d.is_export !== true);
   console.log('[ExciseReturn] Bluff taxable dispatches:', bluffDispatches.map(d => ({
     date: d.dispatch_date,
@@ -207,8 +205,7 @@ export default function ExciseReturn({
     lals: d.total_lals,
     from: d.dispatched_from,
   })));
-  console.log('[ExciseReturn] bluffDispatchLals:', bluffDispatchLals, '| transferLals:', transferLals, '| net3PLTaxableLals:', net3PLTaxableLals);
-  console.log('[ExciseReturn] 3PL transfers in month:', transfersToWarehouse.map(ws => ({ date: ws.transfer_date || ws.date_transferred_in, product: ws.product_name, lals: ws.total_lals })));
+
 
   // 5. Total excise payable LALs
   // Total taxable = bluff taxable + net 3PL (net3PL can be negative = credit when no transfer this month)
