@@ -88,7 +88,23 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
 
         const bottlesProduced = br.bottles_produced || 0;
         const rawMaterialCostPerBottle = bottlesProduced > 0 ? rawMaterialCost / bottlesProduced : 0;
-        const packagingCostPerBottle = recipe?.packaging_cost_per_bottle || 0;
+        // Calculate packaging cost per bottle from recipe.packaging items and their RawMaterial costs
+        let packagingCostPerBottle = 0;
+        if (recipe?.packaging?.length) {
+          for (const pkg of recipe.packaging) {
+            if (!pkg.name) continue;
+            const pkgName = (pkg.name || '').toLowerCase().trim();
+            // Find cost from rawMaterials
+            const rm = (rawMaterials || []).find(m => {
+              const mName = (m.name || '').toLowerCase().trim();
+              return mName === pkgName || mName.includes(pkgName) || pkgName.includes(mName);
+            });
+            const costPerUnit = rm?.cost_per_unit || 0;
+            packagingCostPerBottle += (pkg.quantity || 1) * costPerUnit;
+          }
+        }
+        // Fall back to recipe.packaging_cost_per_bottle if set manually
+        if (packagingCostPerBottle === 0) packagingCostPerBottle = recipe?.packaging_cost_per_bottle || 0;
         const totalCogsPerBottle = rawMaterialCostPerBottle + packagingCostPerBottle;
         const totalCogsForBatch = totalCogsPerBottle * bottlesProduced;
 
