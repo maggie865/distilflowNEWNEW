@@ -35,7 +35,6 @@ export default function BottlingFloor() {
   const [editingRun, setEditingRun] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [deletingRun, setDeletingRun] = useState(null);
-  const [approvingBatch, setApprovingBatch] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
@@ -349,18 +348,6 @@ export default function BottlingFloor() {
     },
   });
 
-  // Approve batch for bottling
-  const approveBatchMutation = useMutation({
-    mutationFn: async (batch) => {
-      await db.MasterBatch.update(batch.id, { status: 'bottle_ready' });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['masterBatches'] });
-      setApprovingBatch(null);
-      toast.success('Batch approved for bottling');
-    },
-  });
-
   // Delete run — reverses all inventory impacts
   const deleteRunMutation = useMutation({
     mutationFn: async (run) => {
@@ -489,30 +476,6 @@ export default function BottlingFloor() {
         </Button>
       </PageHeader>
 
-      {/* Batch Approval Dialog */}
-      <Dialog open={!!approvingBatch} onOpenChange={v => !v && setApprovingBatch(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-display">Approve Batch for Bottling</DialogTitle>
-          </DialogHeader>
-          {approvingBatch && (
-            <div className="space-y-4 mt-4">
-              <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
-                <p className="text-sm font-semibold text-blue-900">{approvingBatch.batch_code}</p>
-                <p className="text-xs text-blue-700 mt-1">{approvingBatch.product_name}</p>
-              </div>
-              <p className="text-sm text-foreground">Mark this batch as approved to control which batches can be released for bottling?</p>
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => setApprovingBatch(null)}>Cancel</Button>
-                <Button className="flex-1" onClick={() => approveBatchMutation.mutate(approvingBatch)} disabled={approveBatchMutation.isPending}>
-                  {approveBatchMutation.isPending ? 'Approving…' : 'Approve'}
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
       {/* Start New Run Dialog */}
       <Dialog open={showNewRun} onOpenChange={v => { setShowNewRun(v); if (!v) resetForm(); }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -549,7 +512,6 @@ export default function BottlingFloor() {
                   {bottleReadyBatches.map(b => (
                     <SelectItem key={b.id} value={b.id}>
                       {b.batch_code} — {b.product_name}
-                      {b.status === 'bottle_ready' && <span className="ml-2 text-green-600">✓ Approved</span>}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -798,21 +760,6 @@ export default function BottlingFloor() {
                     <TableCell>{run.bottle_size_ml}ml</TableCell>
                     <TableCell><StatusBadge status={run.status} /></TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost" size="sm" className="h-6 text-xs"
-                          onClick={() => {
-                            const batch = masterBatches.find(b => b.batch_code === run.batch_number);
-                            if (batch && batch.status !== 'bottle_ready') {
-                              setApprovingBatch(batch);
-                            }
-                          }}
-                          disabled={!masterBatches.find(b => b.batch_code === run.batch_number) || masterBatches.find(b => b.batch_code === run.batch_number)?.status === 'bottle_ready'}
-                        >
-                          {masterBatches.find(b => b.batch_code === run.batch_number)?.status === 'bottle_ready' ? '✓ Approved' : 'Approve'}
-                        </Button>
-                        <Button
-                          variant="ghost" size="icon" className="h-7 w-7"
                           onClick={() => { setEditingRun(run); setEditForm({ date: run.date, notes: run.notes || '', status: run.status }); }}
                         >
                           <Pencil className="w-3.5 h-3.5" />
