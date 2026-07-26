@@ -306,9 +306,19 @@ export default function BottlingFloor() {
           return match;
         };
 
+        const isBoxOrCase = (name) => {
+          const n = (name || '').toLowerCase();
+          return n.includes('box') || n.includes('case') || n.includes('carton') || n.includes('shipper');
+        };
+
         for (const pkg of recipe.packaging) {
           if (!pkg.name) continue;
-          const totalNeeded = (pkg.quantity || 1) * totalBottles;
+          // Boxes/cases: deduct 1 per case produced (not per bottle)
+          // Bottles, labels, caps etc: deduct 1 per bottle produced
+          const totalNeeded = isBoxOrCase(pkg.name)
+            ? (pkg.quantity || 1) * cases   // cases = number of cases from the run
+            : (pkg.quantity || 1) * totalBottles;
+          if (totalNeeded <= 0) continue;
           const rm = findRM(pkg.name);
           if (rm) {
             const newQty = Math.max(0, (rm.quantity || 0) - totalNeeded);
@@ -422,9 +432,17 @@ export default function BottlingFloor() {
           if (!match) match = allRM.find(r => { const name = (r.name || '').toLowerCase().trim(); return name.includes(target) || target.includes(name); });
           return match;
         };
+        const isBoxOrCase2 = (name) => {
+          const n = (name || '').toLowerCase();
+          return n.includes('box') || n.includes('case') || n.includes('carton') || n.includes('shipper');
+        };
+        // Work out how many cases were in this run
+        const casesInRun = Math.floor((run.bottles_produced || 0) / (runRecipe.bottles_per_case || 6));
         for (const pkg of runRecipe.packaging) {
           if (!pkg.name) continue;
-          const totalToRestore = (pkg.quantity || 1) * run.bottles_produced;
+          const totalToRestore = isBoxOrCase2(pkg.name)
+            ? (pkg.quantity || 1) * casesInRun
+            : (pkg.quantity || 1) * run.bottles_produced;
           const rm = findRM2(pkg.name);
           if (rm) {
             await db.RawMaterial.update(rm.id, {
