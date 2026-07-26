@@ -760,6 +760,9 @@ export default function BottlingFloor() {
                     <TableCell>{run.bottle_size_ml}ml</TableCell>
                     <TableCell><StatusBadge status={run.status} /></TableCell>
                     <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
                           onClick={() => { setEditingRun(run); setEditForm({ date: run.date, notes: run.notes || '', status: run.status }); }}
                         >
                           <Pencil className="w-3.5 h-3.5" />
