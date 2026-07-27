@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Warehouse, Wine, Package, Pencil, Trash2, SlidersHorizontal, ChevronDown, ChevronRight, Bell, AlertTriangle, ClipboardCheck } from 'lucide-react';
+import { Warehouse, Wine, Package, Pencil, Trash2, SlidersHorizontal, ChevronDown, ChevronRight, Bell, AlertTriangle, ClipboardCheck, FlaskConical } from 'lucide-react';
 import { toast } from 'sonner';
 import MobileCard, { MobileCardGrid, MobileDetailRow } from '@/components/shared/MobileCard';
 import PageHeader from '@/components/shared/PageHeader';
@@ -242,11 +242,14 @@ function DeleteConfirm({ item, entity, label, onClose, queryKey }) {
 }
 
 // ── Action buttons ───────────────────────────────────────────────────────────
-function Actions({ onAdjust, onEdit, onDelete }) {
+function Actions({ onAdjust, onEdit, onDelete, onMoveToTasting, isTasting }) {
   return (
     <div className="flex items-center gap-1">
       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onAdjust} title="Adjust stock"><SlidersHorizontal className="w-3.5 h-3.5" /></Button>
       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit} title="Edit"><Pencil className="w-3.5 h-3.5" /></Button>
+      {!isTasting && onMoveToTasting && (
+        <Button size="icon" variant="ghost" className="h-7 w-7 text-amber-600 hover:text-amber-700" onClick={onMoveToTasting} title="Move bottles to tasting stock"><FlaskConical className="w-3.5 h-3.5" /></Button>
+      )}
       <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive" onClick={onDelete} title="Delete"><Trash2 className="w-3.5 h-3.5" /></Button>
     </div>
   );
@@ -353,6 +356,8 @@ function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
                             onAdjust={() => onOpen('adjust', b, 'FinishedGood', 'finishedGoods')}
                             onEdit={() => onOpen('edit', b, 'FinishedGood', 'finishedGoods')}
                             onDelete={() => onOpen('delete', b, 'FinishedGood', 'finishedGoods')}
+                            onMoveToTasting={() => onOpen('moveToTasting', b, 'FinishedGood', 'finishedGoods')}
+                            isTasting={b.is_tasting === true || (b.product_name || '').includes('Tasting')}
                           />
                         </TableCell>
                       </TableRow>
@@ -585,7 +590,58 @@ export default function Inventory() {
   const totalBottles = finishedGoods.reduce((s, g) => s + (g.quantity_bottles || 0), 0);
   const totalFinishedLALs = finishedGoods.reduce((s, g) => s + (g.total_lals || 0), 0);
 
-  const open = (type, item, entity, queryKey) => setDialog({ type, item, entity, queryKey });
+  const [tastingDialog, setTastingDialog] = useState(null);
+
+  const moveToTastingMutation = useMutation({
+    mutationFn: async ({ item, qty }) => {
+      const moveQty = parseInt(qty);
+      if (!moveQty || moveQty <= 0) throw new Error('Enter a valid quantity');
+      if (moveQty > (item.quantity_bottles || 0)) throw new Error('Not enough stock');
+      const lalsPerBottle = (item.quantity_bottles > 0 && item.total_lals)
+        ? item.total_lals / item.quantity_bottles : 0;
+      const moveLals = parseFloat((moveQty * lalsPerBottle).toFixed(4));
+      // Deduct from source
+      await base44.entities.FinishedGood.update(item.id, {
+        quantity_bottles: item.quantity_bottles - moveQty,
+        total_lals: parseFloat(((item.total_lals || 0) - moveLals).toFixed(4)),
+      });
+      // Find or create tasting record
+      const allFG = await base44.entities.FinishedGood.list('product_name', 5000);
+      const tastingName = item.product_name + ' — Tasting';
+      const existing = allFG.find(g =>
+        g.product_name === tastingName &&
+        g.batch_number === item.batch_number &&
+        Number(g.bottle_size_ml) === Number(item.bottle_size_ml)
+      );
+      if (existing) {
+        await base44.entities.FinishedGood.update(existing.id, {
+          quantity_bottles: (existing.quantity_bottles || 0) + moveQty,
+          total_lals: parseFloat(((existing.total_lals || 0) + moveLals).toFixed(4)),
+        });
+      } else {
+        await base44.entities.FinishedGood.create({
+          product_name: tastingName,
+          batch_number: item.batch_number,
+          bottle_size_ml: item.bottle_size_ml,
+          abv_percent: item.abv_percent,
+          quantity_bottles: moveQty,
+          total_lals: moveLals,
+          is_tasting: true,
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['finishedGoods'] });
+      toast.success('Bottles moved to tasting stock');
+      setTastingDialog(null);
+    },
+    onError: (e) => toast.error(e.message || 'Failed'),
+  });
+
+  const open = (type, item, entity, queryKey) => {
+    if (type === 'moveToTasting') { setTastingDialog({ item, qty: '1' }); return; }
+    setDialog({ type, item, entity, queryKey });
+  };
   const close = () => setDialog(null);
 
   const rawFields = [
@@ -898,6 +954,46 @@ export default function Inventory() {
           onClose={close}
         />
       )}
+      {/* Move to Tasting dialog */}
+      {tastingDialog && (
+        <Dialog open={!!tastingDialog} onOpenChange={(v) => !v && setTastingDialog(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="font-display flex items-center gap-2">
+                <FlaskConical className="w-4 h-4 text-amber-500" /> Move to Tasting Stock
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 mt-2">
+              <div className="rounded-lg bg-muted p-3 text-sm space-y-1">
+                <p className="font-medium">{tastingDialog.item.product_name}</p>
+                <p className="text-muted-foreground">Batch {tastingDialog.item.batch_number} · {tastingDialog.item.bottle_size_ml}ml · {tastingDialog.item.quantity_bottles} bottles available</p>
+              </div>
+              <div>
+                <Label>How many bottles to move to tasting?</Label>
+                <Input
+                  type="number" min="1" max={tastingDialog.item.quantity_bottles}
+                  value={tastingDialog.qty}
+                  onChange={e => setTastingDialog(d => ({ ...d, qty: e.target.value }))}
+                  className="mt-1 text-base h-12 text-center font-bold"
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground mt-1">These bottles will be moved to a separate tasting stock record for this batch.</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
+                  onClick={() => moveToTastingMutation.mutate(tastingDialog)}
+                  disabled={moveToTastingMutation.isPending || !tastingDialog.qty || parseInt(tastingDialog.qty) <= 0}
+                >
+                  {moveToTastingMutation.isPending ? 'Moving...' : `Move ${tastingDialog.qty || 0} bottles`}
+                </Button>
+                <Button variant="outline" onClick={() => setTastingDialog(null)}>Cancel</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {dialog?.type === 'delete' && (
         <DeleteConfirm
           item={dialog.item}
