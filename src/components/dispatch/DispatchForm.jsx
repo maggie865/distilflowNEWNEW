@@ -65,7 +65,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
   const originAddress = dispatchedFrom === 'Bluff' ? distilleryAddress : warehouseAddress;
 
   const sellableGoods = useMemo(
-    () => finishedGoods.filter(fg => !fg.product_name?.includes('Tasting')),
+    () => finishedGoods.filter(fg => (fg.quantity_bottles || 0) > 0),
     [finishedGoods]
   );
 
