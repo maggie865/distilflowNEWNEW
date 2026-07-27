@@ -51,7 +51,8 @@
       "enum": [
         "empty",
         "in_use",
-        "cleaning"
+        "cleaning",
+        "maintenance"
       ],
       "default": "empty",
       "description": "Current tank status"
