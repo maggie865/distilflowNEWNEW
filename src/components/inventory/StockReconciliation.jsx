@@ -20,6 +20,61 @@ export default function StockReconciliation() {
   const [confirmed, setConfirmed] = useState({}); // { finishedGoodId: true }
   const [tastingExpanded, setTastingExpanded] = useState(false);
 
+  const [mergeTastingResult, setMergeTastingResult] = useState(null);
+
+  const mergeTastingMutation = useMutation({
+    mutationFn: async () => {
+      const allFG = await base44.entities.FinishedGood.list('product_name', 5000);
+      // Find all records with "Tasting" in the name
+      const tastingRecords = allFG.filter(g => (g.product_name || '').includes('Tasting'));
+      
+      // Group by batch_number + bottle_size_ml to find duplicates
+      const groups = {};
+      for (const g of tastingRecords) {
+        // Normalise name by removing size suffix from product name
+        const baseName = (g.product_name || '').replace(/\s+\d+ml\s*—/, ' —').trim();
+        const key = `${baseName}||${g.batch_number}||${g.bottle_size_ml}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(g);
+      }
+
+      // Find groups with more than one record
+      const dupes = Object.entries(groups).filter(([, recs]) => recs.length > 1);
+      if (dupes.length === 0) return { merged: 0 };
+
+      let merged = 0;
+      for (const [, recs] of dupes) {
+        // Keep the first, merge others into it
+        const [keep, ...rest] = recs;
+        const totalQty = recs.reduce((s, r) => s + (r.quantity_bottles || 0), 0);
+        const totalLals = recs.reduce((s, r) => s + (r.total_lals || 0), 0);
+        // Normalise name to remove size from product name
+        const cleanName = keep.product_name.replace(/\s+\d+ml\s*—/, ' —').trim();
+        await base44.entities.FinishedGood.update(keep.id, {
+          product_name: cleanName,
+          quantity_bottles: totalQty,
+          total_lals: parseFloat(totalLals.toFixed(4)),
+          is_tasting: true,
+        });
+        for (const r of rest) {
+          await base44.entities.FinishedGood.delete(r.id);
+        }
+        merged++;
+      }
+      return { merged };
+    },
+    onSuccess: (data) => {
+      if (data.merged === 0) toast.success('No duplicate tasting records found — all clean');
+      else {
+        toast.success(`Merged ${data.merged} duplicate tasting record groups`);
+        qc.invalidateQueries({ queryKey: ['finishedGoods'] });
+        qc.invalidateQueries({ queryKey: ['finishedGoodsReconcile'] });
+      }
+      setMergeTastingResult(data);
+    },
+    onError: () => toast.error('Merge failed'),
+  });
+
   const { data: finishedGoods = [], isLoading } = useQuery({
     queryKey: ['finishedGoodsReconcile'],
     queryFn: () => base44.entities.FinishedGood.list('product_name', 5000),
@@ -191,6 +246,23 @@ export default function StockReconciliation() {
 
   return (
     <div className="space-y-4">
+
+      {/* Merge Duplicate Tasting Records */}
+      <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-700">🧪</span>
+            <h3 className="font-semibold text-amber-800 text-sm">Merge Duplicate Tasting Records</h3>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => mergeTastingMutation.mutate()} disabled={mergeTastingMutation.isPending}>
+            {mergeTastingMutation.isPending ? 'Merging...' : 'Fix Duplicate Tasting Records'}
+          </Button>
+        </div>
+        <p className="text-xs text-amber-700">If you see two versions of tasting stock for the same product (e.g. "London Dry Gin — Tasting" and "London Dry Gin 200ml — Tasting"), this tool merges them into a single record and combines the quantities.</p>
+        {mergeTastingResult && mergeTastingResult.merged === 0 && (
+          <p className="text-xs text-emerald-700 font-medium">✅ No duplicates found — tasting records are clean.</p>
+        )}
+      </div>
 
       {/* Summary Banner */}
       <Card className="p-5">
