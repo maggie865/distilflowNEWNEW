@@ -52,6 +52,10 @@
       "type": "number",
       "description": "CO2e emissions in kg for this 3PL transfer"
     },
+    "bottles_per_case": {
+      "type": "number",
+      "description": "Number of bottles per case for this product"
+    },
     "packing_slip_number": {
       "type": "string",
       "description": "Packing slip number for this transfer batch"
