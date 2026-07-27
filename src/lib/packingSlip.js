@@ -15,13 +15,13 @@ export function generatePackingSlipHTML(data) {
 
   const fmt = (n) => (n || 0).toFixed(2);
 
-  const totalCases = lines.reduce((s, l) => s + Math.floor((l.quantity_bottles || 0) / 12), 0);
+  const totalCases = lines.reduce((s, l) => s + Math.floor((l.quantity_bottles || 0) / (l.bottles_per_case || 6)), 0);
   const totalExtra = lines.reduce((s, l) => s + ((l.quantity_bottles || 0) % 12), 0);
   const totalBottles = lines.reduce((s, l) => s + (l.quantity_bottles || 0), 0);
   const totalLALs = lines.reduce((s, l) => s + (l.total_lals || 0), 0);
 
   const rows = lines.map(l => {
-    const cases = Math.floor((l.quantity_bottles || 0) / 12);
+    const cases = Math.floor((l.quantity_bottles || 0) / (l.bottles_per_case || 6));
     const extra = (l.quantity_bottles || 0) % 12;
     return `<tr>
       <td>${l.product_name || ''}</td>
