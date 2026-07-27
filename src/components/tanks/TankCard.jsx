@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { ArrowRightLeft, MapPin, CheckCircle2, Sparkles } from 'lucide-react';
+import { ArrowRightLeft, MapPin, CheckCircle2, Sparkles, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 
 const purposeLabels = {
@@ -26,6 +26,7 @@ const statusStyles = {
   empty: 'text-muted-foreground',
   in_use: 'text-emerald-600',
   cleaning: 'text-amber-600',
+  maintenance: 'text-red-600',
 };
 
 export default function TankCard({ tank, onTransfer }) {
@@ -64,6 +65,44 @@ export default function TankCard({ tank, onTransfer }) {
       queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
       queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
       toast.success(`Tank ${tank.name} marked as clean and available`);
+    },
+    onError: (e) => toast.error('Failed: ' + e.message),
+  });
+
+  const markMaintenance = useMutation({
+    mutationFn: async () => {
+      await db.StorageTank.update(tank.id, { status: 'maintenance' });
+      await db.TankMovement.create({
+        date: new Date().toISOString().split('T')[0],
+        action: 'maintenance_start',
+        tank_name: tank.name,
+        volume_litres: 0,
+        notes: 'Tank closed for maintenance',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+      queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
+      toast.success(`Tank ${tank.name} closed for maintenance`);
+    },
+    onError: (e) => toast.error('Failed: ' + e.message),
+  });
+
+  const markAvailableFromMaintenance = useMutation({
+    mutationFn: async () => {
+      await db.StorageTank.update(tank.id, { status: 'empty' });
+      await db.TankMovement.create({
+        date: new Date().toISOString().split('T')[0],
+        action: 'maintenance_complete',
+        tank_name: tank.name,
+        volume_litres: 0,
+        notes: 'Maintenance complete — tank returned to service',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['storageTanks'] });
+      queryClient.invalidateQueries({ queryKey: ['tankMovements'] });
+      toast.success(`Tank ${tank.name} returned to service`);
     },
     onError: (e) => toast.error('Failed: ' + e.message),
   });
@@ -165,6 +204,26 @@ export default function TankCard({ tank, onTransfer }) {
         </div>
       )}
 
+      {/* Maintenance status banner */}
+      {tank.status === 'maintenance' && (
+        <div className="rounded-lg bg-red-50 border border-red-200 p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <Wrench className="w-4 h-4 text-red-600" />
+            <span className="text-red-600 text-sm font-semibold">Tank closed for maintenance</span>
+          </div>
+          <p className="text-xs text-red-700">Tank is out of service. Mark as available when maintenance is complete.</p>
+          <Button
+            size="sm"
+            className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+            onClick={() => markAvailableFromMaintenance.mutate()}
+            disabled={markAvailableFromMaintenance.isPending}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            {markAvailableFromMaintenance.isPending ? 'Saving...' : 'Maintenance Complete — Return to Service'}
+          </Button>
+        </div>
+      )}
+
       {/* Cleaning status banner + Mark as Clean button */}
       {tank.status === 'cleaning' && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 space-y-2">
@@ -190,11 +249,25 @@ export default function TankCard({ tank, onTransfer }) {
         size="sm"
         className="w-full gap-2 mt-auto"
         onClick={() => onTransfer(tank)}
-        disabled={tank.status === 'cleaning'}
+        disabled={tank.status === 'cleaning' || tank.status === 'maintenance'}
       >
         <ArrowRightLeft className="w-3.5 h-3.5" />
         Transfer / Update
       </Button>
+
+      {/* Mark for Maintenance — only shown when tank is not already in maintenance/cleaning */}
+      {tank.status !== 'maintenance' && tank.status !== 'cleaning' && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 text-xs"
+          onClick={() => markMaintenance.mutate()}
+          disabled={markMaintenance.isPending}
+        >
+          <Wrench className="w-3.5 h-3.5" />
+          {markMaintenance.isPending ? 'Saving...' : 'Mark for Maintenance'}
+        </Button>
+      )}
     </div>
   );
 }
