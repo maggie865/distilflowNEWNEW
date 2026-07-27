@@ -26,6 +26,11 @@
       "type": "number",
       "description": "Total LALs in stock"
     },
+    "is_tasting": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this stock is designated as tasting/sample stock"
+    },
     "product_price": {
       "type": "number",
       "description": "Selling price per bottle (for COGS gross margin calculations)"
