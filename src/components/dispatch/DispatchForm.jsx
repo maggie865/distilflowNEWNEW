@@ -74,7 +74,8 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
     const map = {};
     for (const fg of sellableGoods) {
       const key = `${fg.product_name}||${fg.bottle_size_ml || ''}`;
-      if (!map[key]) map[key] = { product_name: fg.product_name, bottle_size_ml: fg.bottle_size_ml || '', batches: [] };
+      const isTasting = fg.is_tasting === true || (fg.product_name || '').includes('Tasting');
+      if (!map[key]) map[key] = { product_name: fg.product_name, bottle_size_ml: fg.bottle_size_ml || '', batches: [], isTasting };
       map[key].batches.push(fg);
     }
     return Object.values(map).map(opt => {
@@ -409,7 +410,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
                           <SelectContent>
                             {bluffProductOptions.map(opt => (
                               <SelectItem key={`${opt.product_name}||${opt.bottle_size_ml}`} value={`${opt.product_name}||${opt.bottle_size_ml}`}>
-                                {opt.product_name} ({opt.bottle_size_ml}ml) — {getRemainingAvail(`${opt.product_name}||${opt.bottle_size_ml}`)} btls
+                                {opt.product_name}{opt.isTasting ? ' 🧪 Tasting' : ''} ({opt.bottle_size_ml}ml) — {getRemainingAvail(`${opt.product_name}||${opt.bottle_size_ml}`)} btls
                               </SelectItem>
                             ))}
                           </SelectContent>
