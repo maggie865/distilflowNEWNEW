@@ -1,166 +1,321 @@
 import { useState, useMemo } from 'react';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
+import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Printer, ArrowRightLeft, Wine, Droplets } from 'lucide-react';
-import { format } from 'date-fns';
+import { Printer, ArrowRightLeft, Wine, Droplets, Truck, CheckCircle2, Pencil } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 import Pagination from '@/components/ui/Pagination';
+import { toast } from 'sonner';
 
 export default function TransfersTab({ warehouseStock, onPrintSlip }) {
+  const qc = useQueryClient();
   const now = new Date();
   const [monthFilter, setMonthFilter] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [editRecord, setEditRecord] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [showAll, setShowAll] = useState(false);
 
   const getOrigBottles = (w) => w.original_quantity_bottles ?? w.quantity_bottles ?? 0;
   const getOrigLals = (w) => w.original_total_lals ?? w.total_lals ?? 0;
 
   const filtered = useMemo(() => {
-    const [year, month] = monthFilter.split('-').map(Number);
-    return warehouseStock.filter(w => {
-      if (!w.transfer_date) return false;
-      const d = new Date(w.transfer_date);
-      return d.getFullYear() === year && (d.getMonth() + 1) === month;
+    let records = [...warehouseStock].filter(w => w.transfer_date || w.date_transferred_in);
+    if (!showAll) {
+      const [year, month] = monthFilter.split('-').map(Number);
+      records = records.filter(w => {
+        const d = new Date(w.transfer_date || w.date_transferred_in);
+        return d.getFullYear() === year && (d.getMonth() + 1) === month;
+      });
+    }
+    return records.sort((a, b) => new Date(b.transfer_date || b.date_transferred_in) - new Date(a.transfer_date || a.date_transferred_in));
+  }, [warehouseStock, monthFilter, showAll]);
+
+  const inTransit = filtered.filter(w => w.status === 'in_transit');
+  const received = filtered.filter(w => !w.status || w.status === 'received');
+
+  const totalBottles = filtered.reduce((s, w) => s + getOrigBottles(w), 0);
+  const totalLALs = filtered.reduce((s, w) => s + getOrigLals(w), 0);
+  const inTransitBottles = inTransit.reduce((s, w) => s + getOrigBottles(w), 0);
+
+  // Mark as received
+  const markReceivedMutation = useMutation({
+    mutationFn: async ({ record, receivedDate }) => {
+      await base44.entities.WarehouseStock.update(record.id, {
+        status: 'received',
+        received_date: receivedDate,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['warehouseStock'] });
+      toast.success('Stock marked as received at 3PL');
+    },
+    onError: (e) => toast.error('Failed: ' + e.message),
+  });
+
+  // Edit transfer
+  const editMutation = useMutation({
+    mutationFn: async ({ id, data }) => {
+      await base44.entities.WarehouseStock.update(id, data);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['warehouseStock'] });
+      toast.success('Transfer updated');
+      setEditRecord(null);
+    },
+    onError: (e) => toast.error('Failed: ' + e.message),
+  });
+
+  const openEdit = (record) => {
+    setEditRecord(record);
+    setEditForm({
+      transfer_date: record.transfer_date || record.date_transferred_in || '',
+      quantity_bottles: record.original_quantity_bottles ?? record.quantity_bottles ?? 0,
+      transport_distance_km: record.transport_distance_km || '',
+      notes: record.notes || '',
     });
-  }, [warehouseStock, monthFilter]);
+  };
 
-  const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => new Date(b.transfer_date) - new Date(a.transfer_date));
-  }, [filtered]);
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const totalTransfers = new Set(sorted.map(w => w.transfer_date)).size;
-  const totalBottles = sorted.reduce((s, w) => s + getOrigBottles(w), 0);
-  const totalLALs = sorted.reduce((s, w) => s + getOrigLals(w), 0);
-
-  const dateSubtotals = useMemo(() => {
-    const map = {};
-    sorted.forEach(w => {
-      const date = w.transfer_date || '—';
-      if (!map[date]) map[date] = { bottles: 0, lals: 0, remaining: 0 };
-      map[date].bottles += getOrigBottles(w);
-      map[date].lals += getOrigLals(w);
-      map[date].remaining += w.quantity_bottles || 0;
-    });
-    return map;
-  }, [sorted]);
-
-  const paged = sorted.slice((page - 1) * pageSize, page * pageSize);
-
+  // Group paged records by date for display
   const renderRows = useMemo(() => {
     const rows = [];
     let prevDate = null;
     paged.forEach(w => {
-      const date = w.transfer_date || '—';
+      const date = w.transfer_date || w.date_transferred_in || '—';
       if (date !== prevDate) {
-        rows.push({ type: 'header', date, key: 'header-' + date + '-' + w.id });
+        const dayRecords = filtered.filter(x => (x.transfer_date || x.date_transferred_in) === date);
+        const dayBottles = dayRecords.reduce((s, x) => s + getOrigBottles(x), 0);
+        rows.push({ type: 'header', date, bottles: dayBottles, key: 'hdr-' + date });
         prevDate = date;
       }
       rows.push({ type: 'data', record: w, key: w.id });
     });
     return rows;
-  }, [paged]);
-
-  const stats = [
-    { label: 'Transfers this month', value: totalTransfers, icon: ArrowRightLeft, color: 'text-blue-600' },
-    { label: 'Bottles transferred', value: totalBottles.toLocaleString(), icon: Wine, color: 'text-purple-600' },
-    { label: 'LALs transferred', value: totalLALs.toFixed(2), icon: Droplets, color: 'text-cyan-600' },
-  ];
+  }, [paged, filtered]);
 
   return (
     <div className="space-y-4">
+
+      {/* In Transit Alert */}
+      {inTransit.length > 0 && (
+        <Card className="p-4 border-2 border-amber-300 bg-amber-50 space-y-3">
+          <div className="flex items-center gap-2">
+            <Truck className="w-5 h-5 text-amber-600" />
+            <h3 className="font-semibold text-amber-800">In Transit — {inTransitBottles.toLocaleString()} bottles</h3>
+          </div>
+          <p className="text-xs text-amber-700">These transfers have not yet been received at the 3PL. Stock is not counted in 3PL inventory until marked as received.</p>
+          <div className="space-y-2">
+            {inTransit.map(w => (
+              <div key={w.id} className="bg-white rounded-lg border border-amber-200 p-3 flex items-center justify-between gap-3 flex-wrap">
+                <div className="text-sm">
+                  <span className="font-medium">{w.product_name}</span>
+                  <span className="text-muted-foreground ml-2">B-{w.batch_number} · {w.bottle_size_ml}ml · {getOrigBottles(w)} bottles</span>
+                  <span className="text-muted-foreground ml-2">Sent {w.transfer_date ? format(parseISO(w.transfer_date), 'd MMM yyyy') : '—'}</span>
+                  {w.packing_slip_number && <span className="text-muted-foreground ml-2">· {w.packing_slip_number}</span>}
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <MarkReceivedButton record={w} onMark={(receivedDate) => markReceivedMutation.mutate({ record: w, receivedDate })} saving={markReceivedMutation.isPending} />
+                  <Button size="sm" variant="outline" onClick={() => openEdit(w)} className="gap-1">
+                    <Pencil className="w-3.5 h-3.5" /> Edit
+                  </Button>
+                  {onPrintSlip && (
+                    <Button size="sm" variant="ghost" onClick={() => onPrintSlip(w)} className="gap-1">
+                      <Printer className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {stats.map(s => (
-          <Card key={s.label} className="p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <s.icon className={`w-4 h-4 ${s.color}`} />
-              <p className="text-xs text-muted-foreground">{s.label}</p>
-            </div>
-            <p className="text-xl font-bold font-display">{s.value}</p>
-          </Card>
-        ))}
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-1"><ArrowRightLeft className="w-4 h-4 text-blue-600" /><p className="text-xs text-muted-foreground">Transfers this month</p></div>
+          <p className="text-xl font-bold font-display">{filtered.length}</p>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-1"><Wine className="w-4 h-4 text-purple-600" /><p className="text-xs text-muted-foreground">Bottles transferred</p></div>
+          <p className="text-xl font-bold font-display">{totalBottles.toLocaleString()}</p>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-1"><Droplets className="w-4 h-4 text-cyan-600" /><p className="text-xs text-muted-foreground">LALs transferred</p></div>
+          <p className="text-xl font-bold font-display">{totalLALs.toFixed(2)}</p>
+        </Card>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Input
-          type="month"
-          value={monthFilter}
-          onChange={e => { setMonthFilter(e.target.value); setPage(1); }}
-          className="w-40"
-        />
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {!showAll && <Input type="month" value={monthFilter} onChange={e => { setMonthFilter(e.target.value); setPage(1); }} className="w-40" />}
+        <Button variant={showAll ? 'default' : 'outline'} size="sm" onClick={() => { setShowAll(v => !v); setPage(1); }}>
+          {showAll ? 'Show current month' : 'Show all transfers'}
+        </Button>
       </div>
 
-      <div className="rounded-lg border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Transfer Date</TableHead>
-                <TableHead>Packing Slip #</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Batch</TableHead>
-                <TableHead>Size</TableHead>
-                <TableHead className="text-right">Transferred</TableHead>
-                <TableHead className="text-right">LALs</TableHead>
-                <TableHead className="text-right">Remaining</TableHead>
-                <TableHead className="text-right">CO2e (kg)</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {renderRows.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No transfers in this period</TableCell></TableRow>
-              ) : renderRows.map(row => {
-                if (row.type === 'header') {
-                  const sub = dateSubtotals[row.date] || { bottles: 0, lals: 0, remaining: 0 };
+      {/* Transfers table */}
+      {filtered.length === 0 ? (
+        <Card className="p-8 text-center">
+          <p className="text-sm text-muted-foreground">No transfers found for this period.</p>
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Product</TableHead>
+                  <TableHead>Batch</TableHead>
+                  <TableHead>Size</TableHead>
+                  <TableHead className="text-right">Bottles</TableHead>
+                  <TableHead className="text-right">LALs</TableHead>
+                  <TableHead>Packing Slip</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {renderRows.map(row => {
+                  if (row.type === 'header') {
+                    return (
+                      <TableRow key={row.key} className="bg-muted/50">
+                        <TableCell colSpan={9} className="py-1.5 px-4">
+                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            {row.date ? format(parseISO(row.date), 'EEEE d MMMM yyyy') : '—'}
+                            <span className="ml-2 font-normal">— {row.bottles.toLocaleString()} bottles</span>
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  const w = row.record;
+                  const isInTransit = w.status === 'in_transit';
                   return (
-                    <TableRow key={row.key} className="bg-muted/40">
-                      <TableCell colSpan={5} className="font-semibold text-sm">
-                        {row.date !== '—' ? format(new Date(row.date), 'EEEE d MMMM yyyy') : 'Unknown date'}
+                    <TableRow key={row.key} className={isInTransit ? 'bg-amber-50/50' : ''}>
+                      <TableCell className="text-sm whitespace-nowrap">
+                        {w.transfer_date ? format(parseISO(w.transfer_date), 'd MMM yyyy') : '—'}
                       </TableCell>
-                      <TableCell className="text-right font-mono font-semibold text-sm">{sub.bottles.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono font-semibold text-sm">{sub.lals.toFixed(2)}</TableCell>
-                      <TableCell className="text-right font-mono font-semibold text-sm">{sub.remaining.toLocaleString()}</TableCell>
-                      <TableCell colSpan={2}></TableCell>
+                      <TableCell>
+                        {isInTransit
+                          ? <Badge className="bg-amber-100 text-amber-700 gap-1"><Truck className="w-3 h-3" /> In Transit</Badge>
+                          : <Badge className="bg-emerald-100 text-emerald-700 gap-1"><CheckCircle2 className="w-3 h-3" /> Received {w.received_date ? format(parseISO(w.received_date), 'd MMM') : ''}</Badge>
+                        }
+                      </TableCell>
+                      <TableCell className="text-sm font-medium">{w.product_name}</TableCell>
+                      <TableCell className="text-sm font-mono">{w.batch_number}</TableCell>
+                      <TableCell className="text-sm">{w.bottle_size_ml}ml</TableCell>
+                      <TableCell className="text-sm text-right">{getOrigBottles(w).toLocaleString()}</TableCell>
+                      <TableCell className="text-sm text-right font-mono">{getOrigLals(w).toFixed(3)}</TableCell>
+                      <TableCell className="text-sm font-mono text-muted-foreground">{w.packing_slip_number || '—'}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {isInTransit && (
+                            <MarkReceivedButton
+                              record={w}
+                              compact
+                              onMark={(receivedDate) => markReceivedMutation.mutate({ record: w, receivedDate })}
+                              saving={markReceivedMutation.isPending}
+                            />
+                          )}
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(w)}>
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          {onPrintSlip && (
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onPrintSlip(w)}>
+                              <Printer className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
                     </TableRow>
                   );
-                }
-                const w = row.record;
-                const origBottles = getOrigBottles(w);
-                const origLals = getOrigLals(w);
-                const remaining = w.quantity_bottles || 0;
-                const isDepleted = remaining === 0;
-                return (
-                  <TableRow key={row.key} className={isDepleted ? 'opacity-60' : ''}>
-                    <TableCell className="text-sm">{w.transfer_date ? format(new Date(w.transfer_date), 'd MMM yyyy') : '—'}</TableCell>
-                    <TableCell className="font-mono text-xs">{w.packing_slip_number || '—'}</TableCell>
-                    <TableCell className="font-medium text-sm">{w.product_name}</TableCell>
-                    <TableCell className="font-mono text-sm">{w.batch_number}</TableCell>
-                    <TableCell className="text-sm">{w.bottle_size_ml}ml</TableCell>
-                    <TableCell className="text-right text-sm">{origBottles.toLocaleString()}</TableCell>
-                    <TableCell className="text-right font-mono text-sm">{origLals.toFixed(2)}</TableCell>
-                    <TableCell className="text-right text-sm">
-                      {isDepleted ? (
-                        <span className="px-1.5 py-0.5 text-xs rounded-full bg-muted text-muted-foreground font-medium">Depleted</span>
-                      ) : (
-                        remaining.toLocaleString()
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">{(w.co2e_kg || 0).toFixed(2)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onPrintSlip(w)}>
-                        <Printer className="w-3 h-3" /> Slip
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="p-3 border-t">
+            <Pagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          </div>
+        </Card>
+      )}
 
-      <Pagination total={sorted.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+      {/* Edit Dialog */}
+      {editRecord && (
+        <Dialog open={!!editRecord} onOpenChange={(v) => !v && setEditRecord(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="font-display">Edit Transfer</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 mt-2">
+              <div className="rounded-lg bg-muted p-3 text-sm">
+                <p className="font-medium">{editRecord.product_name}</p>
+                <p className="text-muted-foreground">Batch {editRecord.batch_number} · {editRecord.bottle_size_ml}ml</p>
+              </div>
+              <div>
+                <Label className="text-xs">Transfer Date</Label>
+                <Input type="date" value={editForm.transfer_date} onChange={e => setEditForm(f => ({ ...f, transfer_date: e.target.value }))} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Bottles Transferred</Label>
+                <Input type="number" value={editForm.quantity_bottles} onChange={e => setEditForm(f => ({ ...f, quantity_bottles: e.target.value }))} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Distance (km)</Label>
+                <Input type="number" value={editForm.transport_distance_km} onChange={e => setEditForm(f => ({ ...f, transport_distance_km: e.target.value }))} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Notes</Label>
+                <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} className="mt-1" />
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={() => editMutation.mutate({ id: editRecord.id, data: { transfer_date: editForm.transfer_date, date_transferred_in: editForm.transfer_date, original_quantity_bottles: parseInt(editForm.quantity_bottles) || editRecord.original_quantity_bottles, transport_distance_km: parseFloat(editForm.transport_distance_km) || null, notes: editForm.notes || undefined } })} disabled={editMutation.isPending}>
+                  {editMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </Button>
+                <Button variant="outline" onClick={() => setEditRecord(null)}>Cancel</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
+  );
+}
+
+// Mark as Received inline button with date picker
+function MarkReceivedButton({ record, onMark, saving, compact }) {
+  const [showPicker, setShowPicker] = useState(false);
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+  if (showPicker) {
+    return (
+      <div className="flex items-center gap-1">
+        <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-7 text-xs w-32" />
+        <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2" onClick={() => { onMark(date); setShowPicker(false); }} disabled={saving}>
+          ✓
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 text-xs px-1" onClick={() => setShowPicker(false)}>✕</Button>
+      </div>
+    );
+  }
+
+  return compact ? (
+    <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50" onClick={() => setShowPicker(true)}>
+      <CheckCircle2 className="w-3 h-3" /> Received
+    </Button>
+  ) : (
+    <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setShowPicker(true)}>
+      <CheckCircle2 className="w-4 h-4" /> Mark as Received
+    </Button>
   );
 }
