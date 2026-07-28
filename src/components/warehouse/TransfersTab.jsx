@@ -60,6 +60,21 @@ export default function TransfersTab({ warehouseStock, onPrintSlip }) {
     onError: (e) => toast.error('Failed: ' + e.message),
   });
 
+  // Undo received — set back to in_transit
+  const undoReceivedMutation = useMutation({
+    mutationFn: async (record) => {
+      await base44.entities.WarehouseStock.update(record.id, {
+        status: 'in_transit',
+        received_date: null,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['warehouseStock'] });
+      toast.success('Transfer status reset to In Transit');
+    },
+    onError: (e) => toast.error('Failed: ' + e.message),
+  });
+
   // Edit transfer
   const editMutation = useMutation({
     mutationFn: async ({ id, data }) => {
@@ -220,13 +235,17 @@ export default function TransfersTab({ warehouseStock, onPrintSlip }) {
                       <TableCell className="text-sm font-mono text-muted-foreground">{w.packing_slip_number || '—'}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          {isInTransit && (
+                          {isInTransit ? (
                             <MarkReceivedButton
                               record={w}
                               compact
                               onMark={(receivedDate) => markReceivedMutation.mutate({ record: w, receivedDate })}
                               saving={markReceivedMutation.isPending}
                             />
+                          ) : (
+                            <Button size="sm" variant="ghost" className="h-7 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50 gap-1" onClick={() => undoReceivedMutation.mutate(w)} disabled={undoReceivedMutation.isPending}>
+                              <Truck className="w-3 h-3" /> Undo
+                            </Button>
                           )}
                           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(w)}>
                             <Pencil className="w-3.5 h-3.5" />
