@@ -106,7 +106,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
 
   // 3PL: individual WarehouseStock records
   const threePLProductOptions = useMemo(
-    () => warehouseStock.map(ws => ({ ...ws, available: ws.quantity_bottles || 0 })).filter(ws => ws.available > 0),
+    () => warehouseStock.filter(ws => ws.status !== 'in_transit').map(ws => ({ ...ws, available: ws.quantity_bottles || 0 })).filter(ws => ws.available > 0),
     [warehouseStock]
   );
 
