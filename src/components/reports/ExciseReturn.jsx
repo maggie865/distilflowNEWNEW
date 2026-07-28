@@ -225,6 +225,21 @@ export default function ExciseReturn({
     .filter(d => d.sample_dispatch && isBluffDispatch(d))
     .reduce((s, d) => s + (d.total_lals || 0), 0);
 
+  const lals3PLSamples = monthDispatches
+    .filter(d => d.sample_dispatch && (d.dispatched_from || '').includes('Auckland'))
+    .reduce((s, d) => s + (d.total_lals || 0), 0);
+
+  // Bottle size breakdowns for information section
+  const sampleBluffBreakdown = breakdownBySize(
+    monthDispatches.filter(d => d.sample_dispatch && isBluffDispatch(d))
+  );
+  const standard3PLBreakdown = breakdownBySize(
+    monthDispatches.filter(d => (d.dispatched_from || '').includes('Auckland') && !d.duty_free && !d.is_export && !d.sample_dispatch)
+  );
+  const sample3PLBreakdown = breakdownBySize(
+    monthDispatches.filter(d => d.sample_dispatch && (d.dispatched_from || '').includes('Auckland'))
+  );
+
   // --- All dispatched LALs (for mass balance) ---
   const allDispatchedLals = monthDispatches.reduce((s, d) => s + (d.total_lals || 0), 0);
 
@@ -433,8 +448,39 @@ export default function ExciseReturn({
 
           {/* For information only section */}
           <SectionHeader label="For Information Only (not deducted)" />
-          <ExciseRow label="Samples (Bluff)" value={lalsSamples} sub="taxable, shown for reference" indent />
+          <ExciseRow label="Samples (Bluff)" value={lalsSamples} sub="taxable — included in distillery total above" indent />
+          {sampleBluffBreakdown.length > 0 && (
+            <div className="px-8 py-1 bg-blue-50 space-y-0.5">
+              {sampleBluffBreakdown.map(([size, d]) => (
+                <div key={size} className="flex justify-between text-xs text-blue-700">
+                  <span>{size} — {d.bottles} bottles</span>
+                  <span className="font-mono">{d.lals.toFixed(4)} LALs</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <ExciseRow label="Samples (3PL)" value={lals3PLSamples} sub="duty paid at transfer — shown for reference" indent />
+          {sample3PLBreakdown.length > 0 && (
+            <div className="px-8 py-1 bg-blue-50 space-y-0.5">
+              {sample3PLBreakdown.map(([size, d]) => (
+                <div key={size} className="flex justify-between text-xs text-blue-700">
+                  <span>{size} — {d.bottles} bottles</span>
+                  <span className="font-mono">{d.lals.toFixed(4)} LALs</span>
+                </div>
+              ))}
+            </div>
+          )}
           <ExciseRow label="Standard 3PL dispatches" value={standard3PLDispatchLals} sub="duty already paid at transfer" indent />
+          {standard3PLBreakdown.length > 0 && (
+            <div className="px-8 py-1 bg-muted/30 space-y-0.5">
+              {standard3PLBreakdown.map(([size, d]) => (
+                <div key={size} className="flex justify-between text-xs text-muted-foreground">
+                  <span>{size} — {d.bottles} bottles</span>
+                  <span className="font-mono">{d.lals.toFixed(4)} LALs</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Wastage and closing */}
           <ExciseRow label="LALs Wasted" value={lalsWasted} sub={`${monthWastage.length} wastage record(s)`} />
