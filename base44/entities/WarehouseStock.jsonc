@@ -52,6 +52,19 @@
       "type": "number",
       "description": "CO2e emissions in kg for this 3PL transfer"
     },
+    "status": {
+      "type": "string",
+      "enum": [
+        "in_transit",
+        "received"
+      ],
+      "default": "received",
+      "description": "Whether stock is in transit to the 3PL or has been received"
+    },
+    "received_date": {
+      "type": "string",
+      "description": "Date stock was received at the 3PL warehouse"
+    },
     "bottles_per_case": {
       "type": "number",
       "description": "Number of bottles per case for this product"
