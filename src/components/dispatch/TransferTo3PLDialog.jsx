@@ -114,37 +114,25 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [] 
             Number(w.bottle_size_ml) === Number(fg.bottle_size_ml)
           );
 
-          if (existing.length > 0) {
-            const ws = existing[0];
-            await base44.entities.WarehouseStock.update(ws.id, {
-              quantity_bottles: (ws.quantity_bottles || 0) + take,
-              total_lals: parseFloat(((ws.total_lals || 0) + transferLals).toFixed(4)),
-              original_quantity_bottles: (ws.original_quantity_bottles ?? ws.quantity_bottles ?? 0) + take,
-              original_total_lals: parseFloat(((ws.original_total_lals ?? ws.total_lals ?? 0) + transferLals).toFixed(4)),
-              transfer_date: transferDate,
-              co2e_kg: parseFloat(((ws.co2e_kg || 0) + batchCo2e).toFixed(3)),
-              transport_distance_km: parseFloat(transferDistance),
-              packing_slip_number: packingSlipNumber,
-              bottles_per_case: bottlesPerCase,
-            });
-          } else {
-            await base44.entities.WarehouseStock.create({
-              product_name: fg.product_name,
-              batch_number: fg.batch_number,
-              bottle_size_ml: fg.bottle_size_ml,
-              abv_percent: fg.abv_percent,
-              quantity_bottles: take,
-              total_lals: transferLals,
-              original_quantity_bottles: take,
-              original_total_lals: transferLals,
-              date_transferred_in: transferDate,
-              transfer_date: transferDate,
-              co2e_kg: parseFloat(batchCo2e.toFixed(3)),
-              transport_distance_km: parseFloat(transferDistance),
-              packing_slip_number: packingSlipNumber,
-              bottles_per_case: bottlesPerCase,
-            });
-          }
+          // Always create a new WarehouseStock record per transfer (in_transit)
+          // rather than merging with existing — this lets us track each shipment separately
+          await base44.entities.WarehouseStock.create({
+            product_name: fg.product_name,
+            batch_number: fg.batch_number,
+            bottle_size_ml: fg.bottle_size_ml,
+            abv_percent: fg.abv_percent,
+            quantity_bottles: take,
+            total_lals: transferLals,
+            original_quantity_bottles: take,
+            original_total_lals: transferLals,
+            date_transferred_in: transferDate,
+            transfer_date: transferDate,
+            co2e_kg: parseFloat(batchCo2e.toFixed(3)),
+            transport_distance_km: parseFloat(transferDistance),
+            packing_slip_number: packingSlipNumber,
+            bottles_per_case: bottlesPerCase,
+            status: 'in_transit',
+          });
 
           remaining -= take;
         }
