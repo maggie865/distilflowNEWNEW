@@ -16,7 +16,8 @@ export default function StockTab({ warehouseStock, onPrintSlip, onAdjust, onDele
   const [adjustPending, setAdjustPending] = useState(false);
 
   const filtered = useMemo(() => {
-    const withStock = warehouseStock.filter(w => (w.quantity_bottles || 0) > 0);
+    // Only show received stock — in_transit stock is not yet at the 3PL
+    const withStock = warehouseStock.filter(w => (w.quantity_bottles || 0) > 0 && w.status !== 'in_transit');
     if (!search) return withStock;
     const q = search.toLowerCase();
     return withStock.filter(w =>
