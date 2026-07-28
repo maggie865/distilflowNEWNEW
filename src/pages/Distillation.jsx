@@ -399,10 +399,8 @@ export default function Distillation() {
         }
       }
 
-      // Credit hearts to destination tank when run is completed
-      if (data.status === 'completed' && data.destination_tank_id && payload.hearts_volume && payload.hearts_abv) {
-        await creditHeartsToTank(data.destination_tank_id, payload.hearts_volume, payload.hearts_abv, payload.hearts_lals, data.batch_number, data.product_name, data.date);
-      }
+      // Note: hearts are credited to destination tank via CompleteDistillationDialog
+      // Do NOT credit here to avoid double-counting
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['distillationRuns'] });
@@ -419,17 +417,9 @@ export default function Distillation() {
     mutationFn: async (data) => {
       const payload = buildPayload(data);
 
-      // Reverse old destination tank credit if run was previously completed
-      if (editing.status === 'completed' && editing.destination_tank_id && editing.hearts_volume) {
-        await reverseHeartsFromTank(editing.destination_tank_id, editing.hearts_volume, editing.hearts_abv || 0);
-      }
-
+      // Note: hearts tank credits are managed by CompleteDistillationDialog only
+      // Editing a run does not change tank volumes to avoid double-counting
       await base44.entities.DistillationRun.update(editing.id, payload);
-
-      // Apply new destination tank credit if run is completed
-      if (data.status === 'completed' && data.destination_tank_id && payload.hearts_volume && payload.hearts_abv) {
-        await creditHeartsToTank(data.destination_tank_id, payload.hearts_volume, payload.hearts_abv, payload.hearts_lals, data.batch_number, data.product_name, data.date);
-      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['distillationRuns'] });
