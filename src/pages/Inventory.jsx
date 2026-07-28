@@ -45,12 +45,26 @@ function AdjustDialog({ item, entity, onClose, queryKey }) {
       const storedQty = newQty;
       const update = isFinished ? { quantity_bottles: storedQty } : { quantity: storedQty };
 
-      // Recalculate LALs if raw material with ABV
-      if (!isFinished && item.abv_percent) {
-        update.lals = parseFloat((newQty * item.abv_percent / 100).toFixed(3));
+      // Recalculate LALs
+      if (!isFinished) {
+        if (item.abv_percent) {
+          // Ethanol/spirit — recalculate from ABV and quantity
+          update.lals = parseFloat((newQty * item.abv_percent / 100).toFixed(4));
+        } else if (item.lals && item.quantity) {
+          // No ABV — scale proportionally from current ratio
+          const lalsPerUnit = item.quantity > 0 ? item.lals / item.quantity : 0;
+          if (lalsPerUnit > 0) update.lals = parseFloat((newQty * lalsPerUnit).toFixed(4));
+        }
       }
-      if (isFinished && item.abv_percent && item.bottle_size_ml) {
-        update.total_lals = parseFloat((newQty * item.bottle_size_ml * item.abv_percent / 100 / 1000).toFixed(3));
+      if (isFinished) {
+        if (item.abv_percent && item.bottle_size_ml) {
+          // Recalculate from ABV and bottle size
+          update.total_lals = parseFloat((newQty * item.bottle_size_ml * item.abv_percent / 100 / 1000).toFixed(4));
+        } else if (item.total_lals && item.quantity_bottles) {
+          // No ABV set — scale proportionally from current ratio (lals per bottle)
+          const lalsPerBottle = item.quantity_bottles > 0 ? item.total_lals / item.quantity_bottles : 0;
+          if (lalsPerBottle > 0) update.total_lals = parseFloat((newQty * lalsPerBottle).toFixed(4));
+        }
       }
 
       const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
@@ -121,11 +135,35 @@ function EditDialog({ item, entity, fields, onClose, queryKey }) {
     mutationFn: () => {
       const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
       // Use ref to get latest form values — avoids stale closure bug
-      const latestForm = formRef.current;
+      const latestForm = { ...formRef.current };
       // Save previous state for undo before updating
       lastSavedState.id = item.id;
       lastSavedState.entity = entity;
       lastSavedState.previous = { ...item };
+
+      // Auto-recalculate LALs when quantity changes
+      if (entity === 'FinishedGood' && latestForm.quantity_bottles !== undefined) {
+        const newQty = parseFloat(latestForm.quantity_bottles) || 0;
+        const abv = latestForm.abv_percent ?? item.abv_percent;
+        const size = latestForm.bottle_size_ml ?? item.bottle_size_ml;
+        if (abv && size) {
+          latestForm.total_lals = parseFloat((newQty * size * abv / 100 / 1000).toFixed(4));
+        } else if (item.total_lals && item.quantity_bottles) {
+          const lalsPerBottle = item.quantity_bottles > 0 ? item.total_lals / item.quantity_bottles : 0;
+          if (lalsPerBottle > 0) latestForm.total_lals = parseFloat((newQty * lalsPerBottle).toFixed(4));
+        }
+      }
+      if (entity === 'RawMaterial' && latestForm.quantity !== undefined) {
+        const newQty = parseFloat(latestForm.quantity) || 0;
+        const abv = latestForm.abv_percent ?? item.abv_percent;
+        if (abv) {
+          latestForm.lals = parseFloat((newQty * abv / 100).toFixed(4));
+        } else if (item.lals && item.quantity) {
+          const lalsPerUnit = item.quantity > 0 ? item.lals / item.quantity : 0;
+          if (lalsPerUnit > 0) latestForm.lals = parseFloat((newQty * lalsPerUnit).toFixed(4));
+        }
+      }
+
       return entityMap[entity].update(item.id, latestForm);
     },
     onSuccess: () => {
