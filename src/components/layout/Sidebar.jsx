@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, Building2, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle } from 'lucide-react';
+import { Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, Building2, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle , LogOut } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
@@ -50,7 +50,7 @@ const navGroups = [
 
 export default function Sidebar() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const isCrew = user?.role === 'crew';
   const [expandedGroups, setExpandedGroups] = useState({ Production: true, Planning: true, 'Inwards/Outwards': true });
 
@@ -147,6 +147,28 @@ export default function Sidebar() {
             </Link>
           </>
         )}
+      </div>
+
+      {/* User info + logout */}
+      <div className="px-3 py-3 border-t border-sidebar-border">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg">
+          <div className="w-7 h-7 rounded-full bg-sidebar-primary/20 flex items-center justify-center shrink-0">
+            <span className="text-xs font-bold text-sidebar-primary">
+              {(user?.email || user?.name || '?')[0].toUpperCase()}
+            </span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-sidebar-foreground truncate">{user?.name || user?.email || 'User'}</p>
+            <p className="text-xs text-sidebar-foreground/50 truncate">{user?.role || ''}</p>
+          </div>
+          <button
+            onClick={() => logout()}
+            title="Log out"
+            className="shrink-0 p-1.5 rounded-md text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </aside>
   );
