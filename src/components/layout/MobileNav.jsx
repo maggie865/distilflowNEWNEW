@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle } from 'lucide-react';
+import { Menu, Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle , LogOut } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
@@ -50,7 +50,7 @@ const navGroups = [
 
 export default function MobileNav() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const isCrew = user?.role === 'crew';
   const [open, setOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState({});
@@ -158,6 +158,30 @@ export default function MobileNav() {
                     </Link>
                   </>
                 )}
+              </div>
+
+              {/* User info + logout */}
+              <div className="border-t border-border pt-3 mt-2">
+                <div className="flex items-center justify-between px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+                      <span className="text-xs font-bold text-primary">
+                        {(user?.email || user?.name || '?')[0].toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{user?.name || user?.email || 'User'}</p>
+                      <p className="text-xs text-muted-foreground">{user?.role || ''}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { logout(); closeNav(); }}
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-destructive transition-colors px-2 py-1.5 rounded-md hover:bg-destructive/10"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Log out
+                  </button>
+                </div>
               </div>
             </div>
           </SheetContent>
