@@ -16,6 +16,7 @@ import Pagination from '@/components/ui/Pagination';
 import InventoryReport from '@/components/reports/InventoryReport';
 import CostOfGoodsReport from '@/components/reports/CostOfGoodsReport';
 import ExciseReturn from '@/components/reports/ExciseReturn';
+import ForecastReport from '@/components/reports/ForecastReport';
 import MovementsReport from '@/components/reports/MovementsReport';
 import CarbonReport from '@/components/reports/CarbonReport';
 import { useRawMaterialsNetStock } from '@/hooks/useRawMaterialsNetStock';
@@ -334,6 +335,9 @@ export default function Reports() {
           exportCSV(`excise_return_${label}.csv`, rows, headers);
           break;
         }
+        case 'forecast':
+          toast.info('Use the browser print function (Ctrl+P) to save the forecast as a PDF.');
+          break;
         default:
           toast.info('Switch to a tab to export its data.');
       }
@@ -378,6 +382,7 @@ export default function Reports() {
            <TabsTrigger value="carbon">Carbon Footprint</TabsTrigger>
            <TabsTrigger value="wastage">Wastage Analysis</TabsTrigger>
            <TabsTrigger value="excise">Excise Return</TabsTrigger>
+          <TabsTrigger value="forecast">Forecast</TabsTrigger>
            </TabsList>
 
         {/* ── INVENTORY SNAPSHOT ── */}
@@ -511,6 +516,16 @@ export default function Reports() {
             bottlingRuns={bottlingRuns}
             wastage={wastage}
             tankMovements={tankMovements}
+          />
+        </TabsContent>
+
+        <TabsContent value="forecast" className="space-y-5">
+          <ForecastReport
+            dispatches={dispatches}
+            rawMaterials={rawMaterials}
+            finishedGoods={finishedGoods}
+            recipes={recipes}
+            bottlingRuns={bottlingRuns}
           />
         </TabsContent>
       </Tabs>
