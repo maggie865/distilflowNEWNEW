@@ -75,6 +75,68 @@ export default function StockReconciliation() {
     onError: () => toast.error('Merge failed'),
   });
 
+  const [ethanolMergeResult, setEthanolMergeResult] = useState(null);
+
+  const mergeEthanolMutation = useMutation({
+    mutationFn: async () => {
+      const allRM = await base44.entities.RawMaterial.list('name', 5000);
+      const ethanolRecords = allRM.filter(r => (r.type || '').toLowerCase() === 'ethanol');
+      if (ethanolRecords.length <= 1) return { merged: 0, kept: ethanolRecords[0]?.name || 'none' };
+
+      // Sort oldest first — keep first record as master
+      ethanolRecords.sort((a, b) => (a.date_received || a.created_date || '').localeCompare(b.date_received || b.created_date || ''));
+      const [master, ...duplicates] = ethanolRecords;
+
+      // Build merged lots array from all records
+      const mergedLots = [];
+      for (const rec of ethanolRecords) {
+        const existingLots = Array.isArray(rec.lots) ? rec.lots : [];
+        if (existingLots.length > 0) {
+          mergedLots.push(...existingLots);
+        } else {
+          // No lots yet — create a lot entry from the record itself
+          mergedLots.push({
+            lot_number: rec.batch_number || rec.name || 'Legacy stock',
+            date_received: rec.date_received || null,
+            quantity_received: rec.quantity || 0,
+            quantity_remaining: rec.quantity || 0,
+            supplier: rec.supplier || null,
+            cost_per_unit: rec.cost_per_unit || null,
+          });
+        }
+      }
+
+      // Sort lots oldest first
+      mergedLots.sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''));
+
+      const totalQty = ethanolRecords.reduce((s, r) => s + (r.quantity || 0), 0);
+      const totalLals = ethanolRecords.reduce((s, r) => s + (r.lals || 0), 0);
+
+      // Update master record
+      await base44.entities.RawMaterial.update(master.id, {
+        name: 'Ethanol',
+        quantity: parseFloat(totalQty.toFixed(4)),
+        lals: parseFloat(totalLals.toFixed(4)),
+        lots: mergedLots,
+      });
+
+      // Delete duplicates
+      for (const dup of duplicates) {
+        await base44.entities.RawMaterial.delete(dup.id);
+      }
+
+      return { merged: duplicates.length, kept: 'Ethanol', totalQty, totalLals, lots: mergedLots.length };
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['rawMaterials'] });
+      qc.invalidateQueries({ queryKey: ['rawMaterials-ethanol'] });
+      setEthanolMergeResult(data);
+      if (data.merged === 0) toast.success('Ethanol is already a single record — nothing to merge');
+      else toast.success(`Merged ${data.merged + 1} ethanol records into one master record with ${data.lots} lots`);
+    },
+    onError: () => toast.error('Merge failed'),
+  });
+
   const { data: finishedGoods = [], isLoading } = useQuery({
     queryKey: ['finishedGoodsReconcile'],
     queryFn: () => base44.entities.FinishedGood.list('product_name', 5000),
@@ -261,6 +323,26 @@ export default function StockReconciliation() {
         <p className="text-xs text-amber-700">If you see two versions of tasting stock for the same product (e.g. "London Dry Gin — Tasting" and "London Dry Gin 200ml — Tasting"), this tool merges them into a single record and combines the quantities.</p>
         {mergeTastingResult && mergeTastingResult.merged === 0 && (
           <p className="text-xs text-emerald-700 font-medium">✅ No duplicates found — tasting records are clean.</p>
+        )}
+      </div>
+
+      {/* Merge Ethanol Records */}
+      <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-700">🧪</span>
+            <h3 className="font-semibold text-blue-800 text-sm">Merge Ethanol into Single Record</h3>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => mergeEthanolMutation.mutate()} disabled={mergeEthanolMutation.isPending}>
+            {mergeEthanolMutation.isPending ? 'Merging...' : 'Merge Ethanol Records'}
+          </Button>
+        </div>
+        <p className="text-xs text-blue-700">If you have multiple ethanol records (Lactonol, ENA, etc), this merges them into a single "Ethanol" record with each delivery tracked as a separate lot. Run once.</p>
+        {ethanolMergeResult && ethanolMergeResult.merged === 0 && (
+          <p className="text-xs text-emerald-700 font-medium">✅ Ethanol is already a single record.</p>
+        )}
+        {ethanolMergeResult && ethanolMergeResult.merged > 0 && (
+          <p className="text-xs text-emerald-700 font-medium">✅ Merged into one record: {ethanolMergeResult.totalQty?.toFixed(2)}L / {ethanolMergeResult.totalLals?.toFixed(2)} LALs across {ethanolMergeResult.lots} lots.</p>
         )}
       </div>
 
