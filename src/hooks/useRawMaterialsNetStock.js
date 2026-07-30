@@ -185,19 +185,11 @@ export function useRawMaterialsNetStock() {
         netQty = Math.max(0, netQty - consumedQty);
       }
 
+      // Botanicals: quantity is deducted directly in the database when distillation runs complete
+      // (same as packaging). Do NOT subtract here — that would double-count the deduction.
+      // The database quantity IS the net stock.
       if (effectiveType === 'botanical') {
-        const exactConsumed = botanicalConsumedByName[nameLower];
-        if (exactConsumed !== undefined) {
-          consumedQty = exactConsumed;
-          netQty = Math.max(0, netQty - exactConsumed);
-        } else {
-          const partialKey = Object.keys(botanicalConsumedByName)
-            .find(k => nameLower.includes(k.toLowerCase()) || k.toLowerCase().includes(nameLower));
-          if (partialKey) {
-            consumedQty = botanicalConsumedByName[partialKey];
-            netQty = Math.max(0, netQty - consumedQty);
-          }
-        }
+        // netQty already reflects actual stock — no further deduction needed
       }
 
       // Packaging: quantity is deducted directly in the database when bottling runs complete
