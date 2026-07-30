@@ -526,6 +526,7 @@ export default function Reports() {
             finishedGoods={finishedGoods}
             recipes={recipes}
             bottlingRuns={bottlingRuns}
+            distillationRuns={distillationRuns}
           />
         </TabsContent>
       </Tabs>
