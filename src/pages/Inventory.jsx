@@ -561,6 +561,89 @@ function LowStockAlerts({ rawMaterials, thresholds }) {
 }
 
 // ── Main Page ────────────────────────────────────────────────────────────────
+function RawMaterialRow({ m, onOpen }) {
+  const [expanded, setExpanded] = useState(false);
+  const lots = Array.isArray(m.lots) && m.lots.length > 0
+    ? [...m.lots].sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''))
+    : null;
+  const hasLots = lots && lots.length > 0;
+  return (
+    <>
+      <TableRow className="hover:bg-muted/30">
+        <TableCell className="font-medium text-sm">
+          <div className="flex items-center gap-2">
+            {hasLots
+              ? <button onClick={() => setExpanded(v => !v)} className="text-muted-foreground hover:text-foreground shrink-0">
+                  {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                </button>
+              : <span className="w-3.5 inline-block" />}
+            {m.name}
+            {hasLots && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">{lots.length} lot{lots.length !== 1 ? 's' : ''}</span>}
+          </div>
+        </TableCell>
+        <TableCell><Badge variant="secondary" className={typeColors[m.type] || typeColors.other}>{m.type}</Badge></TableCell>
+        <TableCell className="text-sm font-semibold">{(m.quantity || 0).toFixed ? Number(m.quantity || 0).toFixed(3) : m.quantity} {m.unit}</TableCell>
+        <TableCell className="text-sm">{m.abv_percent ? `${m.abv_percent}%` : '—'}</TableCell>
+        <TableCell className="text-sm font-medium">{m.lals ? m.lals.toFixed(3) : '—'}</TableCell>
+        <TableCell className="text-sm">{m.supplier || '—'}</TableCell>
+        <TableCell className="text-sm text-muted-foreground">
+          {hasLots
+            ? <span className="text-blue-600 text-xs cursor-pointer hover:underline" onClick={() => setExpanded(v => !v)}>
+                {expanded ? 'hide' : `${lots.length} lot${lots.length !== 1 ? 's' : ''}`}
+              </span>
+            : (m.batch_number || '—')}
+        </TableCell>
+        <TableCell>
+          <Actions
+            onAdjust={() => onOpen('adjust', m, 'RawMaterial', 'rawMaterials')}
+            onEdit={() => onOpen('edit', m, 'RawMaterial', 'rawMaterials')}
+            onDelete={() => onOpen('delete', m, 'RawMaterial', 'rawMaterials')}
+          />
+        </TableCell>
+      </TableRow>
+      {expanded && lots && (
+        <TableRow>
+          <TableCell colSpan={8} className="p-0 bg-blue-50/40">
+            <div className="px-10 py-2">
+              <p className="text-xs font-semibold text-blue-700 mb-1.5 uppercase tracking-wide">Lot history — FIFO (oldest used first →)</p>
+              <table className="w-full text-xs">
+                <thead><tr className="text-muted-foreground border-b border-blue-200">
+                  <th className="text-left py-1 pr-3">Lot / Batch #</th>
+                  <th className="text-left py-1 pr-3">Date received</th>
+                  <th className="text-left py-1 pr-3">Supplier</th>
+                  <th className="text-right py-1 pr-3">Received</th>
+                  <th className="text-right py-1 pr-3">Remaining</th>
+                  <th className="text-right py-1">Used</th>
+                </tr></thead>
+                <tbody>
+                  {lots.map((lot, idx) => {
+                    const used = (lot.quantity_received || 0) - (lot.quantity_remaining || 0);
+                    const isEmpty = (lot.quantity_remaining || 0) <= 0;
+                    return (
+                      <tr key={idx} className={isEmpty ? 'text-muted-foreground/50' : ''}>
+                        <td className="py-1 pr-3 font-medium">
+                          {idx === 0 && !isEmpty && <span className="text-amber-600 mr-1">→</span>}
+                          {lot.lot_number || '(no lot #)'}
+                          {isEmpty && <span className="ml-1 text-muted-foreground">(depleted)</span>}
+                        </td>
+                        <td className="py-1 pr-3">{lot.date_received || '—'}</td>
+                        <td className="py-1 pr-3">{lot.supplier || '—'}</td>
+                        <td className="py-1 pr-3 text-right">{(lot.quantity_received || 0).toFixed(3)} {m.unit}</td>
+                        <td className={`py-1 pr-3 text-right font-semibold ${isEmpty ? 'text-muted-foreground/50' : 'text-emerald-700'}`}>{(lot.quantity_remaining || 0).toFixed(3)} {m.unit}</td>
+                        <td className="py-1 text-right text-muted-foreground">{used.toFixed(3)} {m.unit}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </TableCell>
+        </TableRow>
+      )}
+    </>
+  );
+}
+
 export default function Inventory() {
   const [dialog, setDialog] = useState(null); // { type: 'adjust'|'edit'|'delete', item, entity, queryKey }
   const [rawPage, setRawPage] = useState(1);
@@ -756,22 +839,7 @@ export default function Inventory() {
                   ) : nonPackagingRaw.length === 0 ? (
                     <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No raw materials in stock</TableCell></TableRow>
                   ) : pagedRaw.map(m => (
-                    <TableRow key={m.id}>
-                      <TableCell className="font-medium text-sm">{m.name}</TableCell>
-                      <TableCell><Badge variant="secondary" className={typeColors[m.type] || typeColors.other}>{m.type}</Badge></TableCell>
-                      <TableCell className="text-sm">{m.quantity} {m.unit}</TableCell>
-                      <TableCell className="text-sm">{m.abv_percent ? `${m.abv_percent}%` : '—'}</TableCell>
-                      <TableCell className="text-sm font-medium">{m.lals ? m.lals.toFixed(3) : '—'}</TableCell>
-                      <TableCell className="text-sm">{m.supplier || '—'}</TableCell>
-                      <TableCell className="text-sm">{m.batch_number || '—'}</TableCell>
-                      <TableCell>
-                        <Actions
-                          onAdjust={() => open('adjust', m, 'RawMaterial', 'rawMaterials')}
-                          onEdit={() => open('edit', m, 'RawMaterial', 'rawMaterials')}
-                          onDelete={() => open('delete', m, 'RawMaterial', 'rawMaterials')}
-                        />
-                      </TableCell>
-                    </TableRow>
+                    <RawMaterialRow key={m.id} m={m} onOpen={open} />
                   ))}
                 </TableBody>
               </Table>
@@ -828,21 +896,7 @@ export default function Inventory() {
                   ) : packagingItems.length === 0 ? (
                     <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No packaging items in stock.</TableCell></TableRow>
                   ) : pagedPkg.map(m => (
-                    <TableRow key={m.id}>
-                      <TableCell className="font-medium text-sm">{m.name}</TableCell>
-                      <TableCell className="text-sm font-semibold">{m.quantity}</TableCell>
-                      <TableCell className="text-sm">{m.unit}</TableCell>
-                      <TableCell className="text-sm">{m.supplier || '—'}</TableCell>
-                      <TableCell className="text-sm">{m.batch_number || '—'}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{m.notes || '—'}</TableCell>
-                      <TableCell>
-                        <Actions
-                          onAdjust={() => open('adjust', m, 'RawMaterial', 'rawMaterials')}
-                          onEdit={() => open('edit', m, 'RawMaterial', 'rawMaterials')}
-                          onDelete={() => open('delete', m, 'RawMaterial', 'rawMaterials')}
-                        />
-                      </TableCell>
-                    </TableRow>
+                    <RawMaterialRow key={m.id} m={m} onOpen={open} />
                   ))}
                 </TableBody>
               </Table>
