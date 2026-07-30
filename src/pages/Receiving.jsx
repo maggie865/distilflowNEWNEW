@@ -276,29 +276,42 @@ export default function Receiving() {
       const existingRM = allRM.find(r =>
         (r.name || '').toLowerCase().trim() === (payload.material_name || '').toLowerCase().trim()
       );
+      // New lot entry to append
+      const newLot = {
+        lot_number: payload.batch_number || null,
+        date_received: payload.date_received,
+        quantity_received: payload.quantity || 0,
+        quantity_remaining: payload.quantity || 0,
+        supplier: payload.supplier_name || null,
+        cost_per_unit: payload.cost_per_unit || null,
+        receiving_id: created.id,
+      };
+
       if (existingRM) {
-        // Add to existing inventory record
+        // Merge into existing record: add to total, append lot
+        const existingLots = Array.isArray(existingRM.lots) ? existingRM.lots : [];
         await base44.entities.RawMaterial.update(existingRM.id, {
           quantity: parseFloat(((existingRM.quantity || 0) + (payload.quantity || 0)).toFixed(4)),
           lals: parseFloat(((existingRM.lals || 0) + (payload.lals || 0)).toFixed(4)),
-          // Update cost to latest received price
           cost_per_unit: payload.cost_per_unit || existingRM.cost_per_unit,
           date_received: payload.date_received,
+          lots: [...existingLots, newLot],
         });
       } else {
-        // Create new inventory record
+        // Create new record with first lot
         await base44.entities.RawMaterial.create({
           name: payload.material_name,
           type: TYPE_MAP[payload.material_type] || 'other',
-          quantity: payload.quantity,
+          quantity: payload.quantity || 0,
           unit: payload.unit,
-          lals: payload.lals,
+          lals: payload.lals || 0,
           abv_percent: payload.abv_percent,
-          batch_number: payload.batch_number,
+          batch_number: payload.batch_number || null,
           supplier: payload.supplier_name,
           cost_per_unit: payload.cost_per_unit,
           date_received: payload.date_received,
           receiving_id: created.id,
+          lots: [newLot],
         });
       }
     },
