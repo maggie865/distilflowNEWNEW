@@ -62,6 +62,36 @@
       "type": "string",
       "description": "ID of the linked Receiving record (for traceability to the packing slip)"
     },
+    "lots": {
+      "type": "array",
+      "description": "Lot/batch history for FIFO tracking. Each entry is a received lot with its remaining quantity.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "lot_number": {
+            "type": "string"
+          },
+          "date_received": {
+            "type": "string"
+          },
+          "quantity_received": {
+            "type": "number"
+          },
+          "quantity_remaining": {
+            "type": "number"
+          },
+          "supplier": {
+            "type": "string"
+          },
+          "cost_per_unit": {
+            "type": "number"
+          },
+          "receiving_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "notes": {
       "type": "string",
       "description": "Additional notes"
