@@ -334,30 +334,43 @@ export default function Distillation() {
           }
         }
 
-        // Calculate LALs used and equivalent volume at 96% ABV for raw material depletion
-        const lalsUsed = payload.input_lals || (payload.input_volume * payload.input_abv / 100);
-        const volEquivAt96 = lalsUsed / 0.96;
+        // Deduct ethanol from RawMaterial inventory using FIFO lots
+        // We deduct the actual input volume at the actual input ABV (not converted to 96%)
+        const lalsUsed = payload.input_lals || (payload.input_volume * (payload.input_abv || 0) / 100);
+        const inputVolUsed = payload.input_volume || 0;
 
-        // Deplete ethanol raw material inventory FIFO by lot code
-        const lotCode = data.ethanol_lot_code;
-        if (lotCode) {
-          const matchingLots = ethanolMaterials
-            .filter(m => m.batch_number === lotCode)
-            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-          let remainingVol = volEquivAt96;
-          let remainingLals = lalsUsed;
-          for (const lot of matchingLots) {
-            if (remainingVol <= 0) break;
-            const deductVol = Math.min(lot.quantity || 0, remainingVol);
-            const deductLals = Math.min(lot.lals || 0, remainingLals);
-            if (deductVol > 0 || deductLals > 0) {
-              await base44.entities.RawMaterial.update(lot.id, {
-                quantity: parseFloat(Math.max(0, (lot.quantity || 0) - deductVol).toFixed(3)),
-                lals: parseFloat(Math.max(0, (lot.lals || 0) - deductLals).toFixed(4)),
-              });
-            }
-            remainingVol -= deductVol;
-            remainingLals -= deductLals;
+        // Find the single master ethanol record and deplete using FIFO lots
+        const allRM = await base44.entities.RawMaterial.list('name', 5000);
+        const ethanolRecord = allRM.find(m => (m.type || '').toLowerCase() === 'ethanol')
+          || allRM.find(m => (m.name || '').toLowerCase().includes('ethanol'));
+
+        if (ethanolRecord) {
+          const lots = Array.isArray(ethanolRecord.lots) && ethanolRecord.lots.length > 0
+            ? [...ethanolRecord.lots].sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''))
+            : null;
+
+          if (lots) {
+            // FIFO: deplete oldest lot first
+            let remaining = inputVolUsed;
+            const updatedLots = lots.map(lot => {
+              if (remaining <= 0) return lot;
+              const take = Math.min(remaining, lot.quantity_remaining || 0);
+              remaining -= take;
+              return { ...lot, quantity_remaining: parseFloat(Math.max(0, (lot.quantity_remaining || 0) - take).toFixed(4)) };
+            });
+            const newQty = Math.max(0, (ethanolRecord.quantity || 0) - inputVolUsed);
+            const newLals = Math.max(0, (ethanolRecord.lals || 0) - lalsUsed);
+            await base44.entities.RawMaterial.update(ethanolRecord.id, {
+              quantity: parseFloat(newQty.toFixed(4)),
+              lals: parseFloat(newLals.toFixed(4)),
+              lots: updatedLots,
+            });
+          } else {
+            // No lots — just deduct from total
+            await base44.entities.RawMaterial.update(ethanolRecord.id, {
+              quantity: parseFloat(Math.max(0, (ethanolRecord.quantity || 0) - inputVolUsed).toFixed(4)),
+              lals: parseFloat(Math.max(0, (ethanolRecord.lals || 0) - lalsUsed).toFixed(4)),
+            });
           }
         }
       }
