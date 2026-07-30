@@ -176,29 +176,32 @@ export default function Distillation() {
       const needed = parseFloat((ing.quantity * ratio).toFixed(2));
       const ingNameLower = (ing.name || '').toLowerCase();
 
-      // Build FIFO lot list from Receiving records (oldest date_received first)
-      // Then fall back to RawMaterial records sorted by created_at
-      const receivingLots = botanicalReceivings
-        .filter(r => (r.material_name || '').toLowerCase() === ingNameLower && (r.quantity || 0) > 0)
-        .sort((a, b) => new Date(a.date_received) - new Date(b.date_received))
-        .map(r => ({
-          id: 'recv-' + r.id,
-          _receivingId: r.id,
-          batch_number: r.batch_number || '',
-          quantity: r.quantity || 0,
-          date_received: r.date_received,
-        }));
+      // Find the matching RawMaterial record
+      const rm = rawMaterials.find(m => (m.name || '').toLowerCase().trim() === ingNameLower)
+        || rawMaterials.find(m => {
+          const n = (m.name || '').toLowerCase();
+          return n.includes(ingNameLower) || ingNameLower.includes(n);
+        });
 
-      // Also check RawMaterial entity lots (manually entered stock)
-      const rawLots = rawMaterials
-        .filter(m => (m.name || '').toLowerCase() === ingNameLower && (m.quantity || 0) > 0)
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      // Build lot list from RawMaterial.lots array (FIFO — oldest first)
+      // This is the single source of truth for botanical stock tracking
+      const rmLots = (Array.isArray(rm?.lots) && rm.lots.length > 0)
+        ? [...rm.lots]
+            .sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''))
+            .filter(l => (l.quantity_remaining || 0) > 0)
+            .map(l => ({
+              _rmId: rm.id,
+              _lotIndex: rm.lots.indexOf(l),
+              _fullLots: rm.lots,
+              lot_number: l.lot_number,
+              batch_number: l.lot_number,
+              quantity: l.quantity_remaining || 0,
+              date_received: l.date_received,
+            }))
+        : (rm ? [{ _rmId: rm.id, lot_number: null, batch_number: rm.batch_number || null, quantity: rm.quantity || 0 }] : []);
 
-      // Use Receiving-based lots if available (preferred — proper date_received FIFO)
-      // otherwise fall back to RawMaterial lots
-      const lots = receivingLots.length > 0 ? receivingLots : rawLots;
-      const totalStock = lots.reduce((sum, lot) => sum + (lot.quantity || 0), 0);
-      return { ...ing, scaledQuantity: needed, totalStock, lots, sufficient: totalStock >= needed };
+      const totalStock = rm?.quantity || 0;
+      return { ...ing, scaledQuantity: needed, totalStock, lots: rmLots, sufficient: totalStock >= needed };
     }));
   };
 
@@ -376,29 +379,63 @@ export default function Distillation() {
       }
 
       // FIFO stock depletion only on create (when ingredients are scaled)
-      // Capture which lot codes were actually consumed for traceability
+      // Deplete botanical lots FIFO and capture lot codes for batch traceability
       const usedBotanicalLots = new Set();
+      // Group by RawMaterial id so we do one update per ingredient
+      const rmUpdates = {};
+
       for (const ing of scaledIngredients) {
         let remaining = ing.scaledQuantity;
         for (const lot of ing.lots) {
           if (remaining <= 0) break;
           const deduct = Math.min(lot.quantity || 0, remaining);
-          if (deduct > 0) {
-            if (lot._receivingId) {
-              // Lot sourced from Receiving — deduct from Receiving record quantity
-              await base44.entities.Receiving.update(lot._receivingId, {
-                quantity: parseFloat(Math.max(0, (lot.quantity - deduct)).toFixed(4)),
-              });
-            } else {
-              // Lot sourced from RawMaterial entity
-              await base44.entities.RawMaterial.update(lot.id, {
-                quantity: parseFloat((lot.quantity - deduct).toFixed(4)),
-              });
+          if (deduct <= 0) continue;
+
+          if (lot._rmId && lot._fullLots) {
+            // Update the lots array on the RawMaterial record
+            if (!rmUpdates[lot._rmId]) {
+              rmUpdates[lot._rmId] = {
+                rm: rawMaterials.find(m => m.id === lot._rmId),
+                lotsToDeduct: {}, // lot_number -> amount
+              };
             }
-            const lotLabel = lot.batch_number ? `${ing.name} (${lot.batch_number})` : ing.name;
-            usedBotanicalLots.add(lotLabel);
+            const lotKey = lot.lot_number || '__no_lot__';
+            rmUpdates[lot._rmId].lotsToDeduct[lotKey] = (rmUpdates[lot._rmId].lotsToDeduct[lotKey] || 0) + deduct;
+          } else if (lot._rmId) {
+            // No lots array — just deduct from total
+            if (!rmUpdates[lot._rmId]) {
+              rmUpdates[lot._rmId] = { rm: rawMaterials.find(m => m.id === lot._rmId), directDeduct: 0 };
+            }
+            rmUpdates[lot._rmId].directDeduct = (rmUpdates[lot._rmId].directDeduct || 0) + deduct;
           }
+
+          if (lot.lot_number) usedBotanicalLots.add(`${ing.name} (${lot.lot_number})`);
+          else usedBotanicalLots.add(ing.name);
           remaining -= deduct;
+        }
+      }
+
+      // Apply all RawMaterial updates
+      for (const [rmId, update] of Object.entries(rmUpdates)) {
+        const rm = update.rm;
+        if (!rm) continue;
+        if (update.lotsToDeduct && Array.isArray(rm.lots)) {
+          // Update lots array
+          const updatedLots = rm.lots.map(lot => {
+            const lotKey = lot.lot_number || '__no_lot__';
+            const deduct = update.lotsToDeduct[lotKey] || 0;
+            if (deduct <= 0) return lot;
+            return { ...lot, quantity_remaining: parseFloat(Math.max(0, (lot.quantity_remaining || 0) - deduct).toFixed(4)) };
+          });
+          const totalDeducted = Object.values(update.lotsToDeduct).reduce((s, v) => s + v, 0);
+          await base44.entities.RawMaterial.update(rmId, {
+            quantity: parseFloat(Math.max(0, (rm.quantity || 0) - totalDeducted).toFixed(4)),
+            lots: updatedLots,
+          });
+        } else if (update.directDeduct) {
+          await base44.entities.RawMaterial.update(rmId, {
+            quantity: parseFloat(Math.max(0, (rm.quantity || 0) - update.directDeduct).toFixed(4)),
+          });
         }
       }
 
