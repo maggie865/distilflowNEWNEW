@@ -76,6 +76,92 @@ export default function StockReconciliation() {
   });
 
   const [ethanolMergeResult, setEthanolMergeResult] = useState(null);
+  const [botanicalBackfillResult, setBotanicalBackfillResult] = useState(null);
+
+  const botanicalBackfillMutation = useMutation({
+    mutationFn: async () => {
+      // Fetch all receivings and raw materials
+      const [allReceivings, allRM] = await Promise.all([
+        base44.entities.Receiving.list('-date_received', 5000),
+        base44.entities.RawMaterial.list('name', 5000),
+      ]);
+
+      const botanicalReceivings = allReceivings.filter(r =>
+        (r.material_type || '').toLowerCase().startsWith('botanical')
+      );
+
+      // Group receivings by material_name
+      const byMaterial = {};
+      for (const r of botanicalReceivings) {
+        const key = (r.material_name || '').toLowerCase().trim();
+        if (!byMaterial[key]) byMaterial[key] = [];
+        byMaterial[key].push(r);
+      }
+
+      let updated = 0;
+      for (const [key, receivings] of Object.entries(byMaterial)) {
+        // Find the matching RawMaterial record
+        const rm = allRM.find(m => (m.name || '').toLowerCase().trim() === key);
+        if (!rm) continue;
+
+        // Sort receivings oldest first (FIFO order)
+        receivings.sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''));
+
+        // Only build lots if none exist yet (don't overwrite existing lot tracking)
+        const existingLots = Array.isArray(rm.lots) ? rm.lots : [];
+        if (existingLots.length > 0) continue; // already has lots
+
+        const lots = receivings.map(r => ({
+          lot_number: r.batch_number || null,
+          date_received: r.date_received,
+          quantity_received: r.quantity || 0,
+          // quantity_remaining: use current RM quantity proportionally
+          // We can't know exactly how much of each lot was used, so set remaining = received
+          // and let the current RM.quantity be the source of truth for total
+          quantity_remaining: r.quantity || 0,
+          supplier: r.supplier_name || null,
+          cost_per_unit: r.cost_per_unit || null,
+          receiving_id: r.id,
+        }));
+
+        // Adjust lot remainders so they sum to the current RM quantity (FIFO)
+        const totalReceived = lots.reduce((s, l) => s + l.quantity_received, 0);
+        const currentQty = rm.quantity || 0;
+        let remainingToAllocate = currentQty;
+        const adjustedLots = lots.map(lot => {
+          const pct = totalReceived > 0 ? lot.quantity_received / totalReceived : 0;
+          // Give oldest lots zero remaining first (FIFO depletion assumption)
+          return lot;
+        });
+        // FIFO: oldest lots depleted first — set remaining to 0 for old lots until we've allocated currentQty
+        for (let i = adjustedLots.length - 1; i >= 0; i--) {
+          const lot = adjustedLots[i];
+          const take = Math.min(lot.quantity_received, remainingToAllocate);
+          adjustedLots[i] = { ...lot, quantity_remaining: parseFloat(take.toFixed(4)) };
+          remainingToAllocate -= take;
+          if (remainingToAllocate <= 0) {
+            // All older lots are fully depleted
+            for (let j = i - 1; j >= 0; j--) {
+              adjustedLots[j] = { ...adjustedLots[j], quantity_remaining: 0 };
+            }
+            break;
+          }
+        }
+
+        await base44.entities.RawMaterial.update(rm.id, { lots: adjustedLots });
+        updated++;
+      }
+
+      return { updated, total: Object.keys(byMaterial).length };
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['rawMaterials'] });
+      setBotanicalBackfillResult(data);
+      if (data.updated === 0) toast.success('All botanical lots already populated — nothing to backfill');
+      else toast.success(`Backfilled lot history for ${data.updated} botanical ingredients`);
+    },
+    onError: (e) => toast.error('Backfill failed: ' + e.message),
+  });
 
   const mergeEthanolMutation = useMutation({
     mutationFn: async () => {
@@ -323,6 +409,27 @@ export default function StockReconciliation() {
         <p className="text-xs text-amber-700">If you see two versions of tasting stock for the same product (e.g. "London Dry Gin — Tasting" and "London Dry Gin 200ml — Tasting"), this tool merges them into a single record and combines the quantities.</p>
         {mergeTastingResult && mergeTastingResult.merged === 0 && (
           <p className="text-xs text-emerald-700 font-medium">✅ No duplicates found — tasting records are clean.</p>
+        )}
+      </div>
+
+      {/* Backfill Botanical Lot History */}
+      <div className="border border-emerald-200 bg-emerald-50 rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-emerald-700">🌿</span>
+            <h3 className="font-semibold text-emerald-800 text-sm">Backfill Botanical Lot History</h3>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => botanicalBackfillMutation.mutate()} disabled={botanicalBackfillMutation.isPending}>
+            {botanicalBackfillMutation.isPending ? 'Backfilling...' : 'Backfill from Receivals'}
+          </Button>
+        </div>
+        <p className="text-xs text-emerald-700">Reads all your historical botanical receiving records and populates the lot/batch codes under each raw material. Run once — skips any ingredient that already has lots assigned.</p>
+        {botanicalBackfillResult && (
+          <p className="text-xs text-emerald-800 font-medium">
+            {botanicalBackfillResult.updated === 0
+              ? '✅ All botanical lots already populated.'
+              : `✅ Populated lot history for ${botanicalBackfillResult.updated} of ${botanicalBackfillResult.total} botanical ingredients.`}
+          </p>
         )}
       </div>
 
