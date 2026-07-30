@@ -167,22 +167,11 @@ export function useRawMaterialsNetStock() {
       const effectiveType = (received?.type) || normaliseType(m.type);
       let consumedQty = 0;
 
+      // Ethanol: quantity is now deducted directly from the database when distillation runs complete.
+      // Dilutions do NOT deduct from inventory (ethanol is still on-site, just in a tank).
+      // The DB quantity IS the net stock — no further deduction needed here.
       if (effectiveType === 'ethanol') {
-        const isLactonol = nameLower.includes('lactonol');
-        const isEna = nameLower.includes('extra neutral') || nameLower.includes('ena');
-        if (isLactonol) {
-          consumedQty += (ethanolConsumedByLotCode['eth-lactonol'] || 0) + (ethanolConsumedByLotCode['lactonol'] || 0);
-          consumedQty += rawEthanolConsumedInDilutions;
-        } else if (isEna) {
-          consumedQty += (ethanolConsumedByLotCode['eth-ena'] || 0) + (ethanolConsumedByLotCode['ena'] || 0);
-        } else {
-          const matched = ['eth-lactonol', 'lactonol', 'eth-ena', 'ena'];
-          consumedQty += Object.entries(ethanolConsumedByLotCode)
-            .filter(([k]) => !matched.includes(k))
-            .reduce((s, [, v]) => s + v, 0);
-        }
-        netLals = Math.max(0, netLals - (consumedQty * (m.abv_percent || 0) / 100));
-        netQty = Math.max(0, netQty - consumedQty);
+        // netQty already reflects actual stock
       }
 
       // Botanicals: quantity is deducted directly in the database when distillation runs complete
