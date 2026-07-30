@@ -78,7 +78,6 @@ export default function StockTakes() {
             material_name: mat.name,
             unit: mat.unit,
             system_quantity: mat.quantity || 0,
-            counted_quantity: null,
           });
         }
       }
@@ -94,7 +93,6 @@ export default function StockTakes() {
             bottle_size_ml: fg.bottle_size_ml,
             unit: 'bottles',
             system_quantity: fg.quantity_bottles || 0,
-            counted_quantity: null,
           });
         }
       }
@@ -108,7 +106,6 @@ export default function StockTakes() {
             material_name: `Tank ${tank.name}${tank.current_product ? ' — ' + tank.current_product : ''}`,
             unit: 'litres',
             system_quantity: tank.current_volume || 0,
-            counted_quantity: null,
           });
         }
       }
@@ -153,7 +150,13 @@ export default function StockTakes() {
 
   const applyVariancesMutation = useMutation({
     mutationFn: async (stockTakeId) => {
-      const lines = allLines.filter(l => l.stock_take_id === stockTakeId && l.counted_quantity != null);
+      // Only apply lines where a count was explicitly entered (variance recorded means user touched it)
+      // Guard against Base44 coercing null to 0 by also checking variance is not null
+      const lines = allLines.filter(l =>
+        l.stock_take_id === stockTakeId &&
+        l.counted_quantity != null &&
+        l.variance != null
+      );
       for (const line of lines) {
         if (line.item_type === 'raw_material' && line.raw_material_id) {
           const mat = rawMaterials.find(m => m.id === line.raw_material_id);
@@ -255,6 +258,8 @@ export default function StockTakes() {
           className="h-8 w-32 text-sm"
           onBlur={e => {
             const val = e.target.value;
+            // Don't save if field is empty — leave as uncounted
+            if (val === '') return;
             if (val !== String(line.counted_quantity ?? '')) {
               updateLineMutation.mutate({ lineId: line.id, counted: val, systemQuantity: line.system_quantity });
             }
@@ -293,6 +298,7 @@ export default function StockTakes() {
           className="h-8 flex-1 text-sm"
           onBlur={e => {
             const val = e.target.value;
+            if (val === '') return;
             if (val !== String(line.counted_quantity ?? '')) {
               updateLineMutation.mutate({ lineId: line.id, counted: val, systemQuantity: line.system_quantity });
             }
@@ -423,7 +429,12 @@ export default function StockTakes() {
                   className="border-amber-300 text-amber-700 hover:bg-amber-50"
                   disabled={applyVariancesMutation.isPending}
                   onClick={() => {
-                    if (confirm('This will update all inventory quantities to match your counted values. Continue?')) {
+                    const countedLines = allLines.filter(l => l.stock_take_id === activeStockTake && l.counted_quantity != null && l.variance != null);
+                    const zeroLines = countedLines.filter(l => l.counted_quantity === 0);
+                    const msg = zeroLines.length > 0
+                      ? `This will update ${countedLines.length} item(s) to their counted quantities — including ${zeroLines.length} item(s) that will be set to ZERO. Lines you left blank will NOT be changed. Continue?`
+                      : `This will update ${countedLines.length} item(s) to their counted quantities. Lines you left blank will NOT be changed. Continue?`;
+                    if (confirm(msg)) {
                       applyVariancesMutation.mutate(activeStockTake);
                     }
                   }}
