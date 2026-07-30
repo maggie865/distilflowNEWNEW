@@ -273,12 +273,17 @@ export default function Receiving() {
       // Create or update linked RawMaterial for inventory tracking
       const TYPE_MAP = { 'Ethanol': 'ethanol', 'Botanicals': 'botanical', 'Packaging': 'packaging', 'Grain': 'grain', 'Sugar': 'sugar', 'Water': 'water', 'Flavoring': 'flavoring', 'Other': 'other' };
       const allRM = await base44.entities.RawMaterial.list('name', 5000);
-      const existingRM = allRM.find(r =>
-        (r.name || '').toLowerCase().trim() === (payload.material_name || '').toLowerCase().trim()
-      );
+      const isEthanol = (payload.material_type || '').toLowerCase() === 'ethanol';
+      // For ethanol: merge all deliveries into one master record regardless of product name variant
+      // (Lactonol, ENA, etc are the same physical ethanol stock for FIFO purposes)
+      const existingRM = isEthanol
+        ? allRM.find(r => (r.type || '').toLowerCase() === 'ethanol')
+        : allRM.find(r => (r.name || '').toLowerCase().trim() === (payload.material_name || '').toLowerCase().trim());
       // New lot entry to append
       const newLot = {
-        lot_number: payload.batch_number || null,
+        lot_number: payload.batch_number
+          ? `${payload.batch_number}${isEthanol && payload.material_name ? ' — ' + payload.material_name : ''}`
+          : (isEthanol && payload.material_name ? payload.material_name : null),
         date_received: payload.date_received,
         quantity_received: payload.quantity || 0,
         quantity_remaining: payload.quantity || 0,
