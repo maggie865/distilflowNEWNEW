@@ -96,13 +96,16 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
     if (!spiritRecipes.length || !velocity.length) return [];
 
     // Compute actuals from historical completed distillation runs
-    const completedRuns = distillationRuns.filter(r => r.status === 'completed' && r.hearts_volume > 0);
+    const completedRuns = distillationRuns.filter(r => r.status === 'completed' && r.input_volume > 0);
     const avgHeartsVol = completedRuns.length
       ? completedRuns.reduce((s, r) => s + (r.hearts_volume || 0), 0) / completedRuns.length : null;
     const avgHeartsLals = completedRuns.length
       ? completedRuns.reduce((s, r) => s + ((r.hearts_volume || 0) * (r.hearts_abv || 0) / 100), 0) / completedRuns.length : null;
     const avgInputVol = completedRuns.length
       ? completedRuns.reduce((s, r) => s + (r.input_volume || 0), 0) / completedRuns.length : null;
+    // Input LALs = what you actually need to purchase/have on hand
+    const avgInputLals = completedRuns.length
+      ? completedRuns.reduce((s, r) => s + (r.input_lals || (r.input_volume || 0) * (r.input_abv || 96) / 100), 0) / completedRuns.length : null;
 
     // Avg bottles per distillation batch from bottling runs
     const batchBottles = {};
@@ -121,13 +124,24 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
     const totalForecastLals = totalForecast700 * 0.700 * 0.40 + totalForecast200 * 0.200 * 0.40;
 
     // Batches needed — use actual avg if available, else use recipe base_ethanol_volume
-    const recipe = spiritRecipes[0]; // use first spirit recipe
-    const heartsLalsPerBatch = avgHeartsLals || (recipe.base_ethanol_volume ? recipe.base_ethanol_volume * (recipe.base_ethanol_abv || 96) / 100 * ((recipe.expected_yield_percent || 85) / 100) : null);
-    const bottlesPerBatch = avgBottlesPerBatch || (heartsLalsPerBatch ? Math.round(heartsLalsPerBatch / 0.40 / 0.700) : null);
-    const batchesNeeded = bottlesPerBatch ? Math.ceil((totalForecast700 + totalForecast200) / bottlesPerBatch) : null;
-    const totalLalsNeeded = batchesNeeded && heartsLalsPerBatch ? batchesNeeded * heartsLalsPerBatch : totalForecastLals;
-    // Convert LALs to litres of 96% ethanol
-    const litres96Needed = totalLalsNeeded / 0.96;
+    const recipe = spiritRecipes[0];
+    // Input LALs per batch: what you actually need to charge the still with
+    const inputLalsPerBatch = avgInputLals
+      || (recipe.base_ethanol_volume ? recipe.base_ethanol_volume * (recipe.base_ethanol_abv || 96) / 100 : null);
+    // Input volume per batch in litres of 96% ethanol
+    const inputVol96PerBatch = avgInputVol || (inputLalsPerBatch ? inputLalsPerBatch / 0.96 : null);
+    // Hearts LALs per batch (for reference only — output)
+    const heartsLalsPerBatch = avgHeartsLals
+      || (inputLalsPerBatch ? inputLalsPerBatch * ((recipe.expected_yield_percent || 85) / 100) : null);
+    const bottlesPerBatch = avgBottlesPerBatch
+      || (heartsLalsPerBatch ? Math.round(heartsLalsPerBatch / 0.40 / 0.700) : null);
+    const batchesNeeded = bottlesPerBatch
+      ? Math.ceil((totalForecast700 + totalForecast200) / bottlesPerBatch) : null;
+    // Total INPUT LALs needed = what you need to source/have on hand
+    const totalInputLalsNeeded = batchesNeeded && inputLalsPerBatch
+      ? batchesNeeded * inputLalsPerBatch : totalForecastLals / ((recipe.expected_yield_percent || 85) / 100);
+    // Litres of 96% ethanol needed
+    const litres96Needed = totalInputLalsNeeded / 0.96;
 
     // Ethanol on hand
     const ethanolRM = rawMaterials.filter(r => (r.type || '').toLowerCase() === 'ethanol');
@@ -138,13 +152,15 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
       recipe,
       batchesNeeded,
       bottlesPerBatch: bottlesPerBatch ? Math.round(bottlesPerBatch) : null,
+      inputLalsPerBatch: inputLalsPerBatch ? parseFloat(inputLalsPerBatch.toFixed(2)) : null,
+      inputVol96PerBatch: inputVol96PerBatch ? parseFloat(inputVol96PerBatch.toFixed(1)) : null,
       heartsLalsPerBatch: heartsLalsPerBatch ? parseFloat(heartsLalsPerBatch.toFixed(2)) : null,
       avgInputVol: avgInputVol ? parseFloat(avgInputVol.toFixed(1)) : null,
-      totalLalsNeeded: parseFloat(totalLalsNeeded.toFixed(2)),
+      totalInputLalsNeeded: parseFloat(totalInputLalsNeeded.toFixed(2)),
       litres96Needed: parseFloat(litres96Needed.toFixed(2)),
       ethanolLalsOnHand: parseFloat(ethanolLalsOnHand.toFixed(2)),
       ethanolLitresOnHand: parseFloat(ethanolLitresOnHand.toFixed(2)),
-      ethanolShortfallLals: Math.max(0, parseFloat((totalLalsNeeded - ethanolLalsOnHand).toFixed(2))),
+      ethanolShortfallLals: Math.max(0, parseFloat((totalInputLalsNeeded - ethanolLalsOnHand).toFixed(2))),
       ethanolShortfall96: Math.max(0, parseFloat((litres96Needed - ethanolLitresOnHand).toFixed(2))),
       dataSource: completedRuns.length > 0 ? `Based on ${completedRuns.length} actual distillation runs` : 'Estimated from recipe (no completed runs yet)',
     }];
@@ -347,14 +363,15 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
                   {plan.bottlesPerBatch && <p className="text-xs text-muted-foreground">~{plan.bottlesPerBatch.toLocaleString()} bottles/batch</p>}
                 </div>
                 <div className="rounded-lg bg-muted p-3">
-                  <p className="text-xs text-muted-foreground">LALs needed (hearts)</p>
-                  <p className="text-2xl font-bold text-primary">{plan.totalLalsNeeded}</p>
-                  {plan.heartsLalsPerBatch && <p className="text-xs text-muted-foreground">~{plan.heartsLalsPerBatch} LALs/batch</p>}
+                  <p className="text-xs text-muted-foreground">Input LALs needed</p>
+                  <p className="text-2xl font-bold text-primary">{plan.totalInputLalsNeeded}</p>
+                  {plan.inputLalsPerBatch && <p className="text-xs text-muted-foreground">~{plan.inputLalsPerBatch} LALs/batch input</p>}
+                  {plan.heartsLalsPerBatch && <p className="text-xs text-muted-foreground/70">(~{plan.heartsLalsPerBatch} hearts LALs out)</p>}
                 </div>
                 <div className="rounded-lg bg-muted p-3">
-                  <p className="text-xs text-muted-foreground">96% ethanol needed</p>
+                  <p className="text-xs text-muted-foreground">96% ethanol needed (input)</p>
                   <p className="text-2xl font-bold text-primary">{plan.litres96Needed}L</p>
-                  {plan.avgInputVol && <p className="text-xs text-muted-foreground">~{plan.avgInputVol}L/batch avg input</p>}
+                  {plan.inputVol96PerBatch && <p className="text-xs text-muted-foreground">~{plan.inputVol96PerBatch}L/batch</p>}
                 </div>
                 <div className={`rounded-lg p-3 ${plan.ethanolShortfallLals > 0 ? 'bg-red-50 border border-red-200' : 'bg-emerald-50 border border-emerald-200'}`}>
                   <p className="text-xs text-muted-foreground">Ethanol shortfall</p>
