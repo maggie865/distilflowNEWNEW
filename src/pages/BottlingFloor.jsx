@@ -272,19 +272,7 @@ export default function BottlingFloor() {
           });
         }
 
-        // Also create a WastageRecord for reporting (captures bottling losses in wastage report)
-        await db.WastageRecord.create({
-          date: new Date().toISOString().split('T')[0],
-          batch_number: activeRun.batch_code,
-          product_name: activeRun.product_name,
-          volume: parseFloat((tastingBottles * activeRun.bottle_size_ml / 1000).toFixed(3)),
-          abv: activeRun.abv,
-          lals: parseFloat(tastingLals.toFixed(4)),
-          reason: `Tasting/sample bottles — ${tastingBottles} × ${activeRun.bottle_size_ml}ml`,
-          source: 'bottling',
-          bottle_size_ml: activeRun.bottle_size_ml,
-          quantity_bottles: tastingBottles,
-        });
+        // Tasting/sample bottles are tracked as finished goods stock — not wastage
       }
 
       // 5. Deduct packaging materials from RawMaterial inventory using the recipe
