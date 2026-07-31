@@ -250,7 +250,15 @@ export default function StockReconciliation() {
   const loadEthanolRecordsMutation = useMutation({
     mutationFn: async () => {
       const allRM = await base44.entities.RawMaterial.list('name', 5000);
-      return allRM.filter(r => (r.type || '').toLowerCase() === 'ethanol');
+      // Include all ethanol records including ones with 'ethanol' in the name
+      return allRM.filter(r =>
+        (r.type || '').toLowerCase() === 'ethanol' ||
+        (r.name || '').toLowerCase().includes('ethanol') ||
+        (r.name || '').toLowerCase().includes('lactonol') ||
+        (r.name || '').toLowerCase().includes('lactanol') ||
+        (r.name || '').toLowerCase().includes('neutral alcohol') ||
+        (r.name || '').toLowerCase().includes('ena')
+      );
     },
     onSuccess: (records) => {
       setEthanolRecords(records);
