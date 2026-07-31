@@ -53,6 +53,9 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
   const [lookbackMonths, setLookbackMonths] = useState(6);
   const [growthPct, setGrowthPct] = useState(10);
   const [safetyWeeks, setSafetyWeeks] = useState(4);
+  // Manual production split by bottle size — overrides velocity-based split for packaging
+  // Key: bottle size (e.g. 700), Value: % of total production (0-100)
+  const [productionSplitOverride, setProductionSplitOverride] = useState({});
 
   // ── 1. Sales velocity per product+size ────────────────────────────────────
   const velocity = useMemo(() => {
@@ -82,7 +85,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
         const e = monthly.slice(0, 3).reduce((s, v) => s + v, 0) / 3;
         return e > 0 ? ((r - e) / e * 100).toFixed(0) : null;
       })();
-      return { ...p, avg: Math.round(avg), forecastMonthly: Math.round(forecastMonthly), forecastTotal, safetyStock, onHand, needed: forecastTotal + safetyStock, trend };
+      return { ...p, avg: Math.round(avg), forecastMonthly: Math.round(forecastMonthly), forecastTotal, safetyStock, onHand, needed: forecastTotal + safetyStock, trend, byMonth: p.byMonth };
     }).filter(p => p.avg > 0).sort((a, b) => b.forecastTotal - a.forecastTotal);
   }, [dispatches, finishedGoods, lookbackMonths, forecastMonths, growthPct, safetyWeeks]);
 
@@ -232,12 +235,25 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
       ? plan.batchesNeeded * plan.bottlesPerBatch
       : velocity.reduce((s, v) => s + v.forecastTotal, 0); // fallback to sales forecast
 
-    // Split by size using the same ratio as sales velocity
+    // Split by size — use manual override if set, otherwise fall back to velocity ratio
     const totalVelocityBottles = velocity.reduce((s, v) => s + v.forecastTotal, 0);
+    const hasOverride = Object.keys(productionSplitOverride).length > 0;
     const productionBySize = {};
-    for (const sv of velocity) {
-      const ratio = totalVelocityBottles > 0 ? sv.forecastTotal / totalVelocityBottles : 0;
-      productionBySize[Number(sv.size)] = Math.round(totalProductionBottles * ratio);
+    if (hasOverride) {
+      // Use manual splits
+      const totalOverridePct = Object.values(productionSplitOverride).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+      for (const sv of velocity) {
+        const pct = parseFloat(productionSplitOverride[sv.size]) || 0;
+        // Normalise so splits always add to 100%
+        const ratio = totalOverridePct > 0 ? pct / totalOverridePct : 0;
+        productionBySize[Number(sv.size)] = Math.round(totalProductionBottles * ratio);
+      }
+    } else {
+      // Use velocity ratio
+      for (const sv of velocity) {
+        const ratio = totalVelocityBottles > 0 ? sv.forecastTotal / totalVelocityBottles : 0;
+        productionBySize[Number(sv.size)] = Math.round(totalProductionBottles * ratio);
+      }
     }
 
     for (const sv of velocity) {
@@ -288,7 +304,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
       shortfall: Math.max(0, r.totalNeeded - r.onHand),
       totalCost: Math.max(0, r.totalNeeded - r.onHand) * r.costPerUnit,
     })).sort((a, b) => b.shortfall - a.shortfall);
-  }, [velocity, recipes, rawMaterials]);
+  }, [velocity, recipes, rawMaterials, distillationPlan, productionSplitOverride]);
 
   const plan = distillationPlan[0];
   const totalProcurementCost = [...botanicalForecast, ...packagingForecast].reduce((s, i) => s + (i.totalCost || 0), 0);
@@ -329,6 +345,44 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
             </div>
           </div>
         </div>
+
+        {/* Production split override for packaging */}
+        {velocity.length > 0 && (
+          <div className="border-t border-border pt-4 mt-2">
+            <p className="text-xs font-semibold mb-2">Packaging production split <span className="text-muted-foreground font-normal">(override the % of each bottle size in your next production run — useful for new products with limited sales history)</span></p>
+            <div className="flex flex-wrap gap-4">
+              {velocity.map(sv => {
+                const totalV = velocity.reduce((s, v) => s + v.forecastTotal, 0);
+                const velocityPct = totalV > 0 ? Math.round(sv.forecastTotal / totalV * 100) : 0;
+                const dataMonths = Object.values(sv.byMonth || {}).filter(v => v > 0).length;
+                const isLowData = dataMonths < 3;
+                return (
+                  <div key={sv.size} className="flex items-center gap-2">
+                    <label className="text-xs whitespace-nowrap">
+                      {sv.size}ml
+                      {isLowData && <span className="ml-1 text-amber-600 text-xs" title={`Only ${dataMonths} months of data`}>⚠️</span>}
+                    </label>
+                    <input
+                      type="number" min="0" max="100"
+                      value={productionSplitOverride[sv.size] ?? ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setProductionSplitOverride(prev => val === '' ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== String(sv.size))) : { ...prev, [sv.size]: val });
+                      }}
+                      placeholder={`${velocityPct}%`}
+                      className="w-16 border border-border rounded px-2 py-1 text-xs text-center"
+                    />
+                    <span className="text-xs text-muted-foreground">%</span>
+                  </div>
+                );
+              })}
+              {Object.keys(productionSplitOverride).length > 0 && (
+                <button onClick={() => setProductionSplitOverride({})} className="text-xs text-muted-foreground underline">reset to velocity</button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Leave blank to use sales velocity ratios. ⚠️ = fewer than 3 months of data.</p>
+          </div>
+        )}
       </Card>
 
       {/* ── SECTION 1: Sales forecast ── */}
@@ -355,7 +409,12 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
                   <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground text-sm">No sales history found — dispatch records needed to forecast</TableCell></TableRow>
                 ) : velocity.map((v, i) => (
                   <TableRow key={i} className={getStatus(v.onHand, v.needed) === 'critical' ? 'bg-red-50' : getStatus(v.onHand, v.needed) === 'low' ? 'bg-amber-50/40' : ''}>
-                    <TableCell className="font-medium text-sm">{v.product_name}</TableCell>
+                    <TableCell className="font-medium text-sm">
+                      {v.product_name}
+                      {Object.values(v.byMonth || {}).filter(x => x > 0).length < 3 && (
+                        <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded" title="Fewer than 3 months of sales data — forecast may be unreliable">⚠️ low data</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm">{v.size}ml</TableCell>
                     <TableCell className="text-right text-sm">{v.avg.toLocaleString()}</TableCell>
                     <TableCell className="text-right text-sm">
