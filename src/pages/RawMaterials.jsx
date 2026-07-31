@@ -156,9 +156,29 @@ export default function RawMaterials() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => db.RawMaterial.update(id, data),
+    mutationFn: async ({ id, data }) => {
+      // recv- IDs are virtual items from Receiving records — create a real RawMaterial instead
+      if (String(id || '').startsWith('recv-')) {
+        await db.RawMaterial.create({
+          name: data.name,
+          type: data.type,
+          quantity: data.quantity,
+          unit: data.unit,
+          lals: data.lals,
+          abv_percent: data.abv_percent,
+          supplier: data.supplier,
+          cost_per_unit: data.cost_per_unit,
+          batch_number: data.batch_number,
+          date_received: data.date_received,
+          notes: data.notes,
+        });
+      } else {
+        await db.RawMaterial.update(id, data);
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
+      queryClient.invalidateQueries({ queryKey: ['receivings'] });
       setEditItem(null);
       toast.success('Material updated');
     },
