@@ -14,6 +14,11 @@ const isBoxItem = pkg =>
   pkg.type === 'carton' ||
   ['box','case','carton','shipper'].some(w => (pkg.name || '').toLowerCase().includes(w));
 
+// Normalise product name — strip trailing size suffixes like "200ml", "700ml"
+// so "London Dry Gin 200ml" and "London Dry Gin" at 200ml are treated as the same product
+const normaliseName = (name) =>
+  (name || '').replace(/\s*\d{3,4}ml\s*$/i, '').replace(/\s*\d{3,4}\s*$/i, '').trim();
+
 const STATUS = {
   critical: { label: 'Critical', cls: 'bg-red-100 text-red-700' },
   low:      { label: 'Low',      cls: 'bg-amber-100 text-amber-700' },
@@ -62,10 +67,6 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
     const months = Array.from({ length: lookbackMonths }, (_, i) =>
       isoMonth(subMonths(now, lookbackMonths - 1 - i))
     );
-    // Normalise product name — strip trailing size suffix like "200ml", "700ml", " 200", " 700"
-    const normaliseName = (name) =>
-      (name || '').replace(/\s*\d{3}ml\s*$/i, '').replace(/\s*\d{3}\s*$/i, '').trim();
-
     const map = {};
     for (const d of dispatches) {
       if (!d.dispatch_date || d.sample_dispatch) continue;
@@ -289,6 +290,10 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
         } else {
           const rm = rawMaterials.find(r => (r.name || '').toLowerCase().trim() === (pkg.name || '').toLowerCase().trim())
             || rawMaterials.find(r => { const n = (r.name || '').toLowerCase(); const p = (pkg.name || '').toLowerCase(); return n.includes(p) || p.includes(n); });
+          // On-hand for finished goods: sum across ALL name variants of this product+size
+          const fgOnHand = finishedGoods
+            .filter(g => normaliseName(g.product_name) === normaliseName(sv.product_name || '') && Number(g.bottle_size_ml) === size)
+            .reduce((s, g) => s + (g.quantity_bottles || 0), 0);
           results.push({
             key,
             name: pkg.name,
@@ -300,6 +305,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
             bottlesForecasted: bottlesToProduce,
             bottlesPerCase,
             onHand: rm?.quantity || 0,
+            fgOnHand,  // finished goods already in stock for this product
             costPerUnit: rm?.cost_per_unit || 0,
           });
         }
@@ -311,7 +317,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
       shortfall: Math.max(0, r.totalNeeded - r.onHand),
       totalCost: Math.max(0, r.totalNeeded - r.onHand) * r.costPerUnit,
     })).sort((a, b) => b.shortfall - a.shortfall);
-  }, [velocity, recipes, rawMaterials, distillationPlan, productionSplitOverride]);
+  }, [velocity, recipes, rawMaterials, distillationPlan, productionSplitOverride, finishedGoods]);
 
   const plan = distillationPlan[0];
   const totalProcurementCost = [...botanicalForecast, ...packagingForecast].reduce((s, i) => s + (i.totalCost || 0), 0);
@@ -546,10 +552,11 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
                     <TableHead>Item</TableHead>
                     <TableHead>Size</TableHead>
                     <TableHead>Basis</TableHead>
-                    <TableHead className="text-right">Forecast bottles</TableHead>
+                    <TableHead className="text-right">Bottles to produce</TableHead>
                     <TableHead className="text-right">Cases</TableHead>
-                    <TableHead className="text-right font-bold">Total needed</TableHead>
-                    <TableHead className="text-right">On hand</TableHead>
+                    <TableHead className="text-right font-bold">Pkg needed</TableHead>
+                    <TableHead className="text-right">Pkg on hand</TableHead>
+                    <TableHead className="text-right">FG in stock</TableHead>
                     <TableHead className="text-right">Shortfall</TableHead>
                     <TableHead className="text-right">Est. cost</TableHead>
                     <TableHead>Status</TableHead>
@@ -565,6 +572,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
                       <TableCell className="text-right text-sm text-muted-foreground">{p.casesNeeded ? p.casesNeeded.toLocaleString() : '—'}</TableCell>
                       <TableCell className="text-right font-bold text-sm">{p.totalNeeded.toLocaleString()}</TableCell>
                       <TableCell className="text-right text-sm">{p.onHand.toLocaleString()}</TableCell>
+                      <TableCell className="text-right text-sm text-muted-foreground">{(p.fgOnHand || 0) > 0 ? p.fgOnHand.toLocaleString() : '—'}</TableCell>
                       <TableCell className={`text-right text-sm font-semibold ${p.shortfall > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
                         {p.shortfall > 0 ? `-${p.shortfall.toLocaleString()}` : '✓'}
                       </TableCell>
