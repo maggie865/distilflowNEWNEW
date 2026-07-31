@@ -62,11 +62,18 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
     const months = Array.from({ length: lookbackMonths }, (_, i) =>
       isoMonth(subMonths(now, lookbackMonths - 1 - i))
     );
+    // Normalise product name — strip trailing size suffix like "200ml", "700ml", " 200", " 700"
+    const normaliseName = (name) =>
+      (name || '').replace(/\s*\d{3}ml\s*$/i, '').replace(/\s*\d{3}\s*$/i, '').trim();
+
     const map = {};
     for (const d of dispatches) {
       if (!d.dispatch_date || d.sample_dispatch) continue;
-      const key = `${d.product_name}||${d.bottle_size_ml || 700}`;
-      if (!map[key]) map[key] = { product_name: d.product_name, size: d.bottle_size_ml || 700, byMonth: {} };
+      const size = d.bottle_size_ml || 700;
+      const normName = normaliseName(d.product_name);
+      // Group by normalised name + size so "London Dry Gin 200ml" and "London Dry Gin" @ 200ml merge
+      const key = `${normName}||${size}`;
+      if (!map[key]) map[key] = { product_name: normName, size, byMonth: {} };
       const m = d.dispatch_date.slice(0, 7);
       map[key].byMonth[m] = (map[key].byMonth[m] || 0) + (d.quantity_bottles || 0);
     }
@@ -78,7 +85,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
       const forecastTotal = Math.ceil(forecastMonthly * forecastMonths);
       const safetyStock = Math.ceil(avg * (safetyWeeks / 4));
       const onHand = finishedGoods
-        .filter(g => g.product_name === p.product_name && Number(g.bottle_size_ml) === Number(p.size))
+        .filter(g => normaliseName(g.product_name) === p.product_name && Number(g.bottle_size_ml) === Number(p.size))
         .reduce((s, g) => s + (g.quantity_bottles || 0), 0);
       const trend = (() => {
         const r = monthly.slice(-3).reduce((s, v) => s + v, 0) / 3;
