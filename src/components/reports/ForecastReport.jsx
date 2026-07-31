@@ -95,17 +95,27 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
     const spiritRecipes = recipes.filter(r => r.recipe_type === 'spirit');
     if (!spiritRecipes.length || !velocity.length) return [];
 
-    // Compute actuals from historical completed distillation runs
+    // Group distillation runs by batch_number — a batch = multiple still runs
     const completedRuns = distillationRuns.filter(r => r.status === 'completed' && r.input_volume > 0);
-    const avgHeartsVol = completedRuns.length
-      ? completedRuns.reduce((s, r) => s + (r.hearts_volume || 0), 0) / completedRuns.length : null;
-    const avgHeartsLals = completedRuns.length
-      ? completedRuns.reduce((s, r) => s + ((r.hearts_volume || 0) * (r.hearts_abv || 0) / 100), 0) / completedRuns.length : null;
-    const avgInputVol = completedRuns.length
-      ? completedRuns.reduce((s, r) => s + (r.input_volume || 0), 0) / completedRuns.length : null;
-    // Input LALs = what you actually need to purchase/have on hand
-    const avgInputLals = completedRuns.length
-      ? completedRuns.reduce((s, r) => s + (r.input_lals || (r.input_volume || 0) * (r.input_abv || 96) / 100), 0) / completedRuns.length : null;
+    const distByBatch = {};
+    for (const r of completedRuns) {
+      const key = r.batch_number || r.id; // fall back to run ID if no batch
+      if (!distByBatch[key]) distByBatch[key] = [];
+      distByBatch[key].push(r);
+    }
+    const batchDistStats = Object.values(distByBatch).map(runs => ({
+      inputVol: runs.reduce((s, r) => s + (r.input_volume || 0), 0),
+      inputLals: runs.reduce((s, r) => s + (r.input_lals || (r.input_volume || 0) * (r.input_abv || 96) / 100), 0),
+      heartsVol: runs.reduce((s, r) => s + (r.hearts_volume || 0), 0),
+      heartsLals: runs.reduce((s, r) => s + ((r.hearts_volume || 0) * (r.hearts_abv || 0) / 100), 0),
+      runCount: runs.length,
+    }));
+    const numBatches = batchDistStats.length;
+    const avgInputVol = numBatches ? batchDistStats.reduce((s, b) => s + b.inputVol, 0) / numBatches : null;
+    const avgInputLals = numBatches ? batchDistStats.reduce((s, b) => s + b.inputLals, 0) / numBatches : null;
+    const avgHeartsVol = numBatches ? batchDistStats.reduce((s, b) => s + b.heartsVol, 0) / numBatches : null;
+    const avgHeartsLals = numBatches ? batchDistStats.reduce((s, b) => s + b.heartsLals, 0) / numBatches : null;
+    const avgRunsPerBatch = numBatches ? batchDistStats.reduce((s, b) => s + b.runCount, 0) / numBatches : null;
 
     // Avg bottles per distillation batch from bottling runs
     const batchBottles = {};
@@ -172,7 +182,10 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
       ethanolLitresOnHand: parseFloat(ethanolLitresOnHand.toFixed(2)),
       ethanolShortfallLals: Math.max(0, parseFloat((totalInputLalsNeeded - ethanolLalsOnHand).toFixed(2))),
       ethanolShortfall96: Math.max(0, parseFloat((litres96Needed - ethanolLitresOnHand).toFixed(2))),
-      dataSource: completedRuns.length > 0 ? `Based on ${completedRuns.length} actual distillation runs` : 'Estimated from recipe (no completed runs yet)',
+      avgRunsPerBatch: avgRunsPerBatch ? parseFloat(avgRunsPerBatch.toFixed(1)) : null,
+      dataSource: numBatches > 0
+        ? `Based on ${numBatches} batch${numBatches !== 1 ? 'es' : ''} (avg ${avgRunsPerBatch?.toFixed(1) || '?'} still run${avgRunsPerBatch !== 1 ? 's' : ''}/batch)`
+        : 'Estimated from recipe (no completed runs yet)',
     }];
   }, [velocity, recipes, distillationRuns, bottlingRuns, rawMaterials, forecastMonths]);
 
@@ -382,7 +395,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
                   <p className="text-xs text-muted-foreground">Spirit to charge still</p>
                   <p className="text-2xl font-bold text-primary">{plan.totalInputVolLitres ?? plan.litres96Needed}L</p>
                   <p className="text-xs text-muted-foreground">@ {plan.chargeAbvPct}% ABV</p>
-                  {plan.inputVolPerBatchLitres && <p className="text-xs text-muted-foreground/60">~{plan.inputVolPerBatchLitres}L/batch · {plan.litres96Needed}L equiv. at 96%</p>}
+                  {plan.inputVolPerBatchLitres && <p className="text-xs text-muted-foreground/60">~{plan.inputVolPerBatchLitres}L/batch · {plan.avgRunsPerBatch && `${plan.avgRunsPerBatch} run${plan.avgRunsPerBatch !== 1 ? 's' : ''} × ~${Math.round(plan.inputVolPerBatchLitres / plan.avgRunsPerBatch)}L each · `}{plan.litres96Needed}L equiv. at 96%</p>}
                 </div>
                 <div className={`rounded-lg p-3 ${plan.ethanolShortfallLals > 0 ? 'bg-red-50 border border-red-200' : 'bg-emerald-50 border border-emerald-200'}`}>
                   <p className="text-xs text-muted-foreground">Ethanol shortfall</p>
