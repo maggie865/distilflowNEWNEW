@@ -164,10 +164,16 @@ function EditDialog({ item, entity, fields, onClose, queryKey }) {
         }
       }
 
-      return entityMap[entity].update(item.id, latestForm);
+      // recv- IDs are virtual items — create a real record instead
+      if (String(item.id || '').startsWith('recv-')) {
+        await entityMap[entity].create(latestForm);
+      } else {
+        await entityMap[entity].update(item.id, latestForm);
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [queryKey] });
+      qc.invalidateQueries({ queryKey: ['receivings'] });
       onClose();
       // Show undo toast for 10 seconds
       toast('Record updated', {
