@@ -79,6 +79,87 @@ export default function StockReconciliation() {
   const [ethanolRecords, setEthanolRecords] = useState(null);  // null = not loaded
   const [selectedToMerge, setSelectedToMerge] = useState([]);
   const [masterName, setMasterName] = useState('Ethanol');
+  const [ethanolCleanupResult, setEthanolCleanupResult] = useState(null);
+
+  // One-time cleanup: dissolve the bad "Ethanol" merged record back into correct records
+  const ethanolCleanupMutation = useMutation({
+    mutationFn: async () => {
+      const allRM = await base44.entities.RawMaterial.list('name', 5000);
+      
+      // Find the bad merged "Ethanol" record (named exactly "Ethanol" with mixed lots)
+      const badRecord = allRM.find(r => (r.name || '').trim() === 'Ethanol' && (r.type || '').toLowerCase() === 'ethanol');
+      if (!badRecord) throw new Error('No record named exactly "Ethanol" found — may already be cleaned up');
+
+      const lots = Array.isArray(badRecord.lots) ? badRecord.lots : [];
+      
+      // Find correct target records
+      const lactonolRecord = allRM.find(r =>
+        r.id !== badRecord.id &&
+        (r.type || '').toLowerCase() === 'ethanol' &&
+        ((r.name || '').toLowerCase().includes('lactonol') || (r.name || '').toLowerCase().includes('lactanol'))
+      );
+      const wheatRecord = allRM.find(r =>
+        r.id !== badRecord.id &&
+        (r.type || '').toLowerCase() === 'ethanol' &&
+        ((r.name || '').toLowerCase().includes('wheat') || (r.name || '').toLowerCase().includes('neutral') || (r.name || '').toLowerCase().includes('ena'))
+      );
+
+      // Distribute lots to correct records
+      let lactonolLots = Array.isArray(lactonolRecord?.lots) ? [...lactonolRecord.lots] : [];
+      let wheatLots = Array.isArray(wheatRecord?.lots) ? [...wheatRecord.lots] : [];
+
+      for (const lot of lots) {
+        const lotNum = (lot.lot_number || '').toLowerCase();
+        const isWheat = lotNum.includes('wheat') || lotNum.includes('ens') || lotNum.includes('ena');
+        const isLactonol = lotNum.includes('lactonol') || lotNum.includes('lactanol') || lotNum.match(/^790009/);
+        
+        if (lot.quantity_remaining <= 0) continue; // skip depleted lots
+
+        if (isWheat && wheatRecord) {
+          wheatLots.push({ ...lot, lot_number: lot.lot_number?.replace('(depleted)', '').trim() });
+        } else if (lactonolRecord) {
+          lactonolLots.push({ ...lot, lot_number: lot.lot_number?.replace('(depleted)', '').trim() });
+        }
+      }
+
+      // Update lactonol record
+      if (lactonolRecord && lactonolLots.length > lactonolRecord.lots?.length) {
+        const addedQty = lots.filter(l => {
+          const ln = (l.lot_number || '').toLowerCase();
+          return !ln.includes('wheat') && !ln.includes('ens') && !ln.includes('ena') && l.quantity_remaining > 0;
+        }).reduce((s, l) => s + (l.quantity_remaining || 0), 0);
+        await base44.entities.RawMaterial.update(lactonolRecord.id, {
+          quantity: parseFloat(((lactonolRecord.quantity || 0) + addedQty).toFixed(4)),
+          lals: parseFloat(((lactonolRecord.lals || 0) + addedQty * 0.96).toFixed(4)),
+          lots: lactonolLots,
+        });
+      }
+
+      // Update wheat record
+      if (wheatRecord && wheatLots.length > (wheatRecord.lots?.length || 0)) {
+        const addedQty = lots.filter(l => {
+          const ln = (l.lot_number || '').toLowerCase();
+          return (ln.includes('wheat') || ln.includes('ens') || ln.includes('ena')) && l.quantity_remaining > 0;
+        }).reduce((s, l) => s + (l.quantity_remaining || 0), 0);
+        await base44.entities.RawMaterial.update(wheatRecord.id, {
+          quantity: parseFloat(((wheatRecord.quantity || 0) + addedQty).toFixed(4)),
+          lals: parseFloat(((wheatRecord.lals || 0) + addedQty * 0.96).toFixed(4)),
+          lots: wheatLots,
+        });
+      }
+
+      // Delete the bad merged record
+      await base44.entities.RawMaterial.delete(badRecord.id);
+      return { done: true };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rawMaterials'] });
+      qc.invalidateQueries({ queryKey: ['rawMaterials-ethanol'] });
+      setEthanolCleanupResult(true);
+      toast.success('Cleaned up — "Ethanol" record dissolved, lots moved to correct records');
+    },
+    onError: (e) => toast.error(e.message || 'Cleanup failed'),
+  });
   const [botanicalBackfillResult, setBotanicalBackfillResult] = useState(null);
 
   const botanicalBackfillMutation = useMutation({
@@ -437,6 +518,24 @@ export default function StockReconciliation() {
               : `✅ Populated lot history for ${botanicalBackfillResult.updated} of ${botanicalBackfillResult.total} botanical ingredients.`}
           </p>
         )}
+      </div>
+
+      {/* One-time cleanup: dissolve bad merged "Ethanol" record */}
+      <div className="border border-red-200 bg-red-50 rounded-lg p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span>⚠️</span>
+            <h3 className="font-semibold text-red-800 text-sm">Fix Bad Ethanol Merge</h3>
+          </div>
+          <Button size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-100"
+            onClick={() => { if (confirm('This will dissolve the "Ethanol" record and move its lots back to Lactonol Ethanol and Extra Neutral Alcohol. Continue?')) ethanolCleanupMutation.mutate(); }}
+            disabled={ethanolCleanupMutation.isPending || ethanolCleanupResult}>
+            {ethanolCleanupResult ? '✅ Done' : ethanolCleanupMutation.isPending ? 'Fixing...' : 'Fix Now'}
+          </Button>
+        </div>
+        <p className="text-xs text-red-700">
+          Removes the incorrectly merged "Ethanol" record and moves its 7900095318 lot (464.19L) into <strong>Lactonol Ethanol</strong>. The depleted wheat lot is discarded. Run once only.
+        </p>
       </div>
 
       {/* Merge Ethanol Records */}
