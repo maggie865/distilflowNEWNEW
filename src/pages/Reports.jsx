@@ -83,7 +83,12 @@ export default function Reports() {
   };
 
   // Filtered data for selected month
-  const monthWastage = wastage.filter(w => inRange(w.date));
+  // Exclude tasting/sample bottle wastage records — these are intentional, not losses
+  const monthWastage = wastage.filter(w =>
+    inRange(w.date) &&
+    !(w.reason || '').toLowerCase().includes('tasting') &&
+    !(w.reason || '').toLowerCase().includes('sample bottle')
+  );
   const monthReceiving = receiving.filter(r => inRange(r.date_received));
   const monthDispatches = dispatches.filter(d => inRange(d.dispatch_date));
   const warehouseDispatches = monthDispatches.filter(d => d.notes?.startsWith('[3PL]'));
