@@ -342,10 +342,16 @@ export default function Distillation() {
         const lalsUsed = payload.input_lals || (payload.input_volume * (payload.input_abv || 0) / 100);
         const inputVolUsed = payload.input_volume || 0;
 
-        // Find the single master ethanol record and deplete using FIFO lots
+        // Find the correct ethanol record by lot code or name match
+        const lotCode = (data.ethanol_lot_code || '').toLowerCase();
         const allRM = await base44.entities.RawMaterial.list('name', 5000);
-        const ethanolRecord = allRM.find(m => (m.type || '').toLowerCase() === 'ethanol')
-          || allRM.find(m => (m.name || '').toLowerCase().includes('ethanol'));
+        const ethanolRecord = allRM.find(m => {
+          if ((m.type || '').toLowerCase() !== 'ethanol') return false;
+          if (!lotCode) return true;
+          const mLots = Array.isArray(m.lots) ? m.lots : [];
+          if (mLots.some(l => (l.lot_number || '').toLowerCase().includes(lotCode))) return true;
+          return (m.name || '').toLowerCase().replace(/\s+/g,'').includes(lotCode.replace(/\s+/g,''));
+        }) || allRM.find(m => (m.type || '').toLowerCase() === 'ethanol');
 
         if (ethanolRecord) {
           const lots = Array.isArray(ethanolRecord.lots) && ethanolRecord.lots.length > 0
