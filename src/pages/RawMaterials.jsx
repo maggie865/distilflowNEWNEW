@@ -185,7 +185,10 @@ export default function RawMaterials() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => db.RawMaterial.delete(id),
+    mutationFn: (id) => {
+      if (String(id || '').startsWith('recv-')) throw new Error('Cannot delete a virtual item — it is generated from your Receiving records');
+      return db.RawMaterial.delete(id);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
       setDeleteItem(null);
