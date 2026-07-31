@@ -76,6 +76,9 @@ export default function StockReconciliation() {
   });
 
   const [ethanolMergeResult, setEthanolMergeResult] = useState(null);
+  const [ethanolRecords, setEthanolRecords] = useState(null);  // null = not loaded
+  const [selectedToMerge, setSelectedToMerge] = useState([]);
+  const [masterName, setMasterName] = useState('Ethanol');
   const [botanicalBackfillResult, setBotanicalBackfillResult] = useState(null);
 
   const botanicalBackfillMutation = useMutation({
@@ -163,24 +166,32 @@ export default function StockReconciliation() {
     onError: (e) => toast.error('Backfill failed: ' + e.message),
   });
 
-  const mergeEthanolMutation = useMutation({
+  const loadEthanolRecordsMutation = useMutation({
     mutationFn: async () => {
       const allRM = await base44.entities.RawMaterial.list('name', 5000);
-      const ethanolRecords = allRM.filter(r => (r.type || '').toLowerCase() === 'ethanol');
-      if (ethanolRecords.length <= 1) return { merged: 0, kept: ethanolRecords[0]?.name || 'none' };
+      return allRM.filter(r => (r.type || '').toLowerCase() === 'ethanol');
+    },
+    onSuccess: (records) => {
+      setEthanolRecords(records);
+      setSelectedToMerge([]);
+    },
+    onError: () => toast.error('Failed to load ethanol records'),
+  });
 
-      // Sort oldest first — keep first record as master
-      ethanolRecords.sort((a, b) => (a.date_received || a.created_date || '').localeCompare(b.date_received || b.created_date || ''));
-      const [master, ...duplicates] = ethanolRecords;
+  const mergeEthanolMutation = useMutation({
+    mutationFn: async ({ ids, name }) => {
+      if (ids.length < 2) throw new Error('Select at least 2 records to merge');
+      const allRM = await base44.entities.RawMaterial.list('name', 5000);
+      const toMerge = allRM.filter(r => ids.includes(r.id));
+      toMerge.sort((a, b) => (a.date_received || a.created_date || '').localeCompare(b.date_received || b.created_date || ''));
+      const [master, ...duplicates] = toMerge;
 
-      // Build merged lots array from all records
       const mergedLots = [];
-      for (const rec of ethanolRecords) {
+      for (const rec of toMerge) {
         const existingLots = Array.isArray(rec.lots) ? rec.lots : [];
         if (existingLots.length > 0) {
           mergedLots.push(...existingLots);
         } else {
-          // No lots yet — create a lot entry from the record itself
           mergedLots.push({
             lot_number: rec.batch_number || rec.name || 'Legacy stock',
             date_received: rec.date_received || null,
@@ -191,36 +202,31 @@ export default function StockReconciliation() {
           });
         }
       }
-
-      // Sort lots oldest first
       mergedLots.sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''));
 
-      const totalQty = ethanolRecords.reduce((s, r) => s + (r.quantity || 0), 0);
-      const totalLals = ethanolRecords.reduce((s, r) => s + (r.lals || 0), 0);
+      const totalQty = toMerge.reduce((s, r) => s + (r.quantity || 0), 0);
+      const totalLals = toMerge.reduce((s, r) => s + (r.lals || 0), 0);
 
-      // Update master record
       await base44.entities.RawMaterial.update(master.id, {
-        name: 'Ethanol',
+        name: name || master.name,
         quantity: parseFloat(totalQty.toFixed(4)),
         lals: parseFloat(totalLals.toFixed(4)),
         lots: mergedLots,
       });
-
-      // Delete duplicates
       for (const dup of duplicates) {
         await base44.entities.RawMaterial.delete(dup.id);
       }
-
-      return { merged: duplicates.length, kept: 'Ethanol', totalQty, totalLals, lots: mergedLots.length };
+      return { merged: duplicates.length, name: name || master.name, totalQty, lots: mergedLots.length };
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['rawMaterials'] });
       qc.invalidateQueries({ queryKey: ['rawMaterials-ethanol'] });
       setEthanolMergeResult(data);
-      if (data.merged === 0) toast.success('Ethanol is already a single record — nothing to merge');
-      else toast.success(`Merged ${data.merged + 1} ethanol records into one master record with ${data.lots} lots`);
+      setEthanolRecords(null);
+      setSelectedToMerge([]);
+      toast.success(`Merged into "${data.name}" — ${data.lots} lots, ${data.totalQty.toFixed(2)}L total`);
     },
-    onError: () => toast.error('Merge failed'),
+    onError: (e) => toast.error(e.message || 'Merge failed'),
   });
 
   const { data: finishedGoods = [], isLoading } = useQuery({
@@ -438,18 +444,70 @@ export default function StockReconciliation() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-blue-700">🧪</span>
-            <h3 className="font-semibold text-blue-800 text-sm">Merge Ethanol into Single Record</h3>
+            <h3 className="font-semibold text-blue-800 text-sm">Merge Ethanol Records</h3>
           </div>
-          <Button size="sm" variant="outline" onClick={() => mergeEthanolMutation.mutate()} disabled={mergeEthanolMutation.isPending}>
-            {mergeEthanolMutation.isPending ? 'Merging...' : 'Merge Ethanol Records'}
-          </Button>
+          {!ethanolRecords && (
+            <Button size="sm" variant="outline" onClick={() => loadEthanolRecordsMutation.mutate()} disabled={loadEthanolRecordsMutation.isPending}>
+              {loadEthanolRecordsMutation.isPending ? 'Loading...' : 'Show Ethanol Records'}
+            </Button>
+          )}
+          {ethanolRecords && (
+            <Button size="sm" variant="ghost" onClick={() => setEthanolRecords(null)}>Close</Button>
+          )}
         </div>
-        <p className="text-xs text-blue-700">If you have multiple ethanol records (Lactonol, ENA, etc), this merges them into a single "Ethanol" record with each delivery tracked as a separate lot. Run once.</p>
-        {ethanolMergeResult && ethanolMergeResult.merged === 0 && (
-          <p className="text-xs text-emerald-700 font-medium">✅ Ethanol is already a single record.</p>
+        <p className="text-xs text-blue-700">Select which ethanol records to merge into one master record with lot tracking. Keep different ethanol types (e.g. wheat vs corn) as separate records by not selecting them together.</p>
+        {ethanolRecords && (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              {ethanolRecords.map(r => (
+                <label key={r.id} className="flex items-center gap-3 p-2.5 bg-white border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-50">
+                  <input
+                    type="checkbox"
+                    checked={selectedToMerge.includes(r.id)}
+                    onChange={e => setSelectedToMerge(prev => e.target.checked ? [...prev, r.id] : prev.filter(id => id !== r.id))}
+                    className="w-4 h-4"
+                  />
+                  <div className="flex-1 text-sm">
+                    <span className="font-medium">{r.name}</span>
+                    <span className="text-muted-foreground ml-2">{(r.quantity || 0).toFixed(2)}L · {(r.lals || 0).toFixed(2)} LALs</span>
+                    {r.batch_number && <span className="text-muted-foreground ml-2">· {r.batch_number}</span>}
+                    {r.supplier && <span className="text-muted-foreground ml-2">· {r.supplier}</span>}
+                    {Array.isArray(r.lots) && r.lots.length > 0 && <span className="text-blue-600 ml-2">· {r.lots.length} lots</span>}
+                  </div>
+                </label>
+              ))}
+            </div>
+            {selectedToMerge.length >= 2 && (
+              <div className="space-y-2 pt-1 border-t border-blue-200">
+                <div>
+                  <label className="text-xs font-semibold text-blue-800">Master record name</label>
+                  <input
+                    value={masterName}
+                    onChange={e => setMasterName(e.target.value)}
+                    className="mt-1 w-full border border-blue-300 rounded-md px-2 py-1.5 text-sm bg-white"
+                    placeholder="e.g. Ethanol (Lactonol)"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={() => mergeEthanolMutation.mutate({ ids: selectedToMerge, name: masterName })}
+                  disabled={mergeEthanolMutation.isPending}
+                >
+                  {mergeEthanolMutation.isPending ? 'Merging...' : `Merge ${selectedToMerge.length} selected records into "${masterName}"`}
+                </Button>
+              </div>
+            )}
+            {selectedToMerge.length === 1 && (
+              <p className="text-xs text-blue-600">Select at least one more record to merge.</p>
+            )}
+            {selectedToMerge.length === 0 && (
+              <p className="text-xs text-blue-600">Tick the records you want to merge together. Unticked records stay separate.</p>
+            )}
+          </div>
         )}
-        {ethanolMergeResult && ethanolMergeResult.merged > 0 && (
-          <p className="text-xs text-emerald-700 font-medium">✅ Merged into one record: {ethanolMergeResult.totalQty?.toFixed(2)}L / {ethanolMergeResult.totalLals?.toFixed(2)} LALs across {ethanolMergeResult.lots} lots.</p>
+        {ethanolMergeResult && (
+          <p className="text-xs text-emerald-700 font-medium">✅ Merged into "{ethanolMergeResult.name}": {ethanolMergeResult.totalQty?.toFixed(2)}L across {ethanolMergeResult.lots} lots.</p>
         )}
       </div>
 
