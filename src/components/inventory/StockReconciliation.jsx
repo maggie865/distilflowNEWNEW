@@ -75,6 +75,61 @@ export default function StockReconciliation() {
     onError: () => toast.error('Merge failed'),
   });
 
+  const [botanicalBackfillResult, setBotanicalBackfillResult] = useState(null);
+  const botanicalBackfillMutation = useMutation({
+    mutationFn: async () => {
+      const [allReceivings, allRM] = await Promise.all([
+        base44.entities.Receiving.list('-date_received', 5000),
+        base44.entities.RawMaterial.list('name', 5000),
+      ]);
+      const botanicalReceivings = allReceivings.filter(r => (r.material_type || '').toLowerCase().startsWith('botanical'));
+      const byMaterial = {};
+      for (const r of botanicalReceivings) {
+        const key = (r.material_name || '').toLowerCase().trim();
+        if (!byMaterial[key]) byMaterial[key] = [];
+        byMaterial[key].push(r);
+      }
+      let updated = 0;
+      for (const [key, receivings] of Object.entries(byMaterial)) {
+        const rm = allRM.find(m => (m.name || '').toLowerCase().trim() === key);
+        if (!rm) continue;
+        const existingLots = Array.isArray(rm.lots) ? rm.lots : [];
+        if (existingLots.length > 0) continue;
+        receivings.sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''));
+        const lots = receivings.map(r => ({
+          lot_number: r.batch_number || null,
+          date_received: r.date_received,
+          quantity_received: r.quantity || 0,
+          quantity_remaining: r.quantity || 0,
+          supplier: r.supplier_name || null,
+          cost_per_unit: r.cost_per_unit || null,
+          receiving_id: r.id,
+        }));
+        const currentQty = rm.quantity || 0;
+        let remainingToAllocate = currentQty;
+        for (let i = lots.length - 1; i >= 0; i--) {
+          const take = Math.min(lots[i].quantity_received, remainingToAllocate);
+          lots[i] = { ...lots[i], quantity_remaining: parseFloat(take.toFixed(4)) };
+          remainingToAllocate -= take;
+          if (remainingToAllocate <= 0) {
+            for (let j = i - 1; j >= 0; j--) lots[j] = { ...lots[j], quantity_remaining: 0 };
+            break;
+          }
+        }
+        await base44.entities.RawMaterial.update(rm.id, { lots });
+        updated++;
+      }
+      return { updated, total: Object.keys(byMaterial).length };
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['rawMaterials'] });
+      setBotanicalBackfillResult(data);
+      if (data.updated === 0) toast.success('All botanical lots already populated');
+      else toast.success(`Backfilled lot history for ${data.updated} botanical ingredients`);
+    },
+    onError: (e) => toast.error('Backfill failed: ' + e.message),
+  });
+
   const [ethanolResetDone, setEthanolResetDone] = useState(false);
 
   const { data: finishedGoods = [], isLoading } = useQuery({
