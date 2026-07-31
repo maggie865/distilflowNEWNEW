@@ -220,27 +220,43 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
     });
   }, [distillationPlan, rawMaterials]);
 
-  // ── 4. Packaging forecast ─────────────────────────────────────────────────
+  // ── 4. Packaging forecast — based on production plan (bottles to produce) ──
   const packagingForecast = useMemo(() => {
     const results = [];
     const packagingRecipes = recipes.filter(r => r.recipe_type === 'packaging');
+    const plan = distillationPlan[0];
+
+    // Work out bottles to PRODUCE per size using velocity ratio applied to total production
+    // Total production = batchesNeeded × avgBottlesPerBatch
+    const totalProductionBottles = plan?.batchesNeeded && plan?.bottlesPerBatch
+      ? plan.batchesNeeded * plan.bottlesPerBatch
+      : velocity.reduce((s, v) => s + v.forecastTotal, 0); // fallback to sales forecast
+
+    // Split by size using the same ratio as sales velocity
+    const totalVelocityBottles = velocity.reduce((s, v) => s + v.forecastTotal, 0);
+    const productionBySize = {};
+    for (const sv of velocity) {
+      const ratio = totalVelocityBottles > 0 ? sv.forecastTotal / totalVelocityBottles : 0;
+      productionBySize[Number(sv.size)] = Math.round(totalProductionBottles * ratio);
+    }
 
     for (const sv of velocity) {
       const size = Number(sv.size);
+      const bottlesToProduce = productionBySize[size] || sv.forecastTotal;
+
       // Find packaging recipe matching this bottle size
       const pkgRecipe = packagingRecipes.find(r => r.name?.toLowerCase().includes(String(size)));
       if (!pkgRecipe?.packaging?.length) continue;
 
       const bottlesPerCase = pkgRecipe.bottles_per_case || 6;
-      const casesNeeded = Math.ceil(sv.forecastTotal / bottlesPerCase);
+      const casesNeeded = Math.ceil(bottlesToProduce / bottlesPerCase);
 
       for (const pkg of pkgRecipe.packaging) {
         if (!pkg.name) continue;
-        // Key distinction: boxes/cartons = 1 per CASE; everything else = 1 per BOTTLE
         const isBox = isBoxItem(pkg);
         const totalNeeded = isBox
           ? Math.ceil((pkg.quantity || 1) * casesNeeded)
-          : Math.ceil((pkg.quantity || 1) * sv.forecastTotal);
+          : Math.ceil((pkg.quantity || 1) * bottlesToProduce);
 
         const key = `${pkg.name}||${size}`;
         const existing = results.find(r => r.key === key);
@@ -258,7 +274,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
             unit: pkg.unit || 'units',
             totalNeeded,
             casesNeeded: isBox ? casesNeeded : null,
-            bottlesForecasted: sv.forecastTotal,
+            bottlesForecasted: bottlesToProduce,
             bottlesPerCase,
             onHand: rm?.quantity || 0,
             costPerUnit: rm?.cost_per_unit || 0,
@@ -501,7 +517,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
             )}
           </Card>
         )}
-        <p className="text-xs text-muted-foreground">Boxes/cartons deducted at 1 per case. All other items at 1 per bottle. Bottles per case from packaging recipe.</p>
+        <p className="text-xs text-muted-foreground">Based on production plan ({distillationPlan[0]?.batchesNeeded ? `${distillationPlan[0].batchesNeeded} batches × ~${distillationPlan[0].bottlesPerBatch} bottles/batch` : 'sales forecast'}). Boxes/cartons at 1 per case, all other items at 1 per bottle.</p>
       </Section>
     </div>
   );
