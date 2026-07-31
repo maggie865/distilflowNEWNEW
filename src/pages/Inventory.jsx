@@ -132,7 +132,7 @@ function EditDialog({ item, entity, fields, onClose, queryKey }) {
   React.useEffect(() => { formRef.current = form; }, [form]);
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const entityMap = { RawMaterial: base44.entities.RawMaterial, FinishedGood: base44.entities.FinishedGood };
       // Use ref to get latest form values — avoids stale closure bug
       const latestForm = { ...formRef.current };
@@ -651,6 +651,7 @@ function RawMaterialRow({ m, onOpen }) {
 }
 
 export default function Inventory() {
+  const qc = useQueryClient();
   const [dialog, setDialog] = useState(null); // { type: 'adjust'|'edit'|'delete', item, entity, queryKey }
   const [rawPage, setRawPage] = useState(1);
   const [rawPageSize, setRawPageSize] = useState(50);
