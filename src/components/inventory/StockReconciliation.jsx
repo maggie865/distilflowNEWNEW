@@ -268,10 +268,15 @@ export default function StockReconciliation() {
   });
 
   const mergeEthanolMutation = useMutation({
-    mutationFn: async ({ ids, name }) => {
+    mutationFn: async ({ ids, names, name }) => {
       if (ids.length < 2) throw new Error('Select at least 2 records to merge');
       const allRM = await base44.entities.RawMaterial.list('name', 5000);
-      const toMerge = allRM.filter(r => ids.includes(r.id));
+      // Match by ID first, then fall back to name matching for recv- virtual items
+      const toMerge = allRM.filter(r =>
+        ids.includes(r.id) ||
+        (names || []).some(n => (r.name || '').toLowerCase().trim() === (n || '').toLowerCase().trim())
+      );
+      if (toMerge.length < 2) throw new Error(`Could not find ${ids.length} real DB records to merge. Found: ${toMerge.map(r=>r.name).join(', ') || 'none'}. Make sure you have saved these as real records first.`);
       toMerge.sort((a, b) => (a.date_received || a.created_date || '').localeCompare(b.date_received || b.created_date || ''));
       const [master, ...duplicates] = toMerge;
 
@@ -566,25 +571,35 @@ export default function StockReconciliation() {
         {ethanolRecords && (
           <div className="space-y-3">
             <div className="space-y-2">
-              {ethanolRecords.map(r => (
-                <label key={r.id} className="flex items-center gap-3 p-2.5 bg-white border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-50">
-                  <input
-                    type="checkbox"
-                    checked={selectedToMerge.includes(r.id)}
-                    onChange={e => setSelectedToMerge(prev => e.target.checked ? [...prev, r.id] : prev.filter(id => id !== r.id))}
-                    className="w-4 h-4"
-                  />
-                  <div className="flex-1 text-sm">
-                    <span className="font-medium">{r.name}</span>
-                    <span className="text-muted-foreground ml-2">{(r.quantity || 0).toFixed(2)}L · {(r.lals || 0).toFixed(2)} LALs</span>
-                    {r.batch_number && <span className="text-muted-foreground ml-2">· {r.batch_number}</span>}
-                    {r.supplier && <span className="text-muted-foreground ml-2">· {r.supplier}</span>}
-                    {Array.isArray(r.lots) && r.lots.length > 0 && <span className="text-blue-600 ml-2">· {r.lots.length} lots</span>}
-                  </div>
-                </label>
-              ))}
+              {ethanolRecords.map(r => {
+                const isVirtual = String(r.id || '').startsWith('recv-');
+                const isSelected = selectedToMerge.includes(r.id);
+                return (
+                  <label key={r.id} className={`flex items-center gap-3 p-2.5 bg-white border rounded-lg cursor-pointer hover:bg-blue-50 ${isVirtual ? 'border-amber-300 bg-amber-50' : 'border-blue-200'}`}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={e => setSelectedToMerge(prev => e.target.checked ? [...prev, r.id] : prev.filter(id => id !== r.id))}
+                      className="w-4 h-4"
+                    />
+                    <div className="flex-1 text-sm">
+                      <span className="font-medium">{r.name}</span>
+                      {isVirtual && <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">virtual — save as real record first</span>}
+                      <span className="text-muted-foreground ml-2">{(r.quantity || 0).toFixed(2)}L · {(r.lals || 0).toFixed(2)} LALs</span>
+                      {r.batch_number && <span className="text-muted-foreground ml-2">· {r.batch_number}</span>}
+                      {r.supplier && <span className="text-muted-foreground ml-2">· {r.supplier}</span>}
+                      {Array.isArray(r.lots) && r.lots.length > 0 && <span className="text-blue-600 ml-2">· {r.lots.length} lots</span>}
+                    </div>
+                  </label>
+                );
+              })}
             </div>
-            {selectedToMerge.length >= 2 && (
+            {ethanolRecords.some(r => String(r.id || '').startsWith('recv-')) && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                ⚠️ Records marked "virtual" exist only in your Receivals, not as real inventory records. Go to <strong>Raw Materials</strong> and click Edit → Save on each one to convert it to a real record before merging.
+              </p>
+            )}
+            {selectedToMerge.length >= 2 && !selectedToMerge.some(id => String(id).startsWith('recv-')) && (
               <div className="space-y-2 pt-1 border-t border-blue-200">
                 <div>
                   <label className="text-xs font-semibold text-blue-800">Master record name</label>
@@ -592,18 +607,28 @@ export default function StockReconciliation() {
                     value={masterName}
                     onChange={e => setMasterName(e.target.value)}
                     className="mt-1 w-full border border-blue-300 rounded-md px-2 py-1.5 text-sm bg-white"
-                    placeholder="e.g. Ethanol (Lactonol)"
+                    placeholder="e.g. Lactonol Ethanol"
                   />
                 </div>
                 <Button
                   size="sm"
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                  onClick={() => mergeEthanolMutation.mutate({ ids: selectedToMerge, name: masterName })}
+                  onClick={() => {
+                    const selectedRecords = ethanolRecords.filter(r => selectedToMerge.includes(r.id));
+                    mergeEthanolMutation.mutate({
+                      ids: selectedToMerge,
+                      names: selectedRecords.map(r => r.name),
+                      name: masterName,
+                    });
+                  }}
                   disabled={mergeEthanolMutation.isPending}
                 >
                   {mergeEthanolMutation.isPending ? 'Merging...' : `Merge ${selectedToMerge.length} selected records into "${masterName}"`}
                 </Button>
               </div>
+            )}
+            {selectedToMerge.some(id => String(id).startsWith('recv-')) && (
+              <p className="text-xs text-red-600">Cannot merge virtual records — convert them to real records first (edit and save in Raw Materials).</p>
             )}
             {selectedToMerge.length === 1 && (
               <p className="text-xs text-blue-600">Select at least one more record to merge.</p>
