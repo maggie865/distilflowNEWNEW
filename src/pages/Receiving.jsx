@@ -274,11 +274,25 @@ export default function Receiving() {
       const TYPE_MAP = { 'Ethanol': 'ethanol', 'Botanicals': 'botanical', 'Packaging': 'packaging', 'Grain': 'grain', 'Sugar': 'sugar', 'Water': 'water', 'Flavoring': 'flavoring', 'Other': 'other' };
       const allRM = await base44.entities.RawMaterial.list('name', 5000);
       const isEthanol = (payload.material_type || '').toLowerCase() === 'ethanol';
-      // For ethanol: merge all deliveries into one master record regardless of product name variant
-      // (Lactonol, ENA, etc are the same physical ethanol stock for FIFO purposes)
+      // For ethanol: match by name similarity so Lactonol deliveries go into Lactonol record
+      // and wheat/ENA deliveries go into their own record — don't blindly merge all ethanol types
+      const incomingName = (payload.material_name || '').toLowerCase().trim();
       const existingRM = isEthanol
-        ? allRM.find(r => (r.type || '').toLowerCase() === 'ethanol')
-        : allRM.find(r => (r.name || '').toLowerCase().trim() === (payload.material_name || '').toLowerCase().trim());
+        ? allRM.find(r => (r.type || '').toLowerCase() === 'ethanol' &&
+            (r.name || '').toLowerCase().trim() === incomingName) ||
+          allRM.find(r => (r.type || '').toLowerCase() === 'ethanol' && (() => {
+            const rn = (r.name || '').toLowerCase();
+            // Match if both are Lactonol variants
+            const lactonolIn = incomingName.includes('lactonol') || incomingName.includes('lactanol');
+            const lactonolRec = rn.includes('lactonol') || rn.includes('lactanol');
+            if (lactonolIn && lactonolRec) return true;
+            // Match if both are wheat/ENA variants
+            const wheatIn = incomingName.includes('wheat') || incomingName.includes('ena') || incomingName.includes('neutral');
+            const wheatRec = rn.includes('wheat') || rn.includes('ena') || rn.includes('neutral');
+            if (wheatIn && wheatRec) return true;
+            return false;
+          })())
+        : allRM.find(r => (r.name || '').toLowerCase().trim() === incomingName);
       // New lot entry to append
       const newLot = {
         lot_number: payload.batch_number
