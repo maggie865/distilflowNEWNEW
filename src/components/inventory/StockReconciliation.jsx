@@ -75,253 +75,7 @@ export default function StockReconciliation() {
     onError: () => toast.error('Merge failed'),
   });
 
-  const [ethanolMergeResult, setEthanolMergeResult] = useState(null);
-  const [ethanolRecords, setEthanolRecords] = useState(null);  // null = not loaded
-  const [selectedToMerge, setSelectedToMerge] = useState([]);
-  const [masterName, setMasterName] = useState('Ethanol');
-  const [ethanolCleanupResult, setEthanolCleanupResult] = useState(null);
-
-  // One-time cleanup: dissolve the bad "Ethanol" merged record back into correct records
-  const ethanolCleanupMutation = useMutation({
-    mutationFn: async () => {
-      const allRM = await base44.entities.RawMaterial.list('name', 5000);
-      
-      // Find the bad merged "Ethanol" record (named exactly "Ethanol" with mixed lots)
-      const badRecord = allRM.find(r => (r.name || '').trim() === 'Ethanol' && (r.type || '').toLowerCase() === 'ethanol');
-      if (!badRecord) throw new Error('No record named exactly "Ethanol" found — may already be cleaned up');
-
-      const lots = Array.isArray(badRecord.lots) ? badRecord.lots : [];
-      
-      // Find correct target records
-      const lactonolRecord = allRM.find(r =>
-        r.id !== badRecord.id &&
-        (r.type || '').toLowerCase() === 'ethanol' &&
-        ((r.name || '').toLowerCase().includes('lactonol') || (r.name || '').toLowerCase().includes('lactanol'))
-      );
-      const wheatRecord = allRM.find(r =>
-        r.id !== badRecord.id &&
-        (r.type || '').toLowerCase() === 'ethanol' &&
-        ((r.name || '').toLowerCase().includes('wheat') || (r.name || '').toLowerCase().includes('neutral') || (r.name || '').toLowerCase().includes('ena'))
-      );
-
-      // Distribute lots to correct records
-      let lactonolLots = Array.isArray(lactonolRecord?.lots) ? [...lactonolRecord.lots] : [];
-      let wheatLots = Array.isArray(wheatRecord?.lots) ? [...wheatRecord.lots] : [];
-
-      for (const lot of lots) {
-        const lotNum = (lot.lot_number || '').toLowerCase();
-        const isWheat = lotNum.includes('wheat') || lotNum.includes('ens') || lotNum.includes('ena');
-        const isLactonol = lotNum.includes('lactonol') || lotNum.includes('lactanol') || lotNum.match(/^790009/);
-        
-        if (lot.quantity_remaining <= 0) continue; // skip depleted lots
-
-        if (isWheat && wheatRecord) {
-          wheatLots.push({ ...lot, lot_number: lot.lot_number?.replace('(depleted)', '').trim() });
-        } else if (lactonolRecord) {
-          lactonolLots.push({ ...lot, lot_number: lot.lot_number?.replace('(depleted)', '').trim() });
-        }
-      }
-
-      // Update lactonol record
-      if (lactonolRecord && lactonolLots.length > lactonolRecord.lots?.length) {
-        const addedQty = lots.filter(l => {
-          const ln = (l.lot_number || '').toLowerCase();
-          return !ln.includes('wheat') && !ln.includes('ens') && !ln.includes('ena') && l.quantity_remaining > 0;
-        }).reduce((s, l) => s + (l.quantity_remaining || 0), 0);
-        await base44.entities.RawMaterial.update(lactonolRecord.id, {
-          quantity: parseFloat(((lactonolRecord.quantity || 0) + addedQty).toFixed(4)),
-          lals: parseFloat(((lactonolRecord.lals || 0) + addedQty * 0.96).toFixed(4)),
-          lots: lactonolLots,
-        });
-      }
-
-      // Update wheat record
-      if (wheatRecord && wheatLots.length > (wheatRecord.lots?.length || 0)) {
-        const addedQty = lots.filter(l => {
-          const ln = (l.lot_number || '').toLowerCase();
-          return (ln.includes('wheat') || ln.includes('ens') || ln.includes('ena')) && l.quantity_remaining > 0;
-        }).reduce((s, l) => s + (l.quantity_remaining || 0), 0);
-        await base44.entities.RawMaterial.update(wheatRecord.id, {
-          quantity: parseFloat(((wheatRecord.quantity || 0) + addedQty).toFixed(4)),
-          lals: parseFloat(((wheatRecord.lals || 0) + addedQty * 0.96).toFixed(4)),
-          lots: wheatLots,
-        });
-      }
-
-      // Delete the bad merged record
-      await base44.entities.RawMaterial.delete(badRecord.id);
-      return { done: true };
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['rawMaterials'] });
-      qc.invalidateQueries({ queryKey: ['rawMaterials-ethanol'] });
-      setEthanolCleanupResult(true);
-      toast.success('Cleaned up — "Ethanol" record dissolved, lots moved to correct records');
-    },
-    onError: (e) => toast.error(e.message || 'Cleanup failed'),
-  });
-  const [botanicalBackfillResult, setBotanicalBackfillResult] = useState(null);
-
-  const botanicalBackfillMutation = useMutation({
-    mutationFn: async () => {
-      // Fetch all receivings and raw materials
-      const [allReceivings, allRM] = await Promise.all([
-        base44.entities.Receiving.list('-date_received', 5000),
-        base44.entities.RawMaterial.list('name', 5000),
-      ]);
-
-      const botanicalReceivings = allReceivings.filter(r =>
-        (r.material_type || '').toLowerCase().startsWith('botanical')
-      );
-
-      // Group receivings by material_name
-      const byMaterial = {};
-      for (const r of botanicalReceivings) {
-        const key = (r.material_name || '').toLowerCase().trim();
-        if (!byMaterial[key]) byMaterial[key] = [];
-        byMaterial[key].push(r);
-      }
-
-      let updated = 0;
-      for (const [key, receivings] of Object.entries(byMaterial)) {
-        // Find the matching RawMaterial record
-        const rm = allRM.find(m => (m.name || '').toLowerCase().trim() === key);
-        if (!rm) continue;
-
-        // Sort receivings oldest first (FIFO order)
-        receivings.sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''));
-
-        // Only build lots if none exist yet (don't overwrite existing lot tracking)
-        const existingLots = Array.isArray(rm.lots) ? rm.lots : [];
-        if (existingLots.length > 0) continue; // already has lots
-
-        const lots = receivings.map(r => ({
-          lot_number: r.batch_number || null,
-          date_received: r.date_received,
-          quantity_received: r.quantity || 0,
-          // quantity_remaining: use current RM quantity proportionally
-          // We can't know exactly how much of each lot was used, so set remaining = received
-          // and let the current RM.quantity be the source of truth for total
-          quantity_remaining: r.quantity || 0,
-          supplier: r.supplier_name || null,
-          cost_per_unit: r.cost_per_unit || null,
-          receiving_id: r.id,
-        }));
-
-        // Adjust lot remainders so they sum to the current RM quantity (FIFO)
-        const totalReceived = lots.reduce((s, l) => s + l.quantity_received, 0);
-        const currentQty = rm.quantity || 0;
-        let remainingToAllocate = currentQty;
-        const adjustedLots = lots.map(lot => {
-          const pct = totalReceived > 0 ? lot.quantity_received / totalReceived : 0;
-          // Give oldest lots zero remaining first (FIFO depletion assumption)
-          return lot;
-        });
-        // FIFO: oldest lots depleted first — set remaining to 0 for old lots until we've allocated currentQty
-        for (let i = adjustedLots.length - 1; i >= 0; i--) {
-          const lot = adjustedLots[i];
-          const take = Math.min(lot.quantity_received, remainingToAllocate);
-          adjustedLots[i] = { ...lot, quantity_remaining: parseFloat(take.toFixed(4)) };
-          remainingToAllocate -= take;
-          if (remainingToAllocate <= 0) {
-            // All older lots are fully depleted
-            for (let j = i - 1; j >= 0; j--) {
-              adjustedLots[j] = { ...adjustedLots[j], quantity_remaining: 0 };
-            }
-            break;
-          }
-        }
-
-        await base44.entities.RawMaterial.update(rm.id, { lots: adjustedLots });
-        updated++;
-      }
-
-      return { updated, total: Object.keys(byMaterial).length };
-    },
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['rawMaterials'] });
-      setBotanicalBackfillResult(data);
-      if (data.updated === 0) toast.success('All botanical lots already populated — nothing to backfill');
-      else toast.success(`Backfilled lot history for ${data.updated} botanical ingredients`);
-    },
-    onError: (e) => toast.error('Backfill failed: ' + e.message),
-  });
-
-  const loadEthanolRecordsMutation = useMutation({
-    mutationFn: async () => {
-      const allRM = await base44.entities.RawMaterial.list('name', 5000);
-      // Include all ethanol records including ones with 'ethanol' in the name
-      return allRM.filter(r =>
-        (r.type || '').toLowerCase() === 'ethanol' ||
-        (r.name || '').toLowerCase().includes('ethanol') ||
-        (r.name || '').toLowerCase().includes('lactonol') ||
-        (r.name || '').toLowerCase().includes('lactanol') ||
-        (r.name || '').toLowerCase().includes('neutral alcohol') ||
-        (r.name || '').toLowerCase().includes('ena')
-      );
-    },
-    onSuccess: (records) => {
-      setEthanolRecords(records);
-      setSelectedToMerge([]);
-    },
-    onError: () => toast.error('Failed to load ethanol records'),
-  });
-
-  const mergeEthanolMutation = useMutation({
-    mutationFn: async ({ ids, names, name }) => {
-      if (ids.length < 2) throw new Error('Select at least 2 records to merge');
-      const allRM = await base44.entities.RawMaterial.list('name', 5000);
-      // Match by ID first, then fall back to name matching for recv- virtual items
-      const toMerge = allRM.filter(r =>
-        ids.includes(r.id) ||
-        (names || []).some(n => (r.name || '').toLowerCase().trim() === (n || '').toLowerCase().trim())
-      );
-      if (toMerge.length < 2) throw new Error(`Could not find ${ids.length} real DB records to merge. Found: ${toMerge.map(r=>r.name).join(', ') || 'none'}. Make sure you have saved these as real records first.`);
-      toMerge.sort((a, b) => (a.date_received || a.created_date || '').localeCompare(b.date_received || b.created_date || ''));
-      const [master, ...duplicates] = toMerge;
-
-      const mergedLots = [];
-      for (const rec of toMerge) {
-        const existingLots = Array.isArray(rec.lots) ? rec.lots : [];
-        if (existingLots.length > 0) {
-          mergedLots.push(...existingLots);
-        } else {
-          mergedLots.push({
-            lot_number: rec.batch_number || rec.name || 'Legacy stock',
-            date_received: rec.date_received || null,
-            quantity_received: rec.quantity || 0,
-            quantity_remaining: rec.quantity || 0,
-            supplier: rec.supplier || null,
-            cost_per_unit: rec.cost_per_unit || null,
-          });
-        }
-      }
-      mergedLots.sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''));
-
-      const totalQty = toMerge.reduce((s, r) => s + (r.quantity || 0), 0);
-      const totalLals = toMerge.reduce((s, r) => s + (r.lals || 0), 0);
-
-      await base44.entities.RawMaterial.update(master.id, {
-        name: name || master.name,
-        quantity: parseFloat(totalQty.toFixed(4)),
-        lals: parseFloat(totalLals.toFixed(4)),
-        lots: mergedLots,
-      });
-      for (const dup of duplicates) {
-        await base44.entities.RawMaterial.delete(dup.id);
-      }
-      return { merged: duplicates.length, name: name || master.name, totalQty, lots: mergedLots.length };
-    },
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['rawMaterials'] });
-      qc.invalidateQueries({ queryKey: ['rawMaterials-ethanol'] });
-      setEthanolMergeResult(data);
-      setEthanolRecords(null);
-      setSelectedToMerge([]);
-      toast.success(`Merged into "${data.name}" — ${data.lots} lots, ${data.totalQty.toFixed(2)}L total`);
-    },
-    onError: (e) => toast.error(e.message || 'Merge failed'),
-  });
+  const [ethanolResetDone, setEthanolResetDone] = useState(false);
 
   const { data: finishedGoods = [], isLoading } = useQuery({
     queryKey: ['finishedGoodsReconcile'],
@@ -533,117 +287,110 @@ export default function StockReconciliation() {
         )}
       </div>
 
-      {/* One-time cleanup: dissolve bad merged "Ethanol" record */}
-      <div className="border border-red-200 bg-red-50 rounded-lg p-4 space-y-2">
+      {/* Reset Ethanol to Single Clean Record */}
+      <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span>⚠️</span>
-            <h3 className="font-semibold text-red-800 text-sm">Fix Bad Ethanol Merge</h3>
+            <span>🧪</span>
+            <h3 className="font-semibold text-blue-800 text-sm">Reset Ethanol to Single Record</h3>
           </div>
-          <Button size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-100"
-            onClick={() => { if (confirm('This will dissolve the "Ethanol" record and move its lots back to Lactonol Ethanol and Extra Neutral Alcohol. Continue?')) ethanolCleanupMutation.mutate(); }}
-            disabled={ethanolCleanupMutation.isPending || ethanolCleanupResult}>
-            {ethanolCleanupResult ? '✅ Done' : ethanolCleanupMutation.isPending ? 'Fixing...' : 'Fix Now'}
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-blue-300 text-blue-700 hover:bg-blue-100"
+            disabled={ethanolResetDone}
+            onClick={async () => {
+              if (!confirm('Delete all current ethanol RawMaterial records and rebuild from ALL your ethanol receiving records, with distillation usage already deducted. Continue?')) return;
+              try {
+                // 1. Delete all existing ethanol RM records
+                const allRM = await base44.entities.RawMaterial.list('name', 5000);
+                const ethanolRM = allRM.filter(r =>
+                  (r.type || '').toLowerCase() === 'ethanol' ||
+                  (r.name || '').toLowerCase().includes('ethanol') ||
+                  (r.name || '').toLowerCase().includes('lactonol') ||
+                  (r.name || '').toLowerCase().includes('lactanol') ||
+                  (r.name || '').toLowerCase().includes('neutral alcohol')
+                );
+                for (const r of ethanolRM) await base44.entities.RawMaterial.delete(r.id);
+
+                // 2. Build lots from ALL ethanol receiving records oldest first
+                const allReceivings = await base44.entities.Receiving.list('-date_received', 5000);
+                const ethReceivings = allReceivings
+                  .filter(r => (r.material_type || '').toLowerCase() === 'ethanol')
+                  .sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''));
+
+                if (ethReceivings.length === 0) { toast.error('No ethanol receiving records found'); return; }
+
+                const lots = ethReceivings.map(r => ({
+                  lot_number: r.batch_number || r.packing_slip_number || r.material_name || null,
+                  date_received: r.date_received,
+                  quantity_received: r.quantity || 0,
+                  quantity_remaining: r.quantity || 0,
+                  supplier: r.supplier_name || null,
+                  cost_per_unit: r.cost_per_unit || null,
+                  receiving_id: r.id,
+                }));
+
+                const totalReceived = ethReceivings.reduce((s, r) => s + (r.quantity || 0), 0);
+                const totalReceivedLals = ethReceivings.reduce((s, r) => s + (r.lals || 0), 0);
+                const abv = ethReceivings[ethReceivings.length - 1]?.abv_percent || 96;
+                const supplier = ethReceivings[ethReceivings.length - 1]?.supplier_name || '';
+
+                // 3. Total ethanol consumed = sum of all completed distillation run input_volume
+                // (Dilution does NOT deduct — ethanol in tanks is still your inventory)
+                const allDistRuns = await base44.entities.DistillationRun.list('-date', 5000);
+                const completedRuns = allDistRuns.filter(r =>
+                  r.status === 'completed' && (r.input_volume || 0) > 0
+                );
+                const totalUsedVol = completedRuns.reduce((s, r) => s + (r.input_volume || 0), 0);
+                const totalUsedLals = completedRuns.reduce((s, r) =>
+                  s + (r.input_lals || (r.input_volume || 0) * (r.input_abv || abv) / 100), 0);
+
+                const netQty = Math.max(0, totalReceived - totalUsedVol);
+                const netLals = Math.max(0, totalReceivedLals - totalUsedLals);
+
+                // 4. FIFO deplete lots oldest first to match actual usage
+                let remainingUsed = totalUsedVol;
+                const adjustedLots = lots.map(lot => {
+                  if (remainingUsed <= 0) return lot;
+                  const deplete = Math.min(lot.quantity_remaining || 0, remainingUsed);
+                  remainingUsed -= deplete;
+                  return { ...lot, quantity_remaining: parseFloat(Math.max(0, (lot.quantity_remaining || 0) - deplete).toFixed(4)) };
+                });
+
+                // 5. Create one clean record
+                await base44.entities.RawMaterial.create({
+                  name: 'Ethanol',
+                  type: 'ethanol',
+                  quantity: parseFloat(netQty.toFixed(4)),
+                  unit: 'litres',
+                  lals: parseFloat(netLals.toFixed(4)),
+                  abv_percent: abv,
+                  supplier,
+                  lots: adjustedLots,
+                });
+
+                qc.invalidateQueries({ queryKey: ['rawMaterials'] });
+                qc.invalidateQueries({ queryKey: ['rawMaterials-ethanol'] });
+                setEthanolResetDone(true);
+                toast.success(
+                  `Done — ${ethReceivings.length} receiving record${ethReceivings.length !== 1 ? 's' : ''}, ` +
+                  `${totalReceived.toFixed(2)}L total received · ` +
+                  `${totalUsedVol.toFixed(2)}L consumed in ${completedRuns.length} distillation run${completedRuns.length !== 1 ? 's' : ''} · ` +
+                  `${netQty.toFixed(2)}L remaining in inventory`
+                );
+              } catch(e) { toast.error('Failed: ' + e.message); }
+            }}
+          >
+            {ethanolResetDone ? '✅ Done' : 'Reset Ethanol'}
           </Button>
         </div>
-        <p className="text-xs text-red-700">
-          Removes the incorrectly merged "Ethanol" record and moves its 7900095318 lot (464.19L) into <strong>Lactonol Ethanol</strong>. The depleted wheat lot is discarded. Run once only.
+        <p className="text-xs text-blue-700">
+          Reads <strong>all</strong> your ethanol receiving records and all completed distillation runs, then creates one clean <strong>Ethanol</strong> record. Ethanol only leaves inventory at distillation — diluted stock in tanks is still counted as inventory.
         </p>
       </div>
 
-      {/* Merge Ethanol Records */}
-      <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-blue-700">🧪</span>
-            <h3 className="font-semibold text-blue-800 text-sm">Merge Ethanol Records</h3>
-          </div>
-          {!ethanolRecords && (
-            <Button size="sm" variant="outline" onClick={() => loadEthanolRecordsMutation.mutate()} disabled={loadEthanolRecordsMutation.isPending}>
-              {loadEthanolRecordsMutation.isPending ? 'Loading...' : 'Show Ethanol Records'}
-            </Button>
-          )}
-          {ethanolRecords && (
-            <Button size="sm" variant="ghost" onClick={() => setEthanolRecords(null)}>Close</Button>
-          )}
-        </div>
-        <p className="text-xs text-blue-700">Select which ethanol records to merge into one master record with lot tracking. Keep different ethanol types (e.g. wheat vs corn) as separate records by not selecting them together.</p>
-        {ethanolRecords && (
-          <div className="space-y-3">
-            <div className="space-y-2">
-              {ethanolRecords.map(r => {
-                const isVirtual = String(r.id || '').startsWith('recv-');
-                const isSelected = selectedToMerge.includes(r.id);
-                return (
-                  <label key={r.id} className={`flex items-center gap-3 p-2.5 bg-white border rounded-lg cursor-pointer hover:bg-blue-50 ${isVirtual ? 'border-amber-300 bg-amber-50' : 'border-blue-200'}`}>
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={e => setSelectedToMerge(prev => e.target.checked ? [...prev, r.id] : prev.filter(id => id !== r.id))}
-                      className="w-4 h-4"
-                    />
-                    <div className="flex-1 text-sm">
-                      <span className="font-medium">{r.name}</span>
-                      {isVirtual && <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">virtual — save as real record first</span>}
-                      <span className="text-muted-foreground ml-2">{(r.quantity || 0).toFixed(2)}L · {(r.lals || 0).toFixed(2)} LALs</span>
-                      {r.batch_number && <span className="text-muted-foreground ml-2">· {r.batch_number}</span>}
-                      {r.supplier && <span className="text-muted-foreground ml-2">· {r.supplier}</span>}
-                      {Array.isArray(r.lots) && r.lots.length > 0 && <span className="text-blue-600 ml-2">· {r.lots.length} lots</span>}
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-            {ethanolRecords.some(r => String(r.id || '').startsWith('recv-')) && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                ⚠️ Records marked "virtual" exist only in your Receivals, not as real inventory records. Go to <strong>Raw Materials</strong> and click Edit → Save on each one to convert it to a real record before merging.
-              </p>
-            )}
-            {selectedToMerge.length >= 2 && !selectedToMerge.some(id => String(id).startsWith('recv-')) && (
-              <div className="space-y-2 pt-1 border-t border-blue-200">
-                <div>
-                  <label className="text-xs font-semibold text-blue-800">Master record name</label>
-                  <input
-                    value={masterName}
-                    onChange={e => setMasterName(e.target.value)}
-                    className="mt-1 w-full border border-blue-300 rounded-md px-2 py-1.5 text-sm bg-white"
-                    placeholder="e.g. Lactonol Ethanol"
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                  onClick={() => {
-                    const selectedRecords = ethanolRecords.filter(r => selectedToMerge.includes(r.id));
-                    mergeEthanolMutation.mutate({
-                      ids: selectedToMerge,
-                      names: selectedRecords.map(r => r.name),
-                      name: masterName,
-                    });
-                  }}
-                  disabled={mergeEthanolMutation.isPending}
-                >
-                  {mergeEthanolMutation.isPending ? 'Merging...' : `Merge ${selectedToMerge.length} selected records into "${masterName}"`}
-                </Button>
-              </div>
-            )}
-            {selectedToMerge.some(id => String(id).startsWith('recv-')) && (
-              <p className="text-xs text-red-600">Cannot merge virtual records — convert them to real records first (edit and save in Raw Materials).</p>
-            )}
-            {selectedToMerge.length === 1 && (
-              <p className="text-xs text-blue-600">Select at least one more record to merge.</p>
-            )}
-            {selectedToMerge.length === 0 && (
-              <p className="text-xs text-blue-600">Tick the records you want to merge together. Unticked records stay separate.</p>
-            )}
-          </div>
-        )}
-        {ethanolMergeResult && (
-          <p className="text-xs text-emerald-700 font-medium">✅ Merged into "{ethanolMergeResult.name}": {ethanolMergeResult.totalQty?.toFixed(2)}L across {ethanolMergeResult.lots} lots.</p>
-        )}
-      </div>
-
-      {/* Summary Banner */}
+            {/* Summary Banner */}
       <Card className="p-5">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex flex-wrap gap-6">
