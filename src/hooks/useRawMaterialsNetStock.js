@@ -133,8 +133,15 @@ export function useRawMaterialsNetStock() {
 
     // Receiving-only items (not in RawMaterial entity)
     const rawMaterialNames = rawMaterials.map(m => (m.name || '').toLowerCase().trim());
+    // Also match ethanol receiving variants against the master 'ethanol' type record
+    const hasEthanolRecord = rawMaterials.some(m => (m.type || '').toLowerCase() === 'ethanol');
     const receivingOnlyItems = Object.keys(receivedByName)
-      .filter(k => !rawMaterialNames.includes(k))
+      .filter(k => {
+        if (rawMaterialNames.includes(k)) return false;
+        // If we have a master ethanol record, suppress all ethanol-type virtual items
+        if (hasEthanolRecord && receivedByName[k]?.type === 'ethanol') return false;
+        return true;
+      })
       .map(k => {
         const sample = allReceivings.find(r => (r.material_name || '').toLowerCase().trim() === k);
         const recv = receivedByName[k];
