@@ -61,29 +61,88 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
   // Manual production split by bottle size — overrides velocity-based split for packaging
   // Key: bottle size (e.g. 700), Value: % of total production (0-100)
   const [productionSplitOverride, setProductionSplitOverride] = useState({});
+  const [useSeasonality, setUseSeasonality] = useState(true);
+
+  // ── 0. Seasonality index per calendar month (1=12) ───────────────────────
+  // Uses ALL dispatch history to build a robust seasonal pattern
+  const seasonalityIndex = useMemo(() => {
+    // Aggregate total sales by calendar month across ALL history
+    const byCalMonth = Array(12).fill(0);
+    const countByCalMonth = Array(12).fill(0);
+    for (const d of dispatches) {
+      if (!d.dispatch_date || d.sample_dispatch) continue;
+      const mo = new Date(d.dispatch_date).getMonth(); // 0-11
+      byCalMonth[mo] += (d.quantity_bottles || 0);
+      countByCalMonth[mo]++;
+    }
+    // Average bottles per calendar month (normalised across years of data)
+    // Count how many of each calendar month appear in the data
+    const yearMonthsSeen = new Set();
+    for (const d of dispatches) {
+      if (d.dispatch_date) yearMonthsSeen.add(d.dispatch_date.slice(0, 7));
+    }
+    const occurrences = Array(12).fill(0);
+    for (const ym of yearMonthsSeen) {
+      const mo = parseInt(ym.split('-')[1]) - 1;
+      occurrences[mo]++;
+    }
+    // avg bottles per occurrence of each calendar month
+    const avgByCalMonth = byCalMonth.map((total, i) =>
+      occurrences[i] > 0 ? total / occurrences[i] : 0
+    );
+    // Overall monthly average
+    const overallAvg = avgByCalMonth.reduce((s, v) => s + v, 0) / 12;
+    // Seasonality index: ratio of each month to overall average
+    return avgByCalMonth.map(v => overallAvg > 0 ? v / overallAvg : 1);
+  }, [dispatches]);
 
   // ── 1. Sales velocity per product+size ────────────────────────────────────
   const velocity = useMemo(() => {
     const months = Array.from({ length: lookbackMonths }, (_, i) =>
       isoMonth(subMonths(now, lookbackMonths - 1 - i))
     );
+    // Build forecast months list (the actual future months we're planning for)
+    const forecastMonthList = Array.from({ length: forecastMonths }, (_, i) =>
+      new Date(now.getFullYear(), now.getMonth() + 1 + i, 1)
+    );
+
     const map = {};
     for (const d of dispatches) {
       if (!d.dispatch_date || d.sample_dispatch) continue;
       const size = d.bottle_size_ml || 700;
       const normName = normaliseName(d.product_name);
-      // Group by normalised name + size so "London Dry Gin 200ml" and "London Dry Gin" @ 200ml merge
       const key = `${normName}||${size}`;
       if (!map[key]) map[key] = { product_name: normName, size, byMonth: {} };
       const m = d.dispatch_date.slice(0, 7);
       map[key].byMonth[m] = (map[key].byMonth[m] || 0) + (d.quantity_bottles || 0);
     }
+
     return Object.values(map).map(p => {
       const monthly = months.map(m => p.byMonth[m] || 0);
       const avg = monthly.reduce((s, v) => s + v, 0) / lookbackMonths;
       const growth = 1 + growthPct / 100;
-      const forecastMonthly = avg * growth;
-      const forecastTotal = Math.ceil(forecastMonthly * forecastMonths);
+
+      // Seasonal forecast: sum each future month adjusted by its seasonal index
+      let forecastTotal;
+      let forecastByMonth;
+      if (useSeasonality && avg > 0) {
+        forecastByMonth = forecastMonthList.map(d => {
+          const mo = d.getMonth(); // 0-11
+          const idx = seasonalityIndex[mo] || 1;
+          return Math.round(avg * growth * idx);
+        });
+        forecastTotal = forecastByMonth.reduce((s, v) => s + v, 0);
+      } else {
+        forecastTotal = Math.ceil(avg * growth * forecastMonths);
+        forecastByMonth = forecastMonthList.map(() => Math.round(avg * growth));
+      }
+
+      // Peak month in forecast
+      const peakForecastMonth = forecastByMonth
+        ? forecastMonthList[forecastByMonth.indexOf(Math.max(...forecastByMonth))]
+        : null;
+      const peakForecastQty = forecastByMonth ? Math.max(...forecastByMonth) : null;
+
       const safetyStock = Math.ceil(avg * (safetyWeeks / 4));
       const onHand = finishedGoods
         .filter(g => normaliseName(g.product_name) === p.product_name && Number(g.bottle_size_ml) === Number(p.size))
@@ -93,9 +152,23 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
         const e = monthly.slice(0, 3).reduce((s, v) => s + v, 0) / 3;
         return e > 0 ? ((r - e) / e * 100).toFixed(0) : null;
       })();
-      return { ...p, avg: Math.round(avg), forecastMonthly: Math.round(forecastMonthly), forecastTotal, safetyStock, onHand, needed: forecastTotal + safetyStock, trend, byMonth: p.byMonth };
+
+      return {
+        ...p,
+        avg: Math.round(avg),
+        forecastTotal,
+        forecastByMonth,
+        forecastMonthList,
+        peakForecastMonth,
+        peakForecastQty,
+        safetyStock,
+        onHand,
+        needed: forecastTotal + safetyStock,
+        trend,
+        byMonth: p.byMonth,
+      };
     }).filter(p => p.avg > 0).sort((a, b) => b.forecastTotal - a.forecastTotal);
-  }, [dispatches, finishedGoods, lookbackMonths, forecastMonths, growthPct, safetyWeeks]);
+  }, [dispatches, finishedGoods, lookbackMonths, forecastMonths, growthPct, safetyWeeks, seasonalityIndex, useSeasonality]);
 
   // ── 2. Batches + LALs needed ───────────────────────────────────────────────
   // Use ACTUAL historical distillation data:
@@ -359,6 +432,30 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
           </div>
         </div>
 
+        {/* Seasonality toggle */}
+        <div className="border-t border-border pt-4 mt-2 flex items-center gap-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={useSeasonality} onChange={e => setUseSeasonality(e.target.checked)} className="w-4 h-4" />
+            <span className="text-sm font-semibold">Seasonal forecast</span>
+          </label>
+          <span className="text-xs text-muted-foreground">Adjusts each forecast month by your historical seasonal pattern — higher in peak months, lower in slow months.</span>
+          {useSeasonality && seasonalityIndex.some(v => Math.abs(v - 1) > 0.1) && (
+            <div className="flex gap-1 ml-auto">
+              {['J','F','M','A','M','J','J','A','S','O','N','D'].map((label, i) => {
+                const idx = seasonalityIndex[i] || 1;
+                const height = Math.round(idx * 24);
+                const color = idx > 1.2 ? 'bg-emerald-500' : idx < 0.8 ? 'bg-amber-400' : 'bg-blue-400';
+                return (
+                  <div key={i} className="flex flex-col items-center gap-0.5" title={`${label}: ${(idx * 100).toFixed(0)}% of average`}>
+                    <div className={`w-3 rounded-sm ${color}`} style={{ height: `${Math.max(4, height)}px` }} />
+                    <span className="text-xs text-muted-foreground" style={{ fontSize: '9px' }}>{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Production split override for packaging */}
         {velocity.length > 0 && (
           <div className="border-t border-border pt-4 mt-2">
@@ -410,6 +507,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
                   <TableHead className="text-right">Avg/mo</TableHead>
                   <TableHead className="text-right">Trend</TableHead>
                   <TableHead className="text-right">Forecast {forecastMonths}mo</TableHead>
+                  <TableHead className="text-right">Peak month</TableHead>
                   <TableHead className="text-right">Safety stock</TableHead>
                   <TableHead className="text-right font-bold">Total needed</TableHead>
                   <TableHead className="text-right">On hand</TableHead>
@@ -434,6 +532,11 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
                       {v.trend !== null ? <span className={Number(v.trend) >= 0 ? 'text-emerald-600' : 'text-red-600'}>{Number(v.trend) >= 0 ? '↑' : '↓'}{Math.abs(v.trend)}%</span> : '—'}
                     </TableCell>
                     <TableCell className="text-right text-sm">{v.forecastTotal.toLocaleString()}</TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground">
+                      {v.peakForecastMonth && v.peakForecastQty
+                        ? <span className="text-emerald-700 font-medium">{format(v.peakForecastMonth, 'MMM')} {v.peakForecastQty.toLocaleString()}</span>
+                        : '—'}
+                    </TableCell>
                     <TableCell className="text-right text-sm text-muted-foreground">{v.safetyStock.toLocaleString()}</TableCell>
                     <TableCell className="text-right font-bold text-sm">{v.needed.toLocaleString()}</TableCell>
                     <TableCell className="text-right text-sm">{v.onHand.toLocaleString()}</TableCell>
@@ -447,7 +550,7 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
             </Table>
           </div>
         </Card>
-        <p className="text-xs text-muted-foreground">Avg monthly sales × {forecastMonths} months × {growthPct >= 0 ? '+' : ''}{growthPct}% growth + {safetyWeeks} weeks safety stock buffer.</p>
+        <p className="text-xs text-muted-foreground">{useSeasonality ? 'Seasonal forecast' : 'Flat average'} × {growthPct >= 0 ? '+' : ''}{growthPct}% growth + {safetyWeeks} weeks safety stock. {useSeasonality ? 'Each month weighted by historical seasonal pattern.' : 'Turn on seasonal forecast to account for peak/slow periods.'}</p>
       </Section>
 
       {/* ── SECTION 2: Distillation plan ── */}
