@@ -48,6 +48,30 @@
       ],
       "default": "planned"
     },
+    "packaging_costs": {
+      "type": "array",
+      "description": "Actual FIFO packaging costs captured at time of bottling",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "qty_used": {
+            "type": "number"
+          },
+          "cost_per_unit": {
+            "type": "number"
+          },
+          "total_cost": {
+            "type": "number"
+          },
+          "lot_number": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "notes": {
       "type": "string",
       "description": "Additional notes"
