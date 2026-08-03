@@ -100,23 +100,27 @@ export default function CostOfGoodsReport({ rawMaterialsNetStock, rawMaterials, 
         }
       }
 
-      // Packaging cost — calculate for each bottle size separately then sum
+      // Packaging cost — use FIFO costs stored on each run if available (captured at bottling time)
+      // This gives true FIFO accuracy: cost reflects actual lot prices used, not current prices
       let packagingCostTotal = 0;
-      const pkgRecipe700 = (recipes || []).find(r =>
-        r.recipe_type === 'packaging' && r.name?.toLowerCase().includes('700')
-      );
-      const pkgRecipe200 = (recipes || []).find(r =>
-        r.recipe_type === 'packaging' && r.name?.toLowerCase().includes('200')
-      );
+      const runsWithFifo = runs.filter(r => Array.isArray(r.packaging_costs) && r.packaging_costs.length > 0);
+      const runsWithoutFifo = runs.filter(r => !Array.isArray(r.packaging_costs) || !r.packaging_costs.length);
 
-      const calcPkgCostPerBottle = (pkgRecipe) => {
-        if (!pkgRecipe?.packaging?.length) return 0;
-        return pkgRecipe.packaging.reduce((s, pkg) =>
-          s + (pkg.quantity || 1) * findCostPerUnit(pkg.name), 0);
-      };
+      // Sum FIFO costs from runs that have them
+      packagingCostTotal += runsWithFifo.reduce((s, r) =>
+        s + (r.packaging_costs || []).reduce((ps, pc) => ps + (pc.total_cost || 0), 0), 0);
 
-      packagingCostTotal += bottles700 * calcPkgCostPerBottle(pkgRecipe700 || recipe);
-      packagingCostTotal += bottles200 * calcPkgCostPerBottle(pkgRecipe200 || recipe);
+      // For older runs without stored costs, fall back to current recipe prices
+      if (runsWithoutFifo.length > 0) {
+        const pkgRecipe700 = (recipes || []).find(r => r.recipe_type === 'packaging' && r.name?.toLowerCase().includes('700'));
+        const pkgRecipe200 = (recipes || []).find(r => r.recipe_type === 'packaging' && r.name?.toLowerCase().includes('200'));
+        const calcPkgCostPerBottle = (pkgRecipe) => !pkgRecipe?.packaging?.length ? 0 :
+          pkgRecipe.packaging.reduce((s, pkg) => s + (pkg.quantity || 1) * findCostPerUnit(pkg.name), 0);
+        const fallback700 = runsWithoutFifo.filter(r => r.bottle_size_ml === 700).reduce((s, r) => s + (r.bottles_produced || 0), 0);
+        const fallback200 = runsWithoutFifo.filter(r => r.bottle_size_ml === 200).reduce((s, r) => s + (r.bottles_produced || 0), 0);
+        packagingCostTotal += fallback700 * calcPkgCostPerBottle(pkgRecipe700 || recipe);
+        packagingCostTotal += fallback200 * calcPkgCostPerBottle(pkgRecipe200 || recipe);
+      }
 
       const totalBatchCost = ethanolCostTotal + botanicalCostTotal + packagingCostTotal;
       const costPerBottle = bottlesProduced > 0 ? totalBatchCost / bottlesProduced : 0;
