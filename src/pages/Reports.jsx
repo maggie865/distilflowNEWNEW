@@ -97,15 +97,32 @@ export default function Reports() {
 
   // rawMaterialsNetStock is now provided by the shared useRawMaterialsNetStock hook above
 
-  // Net finished goods stock (deduct all dispatches from both sheets)
-  const allDispatchedByBatch = dispatches.reduce((acc, d) => {
-    const key = `${d.batch_number}||${d.product_name}`;
+  // Normalise product name for matching — strip trailing size suffixes and fix doubled suffixes
+  // e.g. "London Dry Gin 200ml 200ml" → "London Dry Gin", "London Dry Gin 200ml" → "London Dry Gin"
+  const normProductName = (name, sizeMl) => {
+    let n = (name || '').trim();
+    // Remove doubled suffix e.g. "200ml 200ml"
+    n = n.replace(/\s*(\d{3,4}ml)\s*\1/gi, '');
+    // Remove any single trailing size suffix
+    n = n.replace(/\s*\d{3,4}ml\s*$/i, '').trim();
+    return n;
+  };
+
+  // Net finished goods stock — match dispatches to finished goods by batch + normalised name + size
+  // Group dispatches by batch_number + normalised_name + bottle_size_ml
+  const allDispatchedByKey = dispatches.reduce((acc, d) => {
+    const normName = normProductName(d.product_name);
+    const size = d.bottle_size_ml || '';
+    const key = `${d.batch_number}||${normName}||${size}`;
     acc[key] = (acc[key] || 0) + (d.quantity_bottles || 0);
     return acc;
   }, {});
+
   const finishedGoodsWithStock = finishedGoods.map(g => {
-    const key = `${g.batch_number}||${g.product_name}`;
-    const dispatched = allDispatchedByBatch[key] || 0;
+    const normName = normProductName(g.product_name);
+    const size = g.bottle_size_ml || '';
+    const key = `${g.batch_number}||${normName}||${size}`;
+    const dispatched = allDispatchedByKey[key] || 0;
     const bottled = g.quantity_bottles || 0;
     const remaining = Math.max(0, bottled - dispatched);
     const lalsPerBottle = bottled > 0 && g.total_lals ? g.total_lals / bottled : 0;
