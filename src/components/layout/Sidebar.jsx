@@ -11,41 +11,41 @@ const navGroups = [
   {
     name: 'Production',
     items: [
+      { label: 'Tanks', icon: Cylinder, path: '/tanks' },
       { label: 'Dilutions', icon: Droplets, path: '/dilutions' },
       { label: 'Distillations', icon: Flame, path: '/distillation' },
       { label: 'SNS Distillation', icon: Flame, path: '/sns-distillation' },
-      { label: 'Tanks', icon: Cylinder, path: '/tanks' },
       { label: 'Bottling Floor', icon: Wine, path: '/bottling-floor' },
     ]
   },
   {
-    name: 'Planning',
+    name: 'Inventory',
+    items: [
+      { label: 'Raw Materials', icon: Droplets, path: '/raw-materials' },
+      { label: 'Finished Goods', icon: Warehouse, path: '/inventory' },
+      { label: 'Warehouse (3PL)', icon: Building2, path: '/warehouse' },
+      { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
+      { label: 'Stock Takes', icon: ClipboardList, path: '/stock-takes' },
+    ]
+  },
+  {
+    name: 'Sales',
     items: [
       { label: 'Batch Tracker', icon: FlaskConical, path: '/batch-tracker' },
-      { label: 'Raw Materials', icon: Droplets, path: '/raw-materials' },
-      { label: 'Inventory', icon: Warehouse, path: '/inventory' },
-      { label: 'Warehouse (3PL)', icon: Building2, path: '/warehouse' },
-      { label: 'Stock Takes', icon: ClipboardList, path: '/stock-takes' },
+      { label: 'Dispatch', icon: TrendingUp, path: '/dispatch' },
+      { label: 'Customers', icon: Users, path: '/customers' },
+      { label: 'Suppliers', icon: Truck, path: '/suppliers' },
     ]
   },
   {
     name: 'Compliance',
     items: [
-      { label: 'Food Recall', icon: AlertTriangle, path: '/food-recall' },
+      { label: 'Checklists', icon: CheckSquare, path: '/checklists' },
+      { label: 'Temperature Logs', icon: Thermometer, path: '/temperature-logs' },
       { label: 'Maintenance', icon: Wrench, path: '/maintenance' },
       { label: 'Pest Control', icon: Bug, path: '/pest-control' },
-      { label: 'Temperature Logs', icon: Thermometer, path: '/temperature-logs' },
-      { label: 'Checklists', icon: CheckSquare, path: '/checklists' },
+      { label: 'Food Recall', icon: AlertTriangle, path: '/food-recall' },
       { label: 'Waste Tracker', icon: Leaf, path: '/waste-tracker' },
-    ]
-  },
-  {
-    name: 'Inwards/Outwards',
-    items: [
-      { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
-      { label: 'Suppliers', icon: Truck, path: '/suppliers' },
-      { label: 'Sales & Dispatch', icon: TrendingUp, path: '/dispatch' },
-      { label: 'Customers', icon: Users, path: '/customers' },
     ]
   },
 ];
@@ -54,7 +54,13 @@ export default function Sidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
   const isCrew = user?.role === 'crew';
-  const [expandedGroups, setExpandedGroups] = useState({ Production: true, Planning: true, 'Inwards/Outwards': true });
+  // Auto-expand the group containing the current page
+  const activeGroup = navGroups.find(g => g.items.some(i => location.pathname === i.path || location.pathname.startsWith(i.path + '/')))?.name;
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    const init = {};
+    for (const g of navGroups) init[g.name] = true; // start all open
+    return init;
+  });
 
   const toggleGroup = (groupName) => {
     setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
