@@ -280,13 +280,15 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
     const recipe = plan.recipe;
     if (!recipe?.ingredients?.length) return [];
 
-    // Scale each ingredient: recipe specifies amounts per base_ethanol_volume
-    // If we have actual avg input volume, scale to that instead
-    const inputVolPerBatch = plan.avgInputVol || recipe.base_ethanol_volume || 1;
+    // Recipe ingredient quantities are written PER STILL RUN (one charge of base_ethanol_volume)
+    // A master batch = avgRunsPerBatch still runs, so multiply accordingly
+    // e.g. recipe says 2kg juniper per still run × 3 runs per batch = 6kg per master batch
+    const runsPerBatch = plan.avgRunsPerBatch || 1;
 
     return recipe.ingredients.map(ing => {
-      const scaledPerBatch = ing.quantity; // recipe quantities are per batch at base_ethanol_volume
-      const totalNeeded = Math.ceil(scaledPerBatch * plan.batchesNeeded);
+      const perStillRun = ing.quantity || 0;
+      const perMasterBatch = perStillRun * runsPerBatch;
+      const totalNeeded = Math.ceil(perMasterBatch * plan.batchesNeeded);
       const rm = rawMaterials.find(r => (r.name || '').toLowerCase().trim() === (ing.name || '').toLowerCase().trim())
         || rawMaterials.find(r => { const n = (r.name || '').toLowerCase(); const p = (ing.name || '').toLowerCase(); return n.includes(p) || p.includes(n); });
       const onHand = rm?.quantity || 0;
@@ -294,7 +296,9 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
       return {
         name: ing.name,
         unit: ing.unit || 'g',
-        perBatch: scaledPerBatch,
+        perStillRun,
+        perMasterBatch: parseFloat(perMasterBatch.toFixed(3)),
+        runsPerBatch,
         totalNeeded,
         onHand,
         shortfall,
@@ -604,15 +608,23 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
             {botanicalForecast.length > 0 && (
               <Card className="overflow-hidden">
                 <div className="px-4 py-3 bg-muted/30 border-b">
-                  <h4 className="text-sm font-semibold">Botanical Requirements — {plan.batchesNeeded} batches</h4>
+                  <h4 className="text-sm font-semibold">
+                    Botanical Requirements — {plan.batchesNeeded} master batch{plan.batchesNeeded !== 1 ? 'es' : ''}
+                    {plan.avgRunsPerBatch && plan.avgRunsPerBatch > 1 && (
+                      <span className="text-xs font-normal text-muted-foreground ml-2">
+                        ({plan.avgRunsPerBatch} still runs/batch × recipe amounts)
+                      </span>
+                    )}
+                  </h4>
                 </div>
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Ingredient</TableHead>
-                        <TableHead className="text-right">Per batch</TableHead>
-                        <TableHead className="text-right">Total needed</TableHead>
+                        <TableHead className="text-right">Per still run</TableHead>
+                        <TableHead className="text-right">Per master batch</TableHead>
+                        <TableHead className="text-right font-bold">Total needed</TableHead>
                         <TableHead className="text-right">On hand</TableHead>
                         <TableHead className="text-right">Shortfall</TableHead>
                         <TableHead className="text-right">Est. cost</TableHead>
@@ -623,8 +635,11 @@ export default function ForecastReport({ dispatches = [], rawMaterials = [], fin
                       {botanicalForecast.map((b, i) => (
                         <TableRow key={i} className={b.shortfall > 0 && getStatus(b.onHand, b.totalNeeded) === 'critical' ? 'bg-red-50' : ''}>
                           <TableCell className="font-medium text-sm">{b.name}</TableCell>
-                          <TableCell className="text-right text-sm">{b.perBatch?.toLocaleString()} {b.unit}</TableCell>
-                          <TableCell className="text-right text-sm font-semibold">{b.totalNeeded.toLocaleString()} {b.unit}</TableCell>
+                          <TableCell className="text-right text-sm text-muted-foreground">{b.perStillRun?.toLocaleString()} {b.unit}</TableCell>
+                          <TableCell className="text-right text-sm font-medium">{b.perMasterBatch?.toLocaleString()} {b.unit}
+                            {b.runsPerBatch > 1 && <span className="text-xs text-muted-foreground ml-1">({b.runsPerBatch} runs)</span>}
+                          </TableCell>
+                          <TableCell className="text-right text-sm font-bold">{b.totalNeeded.toLocaleString()} {b.unit}</TableCell>
                           <TableCell className="text-right text-sm">{b.onHand.toLocaleString()}</TableCell>
                           <TableCell className={`text-right text-sm font-semibold ${b.shortfall > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
                             {b.shortfall > 0 ? `-${b.shortfall.toLocaleString()}` : '✓'}
