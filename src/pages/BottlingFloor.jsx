@@ -299,21 +299,71 @@ export default function BottlingFloor() {
           return n.includes('box') || n.includes('case') || n.includes('carton') || n.includes('shipper');
         };
 
+        const packagingCosts = [];
+
         for (const pkg of recipe.packaging) {
           if (!pkg.name) continue;
-          // Boxes/cases: deduct 1 per case produced (not per bottle)
-          // Bottles, labels, caps etc: deduct 1 per bottle produced
           const totalNeeded = isBoxOrCase(pkg.name)
-            ? (pkg.quantity || 1) * cases   // cases = number of cases from the run
+            ? (pkg.quantity || 1) * cases
             : (pkg.quantity || 1) * totalBottles;
           if (totalNeeded <= 0) continue;
           const rm = findRM(pkg.name);
           if (rm) {
             const newQty = Math.max(0, (rm.quantity || 0) - totalNeeded);
-            await db.RawMaterial.update(rm.id, { quantity: parseFloat(newQty.toFixed(4)) });
+
+            // FIFO cost: find the oldest lot with remaining stock and use its cost
+            const lots = Array.isArray(rm.lots) && rm.lots.length > 0
+              ? [...rm.lots].sort((a, b) => (a.date_received || '').localeCompare(b.date_received || ''))
+              : null;
+
+            let fifoCostPerUnit = rm.cost_per_unit || 0;
+            let fifoLotNumber = null;
+
+            if (lots) {
+              // Find oldest lot with stock — that's what FIFO says we're using
+              let remaining = totalNeeded;
+              let totalCostAccum = 0;
+              for (const lot of lots) {
+                if (remaining <= 0) break;
+                const take = Math.min(lot.quantity_remaining || 0, remaining);
+                if (take <= 0) continue;
+                totalCostAccum += take * (lot.cost_per_unit || rm.cost_per_unit || 0);
+                if (!fifoLotNumber) fifoLotNumber = lot.lot_number;
+                remaining -= take;
+              }
+              fifoCostPerUnit = totalNeeded > 0 ? totalCostAccum / totalNeeded : (rm.cost_per_unit || 0);
+
+              // Deplete lots FIFO
+              let toDeplete = totalNeeded;
+              const updatedLots = lots.map(lot => {
+                if (toDeplete <= 0) return lot;
+                const take = Math.min(lot.quantity_remaining || 0, toDeplete);
+                toDeplete -= take;
+                return { ...lot, quantity_remaining: parseFloat(Math.max(0, (lot.quantity_remaining || 0) - take).toFixed(4)) };
+              });
+              await db.RawMaterial.update(rm.id, {
+                quantity: parseFloat(newQty.toFixed(4)),
+                lots: updatedLots,
+              });
+            } else {
+              await db.RawMaterial.update(rm.id, { quantity: parseFloat(newQty.toFixed(4)) });
+            }
+
+            packagingCosts.push({
+              name: pkg.name,
+              qty_used: totalNeeded,
+              cost_per_unit: parseFloat(fifoCostPerUnit.toFixed(6)),
+              total_cost: parseFloat((totalNeeded * fifoCostPerUnit).toFixed(4)),
+              lot_number: fifoLotNumber || null,
+            });
           } else {
             toast.warning(`Packaging item "${pkg.name}" not found in inventory — please check your inventory records`);
           }
+        }
+
+        // Save FIFO packaging costs to the bottling run for accurate COGS reporting
+        if (packagingCosts.length > 0 && newRun?.id) {
+          await db.BottlingRun.update(newRun.id, { packaging_costs: packagingCosts });
         }
       }
     },
