@@ -303,23 +303,29 @@ function Actions({ onAdjust, onEdit, onDelete, onMoveToTasting, isTasting }) {
 function FinishedGoodsTable({ finishedGoods, loading, onOpen }) {
   const [expanded, setExpanded] = useState({});
 
-  // First group by bottle_size_ml, then by product_name within each size
-  // Merge records with the same batch_number into a single row with summed totals
+  // Normalise product name — strip doubled and trailing size suffixes for grouping
+  const normFGName = (name) => (name || '').trim()
+    .replace(/(\s*\d{3,4}ml)\s*\1/gi, '')
+    .replace(/\s*\d{3,4}ml\s*$/i, '').trim();
+
+  // First group by bottle_size_ml, then by NORMALISED product_name within each size
+  // This merges "London Dry Gin 200ml" and "London Dry Gin 200ml 200ml" into one group
   const bySize = {};
   finishedGoods.filter(g => (g.quantity_bottles || 0) > 0).forEach(g => {
     const sizeKey = g.bottle_size_ml ?? 'no-size';
     if (!bySize[sizeKey]) bySize[sizeKey] = {};
 
-    const prodKey = g.product_name || 'Unknown';
-    if (!bySize[sizeKey][prodKey]) {
-      bySize[sizeKey][prodKey] = { product_name: g.product_name, bottle_size_ml: g.bottle_size_ml, abv_percent: g.abv_percent, batches: [] };
+    // Use normalised name as grouping key but display the canonical (shorter) name
+    const normKey = normFGName(g.product_name) || 'Unknown';
+    if (!bySize[sizeKey][normKey]) {
+      bySize[sizeKey][normKey] = { product_name: normKey, bottle_size_ml: g.bottle_size_ml, abv_percent: g.abv_percent, batches: [] };
     }
-    const existing = bySize[sizeKey][prodKey].batches.find(b => b.batch_number === g.batch_number);
+    const existing = bySize[sizeKey][normKey].batches.find(b => b.batch_number === g.batch_number);
     if (existing) {
       existing.quantity_bottles += (g.quantity_bottles || 0);
       existing.total_lals += (g.total_lals || 0);
     } else {
-      bySize[sizeKey][prodKey].batches.push({ ...g, quantity_bottles: g.quantity_bottles || 0, total_lals: g.total_lals || 0 });
+      bySize[sizeKey][normKey].batches.push({ ...g, product_name: normKey, quantity_bottles: g.quantity_bottles || 0, total_lals: g.total_lals || 0 });
     }
   });
 
