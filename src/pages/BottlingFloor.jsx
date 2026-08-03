@@ -177,7 +177,7 @@ export default function BottlingFloor() {
       const lalPerBottle = totalBottles > 0 ? lals / totalBottles : 0;
 
       // 1. Create BottlingRun record
-      await db.BottlingRun.create({
+      const newRun = await db.BottlingRun.create({
         batch_number: activeRun.batch_code,
         product_name: activeRun.product_name,
         date: new Date().toISOString().split('T')[0],
