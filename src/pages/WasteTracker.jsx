@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Trash2, Plus, TrendingDown, Recycle, Package, Pencil } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth, subMonths, getMonth, getYear } from 'date-fns';
+import { format, parseISO, subMonths, getMonth, getYear } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 
@@ -65,14 +65,16 @@ function LogForm({ onSave, saving, initial }) {
 
   const handleSave = () => {
     if (!recordedBy.trim()) { toast.error('Please enter your name'); return; }
-    if (litres <= 0 && estimatedKg <= 0) { toast.error('Please enter an amount'); return; }
+    const finalLitres = parseFloat(litres.toFixed(1));
+    const finalKg = parseFloat(estimatedKg.toFixed(2));
+    if (finalLitres <= 0 && finalKg <= 0) { toast.error('Please enter an amount'); return; }
     onSave({
       date,
       category,
-      bin_size_litres: method === 'bins' ? (binSize || 70) : null,
-      bins_count: method === 'bins' ? parseFloat(bins) || 1 : null,
-      litres: parseFloat(litres.toFixed(1)),
-      kg: parseFloat(estimatedKg.toFixed(2)),
+      bin_size_litres: method === 'bins' ? (Number(binSize) || 70) : null,
+      bins_count: method === 'bins' ? (parseFloat(bins) || 1) : null,
+      litres: finalLitres > 0 ? finalLitres : finalKg / (cat.density || 0.12),
+      kg: finalKg > 0 ? finalKg : finalLitres * (cat.density || 0.12),
       notes: notes.trim() || null,
       recorded_by: recordedBy.trim(),
     });
@@ -167,7 +169,7 @@ function LogForm({ onSave, saving, initial }) {
         </div>
       </div>
 
-      <Button className="w-full" onClick={handleSave} disabled={saving || litres <= 0 || !recordedBy.trim()}>
+      <Button className="w-full" onClick={handleSave} disabled={saving || (litres <= 0 && estimatedKg <= 0) || !recordedBy.trim()}>
         {saving ? 'Saving...' : initial ? 'Update Entry' : 'Log Waste'}
       </Button>
     </div>
@@ -212,7 +214,7 @@ export default function WasteTracker() {
     if (showAll) return [...records].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const [y, m] = monthFilter.split('-').map(Number);
     return records
-      .filter(r => { const d = new Date(r.date); return getFullYear(d) === y && (d.getMonth() + 1) === m; })
+      .filter(r => { const d = new Date(r.date); return getYear(d) === y && (d.getMonth() + 1) === m; })
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [records, monthFilter, showAll]);
 
@@ -280,7 +282,7 @@ export default function WasteTracker() {
         <Card className="p-4">
           <p className="text-xs text-muted-foreground mb-1">YTD weight</p>
           <p className="text-2xl font-bold font-display">
-            {records.filter(r => getYear(new Date(r.date)) === getYear(new Date())).reduce((s, r) => s + (r.kg || 0), 0).toFixed(1)} kg
+            {records.filter(r => { try { return getYear(new Date(r.date)) === getYear(new Date()); } catch { return false; } }).reduce((s, r) => s + (r.kg || 0), 0).toFixed(1)} kg
           </p>
         </Card>
       </div>
@@ -426,6 +428,3 @@ export default function WasteTracker() {
     </div>
   );
 }
-
-// helper
-function getFullYear(d) { return d.getFullYear(); }
