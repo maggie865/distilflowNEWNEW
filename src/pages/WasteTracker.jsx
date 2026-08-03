@@ -187,26 +187,54 @@ export default function WasteTracker() {
   });
   const [showAll, setShowAll] = useState(false);
 
-  const { data: records = [], isLoading } = useQuery({
+  // Store waste records in AppSettings as JSON (no separate entity needed)
+  const WASTE_KEY = 'waste_records';
+
+  const { data: settingsRow, isLoading } = useQuery({
     queryKey: ['wasteRecords'],
-    queryFn: () => base44.entities.WasteRecord.list('-date', 5000),
+    queryFn: async () => {
+      const rows = await base44.entities.AppSettings.list('key', 5000);
+      return rows.find(r => r.key === WASTE_KEY) || null;
+    },
   });
 
+  const records = useMemo(() => {
+    if (!settingsRow?.value) return [];
+    try { return JSON.parse(settingsRow.value); } catch { return []; }
+  }, [settingsRow]);
+
+  const saveRecords = async (newRecords) => {
+    const val = JSON.stringify(newRecords);
+    if (settingsRow) {
+      await base44.entities.AppSettings.update(settingsRow.id, { value: val });
+    } else {
+      await base44.entities.AppSettings.create({ key: WASTE_KEY, value: val });
+    }
+    qc.invalidateQueries({ queryKey: ['wasteRecords'] });
+  };
+
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.WasteRecord.create(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['wasteRecords'] }); setShowForm(false); toast.success('Waste logged'); },
+    mutationFn: async (data) => {
+      const newRecord = { ...data, id: Date.now().toString(), created_at: new Date().toISOString() };
+      await saveRecords([...records, newRecord]);
+    },
+    onSuccess: () => { setShowForm(false); toast.success('Waste logged'); },
     onError: (e) => toast.error('Failed: ' + e.message),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.WasteRecord.update(id, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['wasteRecords'] }); setEditRecord(null); toast.success('Updated'); },
+    mutationFn: async ({ id, data }) => {
+      await saveRecords(records.map(r => r.id === id ? { ...r, ...data } : r));
+    },
+    onSuccess: () => { setEditRecord(null); toast.success('Updated'); },
     onError: (e) => toast.error('Failed: ' + e.message),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.WasteRecord.delete(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['wasteRecords'] }); toast.success('Deleted'); },
+    mutationFn: async (id) => {
+      await saveRecords(records.filter(r => r.id !== id));
+    },
+    onSuccess: () => { toast.success('Deleted'); },
   });
 
   // Filter records
