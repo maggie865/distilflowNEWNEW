@@ -22,7 +22,6 @@ const navGroups = [
   {
     name: 'Inventory',
     items: [
-      { label: 'Raw Materials', icon: Droplets, path: '/raw-materials' },
       { label: 'Finished Goods', icon: Warehouse, path: '/inventory' },
       { label: 'Warehouse (3PL)', icon: Building2, path: '/warehouse' },
       { label: 'Receiving', icon: PackagePlus, path: '/receiving' },
