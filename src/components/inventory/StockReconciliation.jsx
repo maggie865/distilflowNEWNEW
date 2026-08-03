@@ -321,6 +321,67 @@ export default function StockReconciliation() {
         )}
       </div>
 
+      {/* Merge duplicate product name variants */}
+      <div className="border border-purple-200 bg-purple-50 rounded-lg p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span>🍾</span>
+            <h3 className="font-semibold text-purple-800 text-sm">Merge Duplicate Product Names</h3>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-purple-300 text-purple-700 hover:bg-purple-100"
+            onClick={async () => {
+              try {
+                const allFG = await base44.entities.FinishedGood.list('product_name', 5000);
+
+                // Normalise name — strip trailing size suffix e.g. "London Dry Gin 200ml" → "London Dry Gin"
+                const norm = (name) => (name || '').replace(/\s*\d{3,4}ml\s*$/i, '').replace(/\s*\d{3,4}\s*$/i, '').trim();
+
+                // Group by normalised name + batch + size
+                const groups = {};
+                for (const g of allFG) {
+                  const key = `${norm(g.product_name)}||${g.batch_number || ''}||${g.bottle_size_ml || ''}`;
+                  if (!groups[key]) groups[key] = [];
+                  groups[key].push(g);
+                }
+
+                // Find groups with more than one record (name variants)
+                const dupes = Object.entries(groups).filter(([, recs]) => recs.length > 1);
+                if (dupes.length === 0) { toast.success('No duplicate product names found — all clean'); return; }
+
+                let merged = 0;
+                for (const [key, recs] of dupes) {
+                  // Prefer the record WITHOUT the size suffix as the canonical name
+                  recs.sort((a, b) => (a.product_name || '').length - (b.product_name || '').length);
+                  const [keep, ...rest] = recs;
+                  const totalQty = recs.reduce((s, r) => s + (r.quantity_bottles || 0), 0);
+                  const totalLals = recs.reduce((s, r) => s + (r.total_lals || 0), 0);
+                  await base44.entities.FinishedGood.update(keep.id, {
+                    product_name: norm(keep.product_name),
+                    quantity_bottles: totalQty,
+                    total_lals: parseFloat(totalLals.toFixed(4)),
+                  });
+                  for (const r of rest) {
+                    await base44.entities.FinishedGood.delete(r.id);
+                  }
+                  merged++;
+                }
+
+                qc.invalidateQueries({ queryKey: ['finishedGoods'] });
+                toast.success(`Merged ${merged} duplicate product group${merged !== 1 ? 's' : ''} — check your stock totals`);
+              } catch(e) { toast.error('Failed: ' + e.message); }
+            }}
+          >
+            Merge Duplicates
+          </Button>
+        </div>
+        <p className="text-xs text-purple-700">
+          Finds finished goods records where the same product/batch/size has two names (e.g. "London Dry Gin 200ml" and "London Dry Gin" at 200ml) and merges their quantities into one record. Run once to fix double-counting.
+        </p>
+      </div>
+
       {/* Backfill Botanical Lot History */}
       <div className="border border-emerald-200 bg-emerald-50 rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between">
