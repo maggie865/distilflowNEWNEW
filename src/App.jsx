@@ -33,6 +33,7 @@ import FoodRecallManager from '@/pages/FoodRecall';
 import MaintenanceRecords from '@/pages/MaintenanceRecords';
 import PestControl from '@/pages/PestControl';
 import Checklists from '@/pages/Checklists';
+import WasteTracker from '@/pages/WasteTracker';
 import TemperatureLogs from '@/pages/TemperatureLogs';
 import Suppliers from '@/pages/Suppliers';
 
@@ -90,6 +91,7 @@ const AuthenticatedApp = () => {
             <Route path="/pest-control" element={<PestControl />} />
             <Route path="/temperature-logs" element={<TemperatureLogs />} />
             <Route path="/checklists" element={<Checklists />} />
+            <Route path="/waste-tracker" element={<WasteTracker />} />
           </Route>
         </Route>
       </Route>
