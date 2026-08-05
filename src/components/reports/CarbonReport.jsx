@@ -50,7 +50,11 @@ export default function CarbonReport({ receiving, dispatches, warehouseStock, st
   // ── Month CO2e calculations ──
   const inboundCo2e = monthReceiving.reduce((s, r) => s + (r.co2e_kg || 0), 0);
   const dispatchCo2e = monthDispatches.reduce((s, d) => s + (d.co2e_kg || 0), 0);
-  const transferCo2e = month3PLTransfers.reduce((s, w) => s + (w.co2e_kg || 0), 0);
+  const monthAucklandTransfers = month3PLTransfers.filter(w => (w.warehouse_location || 'Auckland 3PL') === 'Auckland 3PL');
+  const monthUKBondedTransfers = month3PLTransfers.filter(w => (w.warehouse_location || '') === 'UK Bonded');
+  const aucklandTransferCo2e = monthAucklandTransfers.reduce((s, w) => s + (w.co2e_kg || 0), 0);
+  const ukBondedTransferCo2e = monthUKBondedTransfers.reduce((s, w) => s + (w.co2e_kg || 0), 0);
+  const transferCo2e = aucklandTransferCo2e + ukBondedTransferCo2e;
   const totalCo2e = inboundCo2e + dispatchCo2e + transferCo2e;
   const totalDistance = monthDispatches.reduce((s, d) => s + (d.transport_distance_km || 0), 0);
 
@@ -68,10 +72,12 @@ export default function CarbonReport({ receiving, dispatches, warehouseStock, st
   const ytdReceiving = receiving.filter(r => inYTD(r.date_received));
   const ytdDispatches = dispatches.filter(d => inYTD(d.dispatch_date));
   const ytd3PL = warehouseStock.filter(w => inYTD(w.transfer_date));
+  const ytdUKBonded = ytd3PL.filter(w => (w.warehouse_location || '') === 'UK Bonded');
 
   const ytdInbound = ytdReceiving.reduce((s, r) => s + (r.co2e_kg || 0), 0);
   const ytdOutbound = ytdDispatches.reduce((s, d) => s + (d.co2e_kg || 0), 0);
   const ytd3PLCo2e = ytd3PL.reduce((s, w) => s + (w.co2e_kg || 0), 0);
+  const ytdUKBondedCo2e = ytdUKBonded.reduce((s, w) => s + (w.co2e_kg || 0), 0);
   const ytdTotalCo2e = ytdInbound + ytdOutbound + ytd3PLCo2e;
   const ytdDistance = ytdDispatches.reduce((s, d) => s + (d.transport_distance_km || 0), 0);
   const ytdBottles = ytdDispatches.reduce((s, d) => s + (d.quantity_bottles || 0), 0);
@@ -122,11 +128,12 @@ export default function CarbonReport({ receiving, dispatches, warehouseStock, st
 
       {/* Monthly Summary */}
       <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">{monthLabel} — Transport Emissions</h3>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <StatCard label="Total CO2e" value={totalCo2e.toFixed(1)} sub="kg all transport" icon={TrendingDown} color="text-green-600" bg="bg-green-50 border-green-200" />
         <StatCard label="Inbound CO2e" value={inboundCo2e.toFixed(1)} sub="kg from receiving" icon={ArrowDownToLine} color="text-amber-600" bg="bg-amber-50 border-amber-200" />
         <StatCard label="Outbound CO2e" value={dispatchCo2e.toFixed(1)} sub="kg to customers" icon={ArrowUpFromLine} color="text-primary" bg="bg-accent border-accent-foreground/10" />
-        <StatCard label="3PL CO2e" value={transferCo2e.toFixed(1)} sub="kg warehouse transfers" icon={Building2} color="text-blue-600" bg="bg-blue-50 border-blue-200" />
+        <StatCard label="3PL CO2e" value={aucklandTransferCo2e.toFixed(1)} sub="kg to Auckland 3PL" icon={Building2} color="text-blue-600" bg="bg-blue-50 border-blue-200" />
+        <StatCard label="UK Bonded CO2e" value={ukBondedTransferCo2e.toFixed(1)} sub="kg overseas export" icon={MapPin} color="text-indigo-600" bg="bg-indigo-50 border-indigo-200" />
         <StatCard label="Total Distance" value={totalDistance.toLocaleString()} sub="km outbound" icon={MapPin} color="text-muted-foreground" bg="bg-card border-border" />
       </div>
 
@@ -247,13 +254,14 @@ export default function CarbonReport({ receiving, dispatches, warehouseStock, st
         </Card>
 
         <Card className="p-4">
-          <h4 className="text-sm font-semibold mb-4">3PL Transfer Emissions — {monthLabel}</h4>
+          <h4 className="text-sm font-semibold mb-4">Warehouse Transfer Emissions — {monthLabel}</h4>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Product</TableHead>
+                  <TableHead>Location</TableHead>
                   <TableHead>Bottles</TableHead>
                   <TableHead>Distance</TableHead>
                   <TableHead>CO2e</TableHead>
@@ -261,14 +269,19 @@ export default function CarbonReport({ receiving, dispatches, warehouseStock, st
               </TableHeader>
               <TableBody>
                 {month3PLTransfers.filter(w => w.co2e_kg > 0).length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No 3PL transfer emissions</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No warehouse transfer emissions</TableCell></TableRow>
                 ) : month3PLTransfers.filter(w => w.co2e_kg > 0).map(w => (
                   <TableRow key={w.id}>
                     <TableCell className="text-sm">{w.transfer_date ? format(parseISO(w.transfer_date), 'dd MMM') : '—'}</TableCell>
                     <TableCell className="text-sm font-medium">{w.product_name}</TableCell>
+                    <TableCell className="text-sm">
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${(w.warehouse_location || '') === 'UK Bonded' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {w.warehouse_location || 'Auckland 3PL'}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-sm">{w.quantity_bottles || '—'}</TableCell>
                     <TableCell className="text-sm">{w.transport_distance_km ? `${w.transport_distance_km} km` : '—'}</TableCell>
-                    <TableCell className="text-sm font-semibold text-blue-600">{w.co2e_kg ? `${w.co2e_kg.toFixed(3)} kg` : '—'}</TableCell>
+                    <TableCell className={`text-sm font-semibold ${(w.warehouse_location || '') === 'UK Bonded' ? 'text-indigo-600' : 'text-blue-600'}`}>{w.co2e_kg ? `${w.co2e_kg.toFixed(3)} kg` : '—'}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
