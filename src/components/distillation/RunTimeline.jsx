@@ -2,12 +2,12 @@ import React from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, Clock } from 'lucide-react';
 
 /**
  * Detailed run timeline + ABV readings log for a distillation run.
- * Tracks when the run started, when each cut began/ended, and ABV readings throughout the day.
+ * Only Run Start carries a date; all other cut times and readings are time-only
+ * (assumed to occur on the same day as Run Start).
  *
  * Props:
  *  - form: the form object with timeline/abv fields
@@ -28,8 +28,9 @@ export default function RunTimeline({ form, set }) {
     set('abv_readings', readings);
   };
 
+  // Run Start keeps the date; every other field is time-only
+  const dateField = { key: 'run_start_time', label: 'Run Start (date & time)' };
   const timeFields = [
-    { key: 'run_start_time', label: 'Run Start' },
     { key: 'heads_start_time', label: 'Heads Began' },
     { key: 'heads_end_time', label: 'Heads Ended / Hearts Began' },
     { key: 'hearts_end_time', label: 'Hearts Ended / Tails Began' },
@@ -37,25 +38,38 @@ export default function RunTimeline({ form, set }) {
     { key: 'run_end_time', label: 'Run End' },
   ];
 
-  const fmtDisplay = (dtStr) => {
-    if (!dtStr) return '—';
-    try {
-      const d = new Date(dtStr);
-      return d.toLocaleString('en-NZ', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-    } catch { return dtStr; }
+  // Combine the date portion of Run Start with a time-only value (HH:MM)
+  // so durations can be computed across the same day.
+  const toComparable = (val) => {
+    if (!val) return null;
+    // Already a full datetime string
+    if (val.includes('T') || val.length > 5) {
+      const d = new Date(val);
+      return isNaN(d) ? null : d.getTime();
+    }
+    // Time-only value — anchor to Run Start date (or today as fallback)
+    const anchor = form.run_start_time ? form.run_start_time.slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const d = new Date(`${anchor}T${val}`);
+    return isNaN(d) ? null : d.getTime();
   };
 
-  // Compute durations between key points
   const durationMins = (start, end) => {
-    if (!start || !end) return null;
-    const s = new Date(start).getTime();
-    const e = new Date(end).getTime();
-    if (isNaN(s) || isNaN(e) || e < s) return null;
+    const s = toComparable(start);
+    const e = toComparable(end);
+    if (s === null || e === null || e < s) return null;
     return Math.round((e - s) / 60000);
   };
   const headsDuration = durationMins(form.heads_start_time, form.heads_end_time);
   const heartsDuration = durationMins(form.heads_end_time, form.hearts_end_time);
   const runDuration = durationMins(form.run_start_time, form.run_end_time);
+
+  const fmtTime = (val) => {
+    if (!val) return '—';
+    if (val.length <= 5) return val; // time-only
+    try {
+      return new Date(val).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
+    } catch { return val; }
+  };
 
   return (
     <div className="rounded-lg border border-border p-4 space-y-4">
@@ -63,14 +77,24 @@ export default function RunTimeline({ form, set }) {
         <Clock className="w-3.5 h-3.5" />Run Timeline &amp; ABV Log
       </p>
 
-      {/* Cut timing fields */}
+      {/* Run Start — full datetime */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div>
+          <Label className="text-xs">{dateField.label}</Label>
+          <Input
+            type="datetime-local"
+            value={form[dateField.key] || ''}
+            onChange={e => set(dateField.key, e.target.value)}
+            className="text-sm"
+          />
+        </div>
+        {/* Cut timing — time only */}
         {timeFields.map(f => (
           <div key={f.key}>
             <Label className="text-xs">{f.label}</Label>
             <Input
-              type="datetime-local"
-              value={form[f.key] || ''}
+              type="time"
+              value={(form[f.key] || '').slice(0, 5)}
               onChange={e => set(f.key, e.target.value)}
               className="text-sm"
             />
@@ -110,8 +134,8 @@ export default function RunTimeline({ form, set }) {
                 <div>
                   <Label className="text-xs">Time</Label>
                   <Input
-                    type="datetime-local"
-                    value={r.time || ''}
+                    type="time"
+                    value={(r.time || '').slice(0, 5)}
                     onChange={e => updateReading(i, 'time', e.target.value)}
                     className="h-8 text-sm"
                   />
@@ -163,8 +187,8 @@ export default function RunTimeline({ form, set }) {
       {/* Compact timeline view (read-only, for completed runs) */}
       {form.run_start_time && (
         <div className="text-xs text-muted-foreground pt-2 border-t border-border/50">
-          Started {fmtDisplay(form.run_start_time)}
-          {form.run_end_time && ` · finished ${fmtDisplay(form.run_end_time)}`}
+          Started {new Date(form.run_start_time).toLocaleString('en-NZ', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+          {form.run_end_time && ` · finished ${fmtTime(form.run_end_time)}`}
         </div>
       )}
     </div>
