@@ -20,6 +20,8 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import CompleteDistillationDialog from '@/components/distillation/CompleteDistillationDialog';
 import CreateBatchDialog from '@/components/distillation/CreateBatchDialog';
 import BatchManagement from '@/components/distillation/BatchManagement';
+import TankAllocationSelector from '@/components/distillation/TankAllocationSelector';
+import RunTimeline from '@/components/distillation/RunTimeline';
 import Pagination from '@/components/ui/Pagination';
 
 const EMPTY_FORM = {
@@ -27,10 +29,14 @@ const EMPTY_FORM = {
   product_name: '',
   sub_batch_code: '',
   ethanol_lot_code: '',
-  source_tank_ids: [],
+  source_tank_allocations: [],
   maceration_date: '', maceration_notes: '',
   input_volume: '', input_abv: '',
   atmospheric_pressure: '', still_temp: '',
+  run_start_time: '', run_end_time: '',
+  heads_start_time: '', heads_end_time: '',
+  hearts_end_time: '', tails_end_time: '',
+  abv_readings: [],
   heads_volume: '', heads_abv: '',
   hearts_volume: '', hearts_abv: '',
   tails_volume: '', tails_abv: '',
@@ -129,13 +135,20 @@ export default function Distillation() {
       product_name: run.product_name || '',
       sub_batch_code: run.sub_batch_code || '',
       ethanol_lot_code: run.ethanol_lot_code || '',
-      source_tank_ids: run.source_tank_ids || [],
+      source_tank_allocations: run.source_tank_allocations || [],
       maceration_date: run.maceration_date || '',
       maceration_notes: run.maceration_notes || '',
       input_volume: run.input_volume ?? '',
       input_abv: run.input_abv ?? '',
       atmospheric_pressure: run.atmospheric_pressure ?? '',
       still_temp: run.still_temp ?? '',
+      run_start_time: run.run_start_time || '',
+      run_end_time: run.run_end_time || '',
+      heads_start_time: run.heads_start_time || '',
+      heads_end_time: run.heads_end_time || '',
+      hearts_end_time: run.hearts_end_time || '',
+      tails_end_time: run.tails_end_time || '',
+      abv_readings: run.abv_readings || [],
       heads_volume: run.heads_volume ?? '',
       heads_abv: run.heads_abv ?? '',
       hearts_volume: run.hearts_volume ?? '',
@@ -212,6 +225,29 @@ export default function Distillation() {
     }
   };
 
+  // Auto-compute input_volume and input_abv from per-tank allocations
+  const handleAllocationsChange = (allocations) => {
+    const volSum = allocations.reduce((s, a) => s + (parseFloat(a.volume) || 0), 0);
+    let lalSum = 0, volForAbv = 0;
+    for (const a of allocations) {
+      const v = parseFloat(a.volume) || 0;
+      const abv = parseFloat(a.abv) || 0;
+      if (v > 0 && abv > 0) { volForAbv += v; lalSum += v * abv / 100; }
+    }
+    const weightedAbv = volForAbv > 0 ? (lalSum / volForAbv) * 100 : 0;
+    setForm(prev => ({
+      ...prev,
+      source_tank_allocations: allocations,
+      input_volume: volSum > 0 ? String(parseFloat(volSum.toFixed(2))) : prev.input_volume,
+      input_abv: volForAbv > 0 ? String(parseFloat(weightedAbv.toFixed(1))) : prev.input_abv,
+      // Auto-set ethanol lot code from first allocated tank's batch if not already set
+      ethanol_lot_code: prev.ethanol_lot_code || (allocations[0] ? (allTanks.find(t => t.id === allocations[0].tank_id)?.current_batch || '') : ''),
+    }));
+    if (selectedRecipe && volSum > 0) {
+      scaleIngredients(selectedRecipe, volSum);
+    }
+  };
+
   const inputLALs = form.input_volume && form.input_abv
     ? parseFloat(form.input_volume) * parseFloat(form.input_abv) / 100 : 0;
   const headsLALs = form.heads_volume && form.heads_abv
@@ -238,7 +274,7 @@ export default function Distillation() {
 
   const buildPayload = (data) => {
     const payload = { ...data };
-    delete payload.source_tank_ids; // UI-only, not stored on DistillationRun
+    // source_tank_allocations persisted below
     payload.destination_tank_id = data.destination_tank_id || undefined;
     numericFields.forEach(f => { payload[f] = data[f] !== '' ? parseFloat(data[f]) : undefined; });
     payload.input_lals = inputLALs ? parseFloat(inputLALs.toFixed(4)) : undefined;
@@ -250,6 +286,26 @@ export default function Distillation() {
     payload.output_volume = calcOutputVolume > 0 ? parseFloat(calcOutputVolume.toFixed(3)) : undefined;
     payload.output_abv = calcOutputAbv > 0 ? parseFloat(calcOutputAbv.toFixed(2)) : undefined;
     payload.output_lals = calcOutputLALs > 0 ? parseFloat(calcOutputLALs.toFixed(4)) : undefined;
+    // Persist per-tank allocations with numeric volumes
+    payload.source_tank_allocations = (data.source_tank_allocations || []).map(a => ({
+      tank_id: a.tank_id,
+      tank_name: a.tank_name,
+      volume: parseFloat(a.volume) || undefined,
+      abv: parseFloat(a.abv) || undefined,
+    }));
+    if (payload.source_tank_allocations.length === 0) payload.source_tank_allocations = undefined;
+    // Persist ABV readings with numeric values
+    payload.abv_readings = (data.abv_readings || []).map(r => ({
+      time: r.time || undefined,
+      abv: r.abv !== '' ? parseFloat(r.abv) : undefined,
+      temp: r.temp !== '' ? parseFloat(r.temp) : undefined,
+      notes: r.notes || undefined,
+    }));
+    if (payload.abv_readings.length === 0) payload.abv_readings = undefined;
+    // Timeline string fields — empty becomes undefined
+    ['run_start_time','run_end_time','heads_start_time','heads_end_time','hearts_end_time','tails_end_time'].forEach(f => {
+      payload[f] = payload[f] || undefined;
+    });
     return payload;
   };
 
@@ -322,19 +378,29 @@ export default function Distillation() {
         }
       }
 
-      // Deduct input volume from source tanks (distribute evenly or by tank availability)
-      if (data.source_tank_ids?.length > 0 && payload.input_volume && payload.input_abv) {
-        const selectedTanks = allTanks.filter(t => data.source_tank_ids.includes(t.id));
-        let remainingVolume = payload.input_volume;
-        
-        for (const tank of selectedTanks) {
-          if (remainingVolume <= 0) break;
-          const deductVol = Math.min(tank.current_volume || 0, remainingVolume);
-          if (deductVol > 0) {
-            const newTankVolume = parseFloat(Math.max(0, (tank.current_volume || 0) - deductVol).toFixed(3));
-            await base44.entities.StorageTank.update(tank.id, { current_volume: newTankVolume });
-            remainingVolume -= deductVol;
-          }
+      // Deduct allocated volume from each source tank (per-tank quantities)
+      const allocations = (data.source_tank_allocations || []).filter(a => a.tank_id && parseFloat(a.volume) > 0);
+      if (allocations.length > 0 && payload.input_volume && payload.input_abv) {
+        for (const alloc of allocations) {
+          const tank = allTanks.find(t => t.id === alloc.tank_id);
+          if (!tank) continue;
+          const deductVol = parseFloat(alloc.volume) || 0;
+          const newTankVolume = parseFloat(Math.max(0, (tank.current_volume || 0) - deductVol).toFixed(3));
+          await base44.entities.StorageTank.update(alloc.tank_id, {
+            current_volume: newTankVolume,
+            status: newTankVolume <= 0 ? 'empty' : tank.status,
+          });
+          await base44.entities.TankMovement.create({
+            date: data.date || format(new Date(), 'yyyy-MM-dd'),
+            action: 'transfer_out',
+            tank_name: tank.name,
+            volume_litres: parseFloat(deductVol.toFixed(3)),
+            abv: parseFloat(alloc.abv) || tank.current_abv || undefined,
+            lals: parseFloat((deductVol * (parseFloat(alloc.abv) || 0) / 100).toFixed(4)),
+            product: tank.current_product || data.product_name,
+            batch_number: data.batch_number,
+            notes: `Ethanol draw for distillation run ${data.sub_batch_code || data.batch_number}`,
+          });
         }
 
         // Deduct ethanol from RawMaterial inventory using FIFO lots
@@ -513,25 +579,49 @@ export default function Distillation() {
         });
       }
 
-      // 2. Restore source tank volumes (source_tank_ids not stored — match by current_batch)
-      const sourceTanks = allTanks.filter(t => t.current_batch === run.batch_number && t.purpose !== 'final_product_storage');
-      if (sourceTanks.length > 0 && run.input_volume) {
-        const restorePerTank = run.input_volume / sourceTanks.length;
-        for (const tank of sourceTanks) {
-          const newVol = (tank.current_volume || 0) + restorePerTank;
-          await base44.entities.StorageTank.update(tank.id, {
+      // 2. Restore source tank volumes — use persisted per-tank allocations
+      const storedAllocations = Array.isArray(run.source_tank_allocations) ? run.source_tank_allocations : [];
+      if (storedAllocations.length > 0) {
+        for (const alloc of storedAllocations) {
+          if (!alloc.tank_id || !(parseFloat(alloc.volume) > 0)) continue;
+          const tank = allTanks.find(t => t.id === alloc.tank_id);
+          const restoreVol = parseFloat(alloc.volume);
+          const newVol = (tank?.current_volume || 0) + restoreVol;
+          await base44.entities.StorageTank.update(alloc.tank_id, {
             current_volume: parseFloat(newVol.toFixed(3)),
             status: 'in_use',
           });
           await base44.entities.TankMovement.create({
             date: today,
             action: 'distillation_reversed',
-            tank_name: tank.name,
-            volume_litres: parseFloat(restorePerTank.toFixed(3)),
-            lals: run.input_lals || 0,
+            tank_name: tank?.name || alloc.tank_name || 'Unknown',
+            volume_litres: parseFloat(restoreVol.toFixed(3)),
+            lals: parseFloat((restoreVol * (alloc.abv || 0) / 100).toFixed(4)),
             batch_number: run.batch_number,
-            notes: `Reversal: input volume restored to source tank (${run.date})`,
+            notes: `Reversal: allocated ethanol restored to source tank (${run.date})`,
           });
+        }
+      } else {
+        // Legacy runs without stored allocations — restore evenly by matching batch
+        const sourceTanks = allTanks.filter(t => t.current_batch === run.batch_number && t.purpose !== 'final_product_storage');
+        if (sourceTanks.length > 0 && run.input_volume) {
+          const restorePerTank = run.input_volume / sourceTanks.length;
+          for (const tank of sourceTanks) {
+            const newVol = (tank.current_volume || 0) + restorePerTank;
+            await base44.entities.StorageTank.update(tank.id, {
+              current_volume: parseFloat(newVol.toFixed(3)),
+              status: 'in_use',
+            });
+            await base44.entities.TankMovement.create({
+              date: today,
+              action: 'distillation_reversed',
+              tank_name: tank.name,
+              volume_litres: parseFloat(restorePerTank.toFixed(3)),
+              lals: run.input_lals || 0,
+              batch_number: run.batch_number,
+              notes: `Reversal: input volume restored to source tank (${run.date})`,
+            });
+          }
         }
       }
 
@@ -777,93 +867,39 @@ export default function Distillation() {
             <div className="rounded-lg border border-border p-4 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Input &amp; Still Conditions</p>
 
-              {/* Source tanks selector (multiple) */}
+              {/* Source tanks selector (per-tank volume allocation) */}
               <div>
-                <Label>Source Tanks (select one or more)</Label>
-                {editing ? (
-                  <div className="h-auto min-h-9 flex flex-wrap items-center gap-1.5 px-3 py-2 rounded-md border border-input bg-muted text-sm">
-                    {form.source_tank_ids?.length === 0 ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : (
-                      form.source_tank_ids.map(tankId => {
-                        const tank = allTanks.find(t => t.id === tankId);
-                        return tank ? (
-                          <span key={tank.id} className="inline-flex items-center gap-1 bg-primary/10 border border-primary/20 text-primary px-2 py-1 rounded text-xs font-medium">
-                            Tank {tank.name} — {tank.current_volume?.toFixed(1)}L
-                          </span>
-                        ) : null;
-                      })
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {ethanolTanks.length === 0 ? (
-                      <div className="px-3 py-4 rounded-md border border-border text-xs text-muted-foreground text-center">No ethanol tanks in use</div>
-                    ) : (
-                      <div className="space-y-2 border border-input rounded-md p-3 bg-muted/30 max-h-48 overflow-y-auto">
-                        {ethanolTanks.map(t => (
-                          <label key={t.id} className="flex items-center gap-2 cursor-pointer hover:bg-background rounded px-2 py-1 transition-colors">
-                            <input
-                              type="checkbox"
-                              checked={form.source_tank_ids?.includes(t.id) || false}
-                              onChange={(e) => {
-                                const newIds = e.target.checked
-                                  ? [...(form.source_tank_ids || []), t.id]
-                                  : (form.source_tank_ids || []).filter(id => id !== t.id);
-                                set('source_tank_ids', newIds);
-                                // Auto-set ABV from first tank if multiple selected
-                                if (newIds.length > 0) {
-                                  const firstTank = ethanolTanks.find(tank => tank.id === newIds[0]);
-                                  if (firstTank?.current_abv) set('input_abv', String(firstTank.current_abv));
-                                  if (firstTank?.current_batch) set('ethanol_lot_code', firstTank.current_batch);
-                                }
-                              }}
-                              className="rounded"
-                            />
-                            <span className="text-sm">
-                              <span className="font-semibold">Tank {t.name}</span>
-                              {' — '}{t.current_volume?.toFixed(1)}L @ {t.current_abv?.toFixed(1)}% ABV
-                              {t.current_batch && <span className="text-muted-foreground ml-1 text-xs">· {t.current_batch}</span>}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {form.source_tank_ids?.length > 0 && !editing && (() => {
-                  const selectedTanks = allTanks.filter(t => form.source_tank_ids.includes(t.id));
-                  const totalAvailable = selectedTanks.reduce((sum, t) => sum + (t.current_volume || 0), 0);
-                  const inputVol = parseFloat(form.input_volume) || 0;
-                  const avgAbv = selectedTanks.length > 0 
-                    ? selectedTanks.reduce((sum, t) => sum + (t.current_abv || 0), 0) / selectedTanks.length
-                    : 0;
-                  const lalsUsed = inputVol * avgAbv / 100;
-                  const volEq96 = lalsUsed / 0.96;
-                  return (
-                    <div className="mt-2 text-xs space-y-1 rounded-md border border-primary/20 bg-primary/5 p-2">
-                      <p className="text-primary font-medium">
-                        Combined available: {totalAvailable.toFixed(1)}L
-                      </p>
-                      <p className="text-muted-foreground text-xs">
-                        Selected {selectedTanks.length} tank{selectedTanks.length > 1 ? 's' : ''} — will deduct {inputVol}L total
-                      </p>
-                      {inputVol > 0 && <p className="text-muted-foreground text-xs">
-                        {inputVol}L @ avg {avgAbv.toFixed(1)}% = {lalsUsed.toFixed(3)} LALs → {volEq96.toFixed(2)}L equiv. @ 96% ABV deducted from raw material inventory
-                      </p>}
-                    </div>
-                  );
-                })()}
+                <Label>Source Tanks — allocate volume per tank</Label>
+                <TankAllocationSelector
+                  ethanolTanks={ethanolTanks}
+                  allocations={form.source_tank_allocations || []}
+                  onChange={handleAllocationsChange}
+                  disabled={!!editing}
+                />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <Label>Volume (L)</Label>
-                  <Input type="number" step="0.01" value={form.input_volume} onChange={e => handleVolumeChange(e.target.value)} />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={form.input_volume}
+                    onChange={e => handleVolumeChange(e.target.value)}
+                    readOnly={!!(form.source_tank_allocations || []).some(a => parseFloat(a.volume) > 0)}
+                    className="read-only:bg-muted read-only:cursor-not-allowed"
+                  />
                 </div>
                 <div>
                   <Label>ABV %</Label>
-                  <Input type="number" step="0.1" value={form.input_abv} onChange={e => set('input_abv', e.target.value)} />
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={form.input_abv}
+                    onChange={e => set('input_abv', e.target.value)}
+                    readOnly={!!(form.source_tank_allocations || []).some(a => parseFloat(a.volume) > 0)}
+                    className="read-only:bg-muted read-only:cursor-not-allowed"
+                  />
                 </div>
                 <div>
                   <Label className="flex items-center gap-1">LALs <Calculator className="w-3 h-3 text-primary" /></Label>
@@ -881,6 +917,9 @@ export default function Distillation() {
                 </div>
               </div>
             </div>
+
+            {/* Run Timeline & ABV Log */}
+            <RunTimeline form={form} set={set} />
 
             {/* Scaled ingredients with FIFO stock check (new runs only) */}
             {scaledIngredients.length > 0 && (
