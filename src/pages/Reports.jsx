@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { db } from '@/api/supabaseClient';
+import { base44 } from '@/api/base44Client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -167,29 +168,35 @@ export default function Reports() {
   const [csvModal, setCsvModal] = useState(null); // { filename, content }
 
   const exportCSV = (filename, rows, headers) => {
+    if (!rows || rows.length === 0) {
+      toast.warning(`No data to export for this period (${filename}).`);
+      return false;
+    }
     const escape = (v) => {
       if (v === null || v === undefined) return '';
       const s = String(v);
       return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const csv = [headers.join(','), ...rows.map(r => headers.map(h => escape(r[h])).join(','))].join('\n');
-    // Try direct download first
     try {
-      const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.setAttribute('href', dataUri);
+      a.setAttribute('href', url);
       a.setAttribute('download', filename);
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${rows.length} rows to ${filename}`);
     } catch {
-      // Fall back to copy modal if download is blocked
+      toast.error('Download blocked — use the copy modal below.');
     }
-    // Always show the copy modal so user can copy if download was blocked
     setCsvModal({ filename, content: csv });
+    return true;
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     setExporting(true);
     try {
       const label = `${startDate}_to_${endDate}`;
@@ -339,13 +346,37 @@ export default function Reports() {
           exportCSV(`excise_return_${label}.csv`, rows, headers);
           break;
         }
+        case 'iso': {
+          const logs = await base44.entities.UtilityLog.list('-reading_date', 5000);
+          const periodLogs = logs.filter(l => inRange(l.reading_date));
+          const ELECTRICITY_EF = 0.105;
+          const WATER_EF = 0.149;
+          const totalKwh = periodLogs.reduce((s, l) => s + (l.electricity_kwh || 0), 0);
+          const totalWaterL = periodLogs.reduce((s, l) => s + (l.water_litres || 0), 0);
+          const elecCo2e = totalKwh * ELECTRICITY_EF;
+          const waterCo2e = (totalWaterL / 1000) * WATER_EF;
+          const inboundCo2e = receiving.filter(r => inRange(r.date_received)).reduce((s, r) => s + (r.co2e_kg || 0), 0);
+          const outboundCo2e = dispatches.filter(d => inRange(d.dispatch_date)).reduce((s, d) => s + (d.co2e_kg || 0), 0);
+          const transferCo2e = warehouseStock.filter(w => inRange(w.transfer_date || w.date_transferred_in)).reduce((s, w) => s + (w.co2e_kg || 0), 0);
+          const totalCo2e = elecCo2e + waterCo2e + inboundCo2e + outboundCo2e + transferCo2e;
+          const share = (v) => totalCo2e > 0 ? ((v / totalCo2e) * 100).toFixed(1) : '0.0';
+          const rows = [
+            { scope: 'Scope 2', source: 'Grid electricity (mains)', factor: `${ELECTRICITY_EF} kg/kWh`, quantity: `${totalKwh.toLocaleString()} kWh`, co2e_kg: elecCo2e.toFixed(2), share_pct: share(elecCo2e) },
+            { scope: 'Scope 3', source: 'Town water supply', factor: `${WATER_EF} kg/m³`, quantity: `${(totalWaterL / 1000).toFixed(1)} m³`, co2e_kg: waterCo2e.toFixed(2), share_pct: share(waterCo2e) },
+            { scope: 'Scope 3', source: 'Inbound freight (receiving)', factor: 'per shipment', quantity: `${receiving.filter(r => inRange(r.date_received)).length} receipts`, co2e_kg: inboundCo2e.toFixed(2), share_pct: share(inboundCo2e) },
+            { scope: 'Scope 3', source: 'Outbound dispatches', factor: 'per shipment', quantity: `${dispatches.filter(d => inRange(d.dispatch_date)).length} dispatches`, co2e_kg: outboundCo2e.toFixed(2), share_pct: share(outboundCo2e) },
+            { scope: 'Scope 3', source: '3PL warehouse transfers', factor: 'per transfer', quantity: `${warehouseStock.filter(w => inRange(w.transfer_date || w.date_transferred_in)).length} transfers`, co2e_kg: transferCo2e.toFixed(2), share_pct: share(transferCo2e) },
+            { scope: '', source: 'TOTAL', factor: '', quantity: '', co2e_kg: totalCo2e.toFixed(2), share_pct: '100.0' },
+          ];
+          exportCSV(`iso_lifecycle_${label}.csv`, rows, ['scope', 'source', 'factor', 'quantity', 'co2e_kg', 'share_pct']);
+          break;
+        }
         case 'forecast':
           toast.info('Use the browser print function (Ctrl+P) to save the forecast as a PDF.');
           break;
         default:
           toast.info('Switch to a tab to export its data.');
       }
-      toast.success('Export downloaded successfully');
     } catch (err) {
       toast.error('Export failed: ' + err.message);
     } finally {
