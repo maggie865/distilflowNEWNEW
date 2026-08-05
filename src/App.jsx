@@ -38,7 +38,6 @@ import TemperatureLogs from '@/pages/TemperatureLogs';
 import Suppliers from '@/pages/Suppliers';
 import WhiskeyBarrels from '@/pages/WhiskeyBarrels';
 import UtilityTracker from '@/pages/UtilityTracker';
-import DataExport from '@/pages/DataExport';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -88,7 +87,6 @@ const AuthenticatedApp = () => {
             <Route path="/utilities" element={<UtilityTracker />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="/data-export" element={<DataExport />} />
           </Route>
           <Route element={<RoleRoute allowedRoles={['admin', 'user', 'crew']} />}>
             <Route path="/bottling-floor" element={<BottlingFloor />} />

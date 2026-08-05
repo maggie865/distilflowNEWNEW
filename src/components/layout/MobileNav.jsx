@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, Building2, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle, LogOut, CheckSquare, Leaf, Archive, Zap, Database } from 'lucide-react';
+import { Menu, Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, Building2, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle, LogOut, CheckSquare, Leaf, Archive, Zap } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
@@ -159,17 +159,6 @@ export default function MobileNav() {
                     >
                       <Settings className="w-4 h-4" />
                       Settings
-                    </Link>
-                    <Link
-                      to="/data-export"
-                      onClick={closeNav}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm",
-                        location.pathname === '/data-export' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      <Database className="w-4 h-4" />
-                      Data Export
                     </Link>
                   </>
                 )}

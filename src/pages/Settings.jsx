@@ -10,11 +10,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Trash2, Settings as SettingsIcon, User, Cylinder, FlaskConical, MapPin, Upload, Download, FileText, CheckCircle2, XCircle, Loader2, AlertTriangle, ChevronDown, ChevronRight, LayoutDashboard, ShieldCheck, CheckSquare, GripVertical, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, Settings as SettingsIcon, User, Cylinder, FlaskConical, MapPin, Upload, Download, FileText, CheckCircle2, XCircle, Loader2, AlertTriangle, ChevronDown, ChevronRight, LayoutDashboard, ShieldCheck, CheckSquare, GripVertical, ClipboardList, Database } from 'lucide-react';
 import DashboardLinkManager from '@/components/settings/DashboardLinkManager';
 import RecipeManager from '@/components/settings/RecipeManager';
 import LocationSettings from '@/components/settings/LocationSettings';
 import ComplianceSettings from '@/components/settings/ComplianceSettings';
+import DataExportPanel from '@/components/settings/DataExportPanel';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
@@ -317,7 +318,7 @@ export default function Settings() {
       <PageHeader title="Settings" subtitle="Manage account, tanks, and production recipes" />
 
       <Tabs defaultValue="account" className="w-full">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-9">
           <TabsTrigger value="account" className="flex items-center gap-2">
             <SettingsIcon className="w-4 h-4" />
             <span className="hidden sm:inline">Account</span>
@@ -348,6 +349,10 @@ export default function Settings() {
           </TabsTrigger>
           <TabsTrigger value="checklists" className="flex items-center gap-2">
             <CheckSquare className="w-4 h-4" /> Checklists
+          </TabsTrigger>
+          <TabsTrigger value="backup" className="flex items-center gap-2">
+            <Database className="w-4 h-4" />
+            <span className="hidden sm:inline">Backup</span>
           </TabsTrigger>
         </TabsList>
 
@@ -648,6 +653,11 @@ export default function Settings() {
 
         <TabsContent value="checklists" className="space-y-5">
           <ChecklistManager />
+        </TabsContent>
+
+        {/* Backup / Data Export Tab */}
+        <TabsContent value="backup" className="space-y-5">
+          <DataExportPanel />
         </TabsContent>
       </Tabs>
     </div>
