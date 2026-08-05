@@ -73,7 +73,7 @@ export default function WhiskeyBarrels() {
 
   const createMutation = useMutation({
     mutationFn: (data) => base44.entities.WhiskeyBarrel.create(data),
-    onSuccess: () => { queryClient.invalidateQueries(['whiskeyBarrels']); toast({ title: 'Barrel registered' }); setDialogOpen(false); },
+    onSuccess: () => { queryClient.invalidateQueries(['whiskeyBarrels']); setDialogOpen(false); },
     onError: (e) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
   });
 
