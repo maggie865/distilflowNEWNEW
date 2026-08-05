@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import { FileSpreadsheet, Loader2, TrendingDown, PackageCheck, ArrowDownToLine, ArrowUpFromLine, Building2, Truck, MapPin } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
+import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval, startOfQuarter, endOfQuarter, startOfYear, subMonths } from 'date-fns';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PageHeader from '@/components/shared/PageHeader';
@@ -48,6 +48,21 @@ export default function Reports() {
   const [dispPageSize, setDispPageSize] = useState(50);
   const [wastePage, setWastePage] = useState(1);
   const [wastePageSize, setWastePageSize] = useState(50);
+
+  const setPreset = (key) => {
+    const today = new Date();
+    let s, e;
+    switch (key) {
+      case 'thisMonth': s = startOfMonth(today); e = endOfMonth(today); break;
+      case 'lastMonth': { const lm = subMonths(today, 1); s = startOfMonth(lm); e = endOfMonth(lm); break; }
+      case 'thisQuarter': s = startOfQuarter(today); e = endOfQuarter(today); break;
+      case 'thisYear': s = startOfYear(today); e = today; break;
+      case 'last12': s = subMonths(today, 12); e = today; break;
+      default: return;
+    }
+    setStartDate(format(s, 'yyyy-MM-dd'));
+    setEndDate(format(e, 'yyyy-MM-dd'));
+  };
 
   const { data: wastage = [] } = useQuery({ queryKey: ['wastage'], queryFn: () => db.WastageRecord.list('-date', 5000) });
   const { data: receiving = [] } = useQuery({ queryKey: ['receiving'], queryFn: () => db.Receiving.list('-date_received', 5000) });
@@ -394,6 +409,11 @@ export default function Reports() {
     <div className="pb-20 md:pb-0">
       <PageHeader title="Reports" subtitle="Operational audit, inventory snapshot, and wastage analysis">
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            {[['thisMonth','This Month'],['lastMonth','Last Month'],['thisQuarter','This Quarter'],['thisYear','YTD'],['last12','Last 12 Months']].map(([key,label]) => (
+              <Button key={key} size="sm" variant="outline" onClick={() => setPreset(key)}>{label}</Button>
+            ))}
+          </div>
           <div className="flex items-center gap-2">
             <label className="text-xs text-muted-foreground whitespace-nowrap">From</label>
             <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-36 text-sm" />
