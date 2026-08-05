@@ -146,12 +146,18 @@ export default function ExciseReturn({
   const bluffExemptLals = dutyFreeFromBluff + exportFromBluff;
 
   // 2. LALs transferred to Auckland 3PL this month — taxable at point of transfer.
-  // UK Bonded transfers are under bond and excluded from excise entirely.
   const transfersToWarehouse = warehouseStockAll.filter(ws => {
     const d = ws.transfer_date || ws.date_transferred_in;
     return d && inMonth(d) && (ws.warehouse_location || 'Auckland 3PL') === 'Auckland 3PL';
   });
   const transferLals = transfersToWarehouse.reduce((s, ws) => s + (ws.total_lals || 0), 0);
+
+  // 2b. LALs transferred to UK Bonded warehouse this month — treated as overseas exports (excise exempt).
+  const transfersToUKBonded = warehouseStockAll.filter(ws => {
+    const d = ws.transfer_date || ws.date_transferred_in;
+    return d && inMonth(d) && (ws.warehouse_location || '') === 'UK Bonded';
+  });
+  const ukBondedExportLals = transfersToUKBonded.reduce((s, ws) => s + (ws.total_lals || 0), 0);
 
   // 3. Duty free OR export dispatches from 3PL this month — both are excise exempt
   const dutyFreeFrom3PL = monthDispatches
@@ -193,6 +199,7 @@ export default function ExciseReturn({
   const threePLTransferBreakdown = breakdownBySize(transfersToWarehouse.map(ws => ({ bottle_size_ml: ws.bottle_size_ml, quantity_bottles: ws.quantity_bottles, total_lals: ws.total_lals })));
   const threePLDutyFreeBreakdown = breakdownBySize(threePLDutyFreeDispatches);
   const threePLExportBreakdown = breakdownBySize(threePLExportDispatches);
+  const ukBondedTransferBreakdown = breakdownBySize(transfersToUKBonded.map(ws => ({ bottle_size_ml: ws.bottle_size_ml, quantity_bottles: ws.quantity_bottles, total_lals: ws.total_lals })));
 
   // Debug — log exempt records to find what's being incorrectly flagged
   const exportRecords = monthDispatches.filter(d => isBluffDispatch(d) && d.is_export === true);
@@ -292,6 +299,10 @@ export default function ExciseReturn({
       `  Less export/overseas:         (${exportFromBluff.toFixed(3)} LALs)`,
       `  Net taxable (distillery):      ${bluffDispatchLals.toFixed(3)} LALs`,
       ``,
+      `Overseas Export (UK Bonded Warehouse):`,
+      `  Transferred to UK Bonded:      ${ukBondedExportLals.toFixed(3)} LALs`,
+      `  (excise exempt — exported under bond)`,
+      ``,
       `3PL Transfers:`,
       `  Transferred to 3PL:            ${transferLals.toFixed(3)} LALs`,
       `  Less duty free from 3PL:      (${dutyFreeFrom3PL.toFixed(3)} LALs)`,
@@ -389,6 +400,17 @@ export default function ExciseReturn({
             </div>
           )}
           <ExciseRow label="Net Distillery Taxable LALs" value={bluffDispatchLals} sub="gross minus duty free and export" indent />
+          <ExciseRow label="Export / Overseas: UK Bonded Transfers" value={ukBondedExportLals} displayValue={ukBondedExportLals > 0 ? `(${ukBondedExportLals.toFixed(3)})` : '0.000'} sub="excise exempt — exported under bond" indent />
+          {ukBondedTransferBreakdown.length > 0 && (
+            <div className="px-8 py-1 bg-green-50 space-y-0.5">
+              {ukBondedTransferBreakdown.map(([size, d]) => (
+                <div key={size} className="flex justify-between text-xs text-green-600">
+                  <span>{size} — {d.bottles} bottles</span>
+                  <span className="font-mono">({d.lals.toFixed(4)} LALs)</span>
+                </div>
+              ))}
+            </div>
+          )}
           <ExciseRow label="Transferred to 3PL" value={transferLals} sub={transferLals === 0 ? "no transfer this month" : "taxable at point of transfer"} indent />
           {threePLTransferBreakdown.length > 0 && (
             <div className="px-8 py-1.5 bg-muted/30 space-y-0.5">
