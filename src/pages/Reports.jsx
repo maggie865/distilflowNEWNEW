@@ -19,6 +19,7 @@ import ExciseReturn from '@/components/reports/ExciseReturn';
 import ForecastReport from '@/components/reports/ForecastReport';
 import MovementsReport from '@/components/reports/MovementsReport';
 import CarbonReport from '@/components/reports/CarbonReport';
+import IsoLifecycleReport from '@/components/reports/IsoLifecycleReport';
 import { useRawMaterialsNetStock } from '@/hooks/useRawMaterialsNetStock';
 
 function StatCard({ label, value, sub, color = 'text-primary', bg = 'bg-accent border-accent-foreground/10', icon: Icon }) {
@@ -386,6 +387,7 @@ export default function Reports() {
            <TabsTrigger value="wastage">Wastage Analysis</TabsTrigger>
            <TabsTrigger value="excise">Excise Return</TabsTrigger>
           <TabsTrigger value="forecast">Forecast</TabsTrigger>
+          <TabsTrigger value="iso">ISO Lifecycle</TabsTrigger>
            </TabsList>
 
         {/* ── INVENTORY SNAPSHOT ── */}
@@ -530,6 +532,17 @@ export default function Reports() {
             recipes={recipes}
             bottlingRuns={bottlingRuns}
             distillationRuns={distillationRuns}
+          />
+        </TabsContent>
+
+        {/* ── ISO LIFECYCLE ── */}
+        <TabsContent value="iso" className="space-y-6">
+          <IsoLifecycleReport
+            receiving={receiving}
+            dispatches={dispatches}
+            warehouseStock={warehouseStock}
+            startDate={startDate}
+            endDate={endDate}
           />
         </TabsContent>
       </Tabs>

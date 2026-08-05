@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, Building2, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle, LogOut, CheckSquare, Leaf, Archive } from 'lucide-react';
+import { Menu, Home, FlaskConical, Droplets, Flame, Wine, Cylinder, TrendingUp, BookOpen, Users, Warehouse, Building2, FileText, Settings, ChevronDown, PackagePlus, Truck, ClipboardList, ShieldCheck, Thermometer, Wrench, Bug, AlertTriangle, LogOut, CheckSquare, Leaf, Archive, Zap } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
@@ -47,6 +47,7 @@ const navGroups = [
       { label: 'Pest Control', icon: Bug, path: '/pest-control' },
       { label: 'Food Recall', icon: AlertTriangle, path: '/food-recall' },
       { label: 'Waste Tracker', icon: Leaf, path: '/waste-tracker' },
+      { label: 'Utilities', icon: Zap, path: '/utilities' },
     ]
   },
 ];
