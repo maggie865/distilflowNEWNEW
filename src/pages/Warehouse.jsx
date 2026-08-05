@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -10,6 +11,7 @@ import { printPackingSlip, formatPackingSlipNumber } from '@/lib/packingSlip';
 
 export default function Warehouse() {
   const qc = useQueryClient();
+  const [location, setLocation] = useState('Auckland 3PL');
 
   const { data: warehouseStock = [] } = useQuery({
     queryKey: ['warehouseStock'],
@@ -20,6 +22,10 @@ export default function Warehouse() {
     queryKey: ['dispatches'],
     queryFn: () => base44.entities.Dispatch.list('-dispatch_date', 5000),
   });
+
+  // Filter stock by selected warehouse location.
+  // Records without a warehouse_location default to Auckland 3PL (the original site).
+  const locationStock = warehouseStock.filter(w => (w.warehouse_location || 'Auckland 3PL') === location);
 
   const { data: appSettings = [] } = useQuery({
     queryKey: ['appSettings'],
@@ -138,7 +144,27 @@ export default function Warehouse() {
 
   return (
     <div className="pb-20 md:pb-0">
-      <PageHeader title="Warehouse (Auckland 3PL)" subtitle="Stock, transfers and packing slips for Auckland 3PL warehouse" />
+      <PageHeader
+        title={location === 'UK Bonded' ? 'Warehouse (UK Bonded)' : 'Warehouse (Auckland 3PL)'}
+        subtitle={location === 'UK Bonded'
+          ? 'Stock held under bond in the UK — no NZ excise reporting'
+          : 'Stock, transfers and packing slips for Auckland 3PL warehouse'}
+      >
+        <div className="flex gap-1 rounded-lg bg-muted p-1">
+          <button
+            onClick={() => setLocation('Auckland 3PL')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${location === 'Auckland 3PL' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}
+          >
+            Auckland 3PL
+          </button>
+          <button
+            onClick={() => setLocation('UK Bonded')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${location === 'UK Bonded' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}
+          >
+            UK Bonded
+          </button>
+        </div>
+      </PageHeader>
 
       <Tabs defaultValue="stock">
         <TabsList className="mb-5">
@@ -147,13 +173,13 @@ export default function Warehouse() {
           <TabsTrigger value="slips">Packing Slips</TabsTrigger>
         </TabsList>
         <TabsContent value="stock">
-          <StockTab warehouseStock={warehouseStock} dispatches={dispatches} onPrintSlip={handlePrintPackingSlip} onAdjust={handleAdjustStock} onDelete={handleDeleteStock} />
+          <StockTab warehouseStock={locationStock} dispatches={dispatches} onPrintSlip={handlePrintPackingSlip} onAdjust={handleAdjustStock} onDelete={handleDeleteStock} />
         </TabsContent>
         <TabsContent value="transfers">
-          <TransfersTab warehouseStock={warehouseStock} onPrintSlip={handlePrintPackingSlip} />
+          <TransfersTab warehouseStock={locationStock} onPrintSlip={handlePrintPackingSlip} />
         </TabsContent>
         <TabsContent value="slips">
-          <PackingSlipsTab warehouseStock={warehouseStock} onPrintSlip={handlePrintPackingSlip} />
+          <PackingSlipsTab warehouseStock={locationStock} onPrintSlip={handlePrintPackingSlip} />
         </TabsContent>
       </Tabs>
     </div>

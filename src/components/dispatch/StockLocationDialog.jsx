@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 
 export default function StockLocationDialog({ location, finishedGoods = [], warehouseStock = [], onClose, onTransfer }) {
   const isBluff = location === 'Bluff';
+  const isUK = location === 'UK Bonded';
   const stock = useMemo(() => {
     if (isBluff) {
       return finishedGoods
@@ -21,8 +22,10 @@ export default function StockLocationDialog({ location, finishedGoods = [], ware
         }))
         .sort((a, b) => (a.product_name || '').localeCompare(b.product_name || ''));
     }
+    // Filter by warehouse location — UK Bonded or Auckland 3PL (default for legacy records)
+    const loc = isUK ? 'UK Bonded' : 'Auckland 3PL';
     return warehouseStock
-      .filter(ws => (ws.quantity_bottles || 0) > 0)
+      .filter(ws => (ws.quantity_bottles || 0) > 0 && (ws.warehouse_location || 'Auckland 3PL') === loc)
       .map(ws => ({
         product_name: ws.product_name,
         batch_number: ws.batch_number,
@@ -33,7 +36,7 @@ export default function StockLocationDialog({ location, finishedGoods = [], ware
         transfer_date: ws.transfer_date,
       }))
       .sort((a, b) => (a.product_name || '').localeCompare(b.product_name || ''));
-  }, [isBluff, finishedGoods, warehouseStock]);
+  }, [isBluff, isUK, finishedGoods, warehouseStock]);
 
   const totalBottles = stock.reduce((s, r) => s + (r.quantity_bottles || 0), 0);
   const totalLals = stock.reduce((s, r) => s + (r.total_lals || 0), 0);

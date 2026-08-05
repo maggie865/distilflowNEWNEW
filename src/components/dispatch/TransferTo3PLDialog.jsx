@@ -12,6 +12,7 @@ const BOTTLE_WEIGHT_KG = 1.2;
 
 export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [] }) {
   const qc = useQueryClient();
+  const [destination, setDestination] = useState('Auckland 3PL');
   const [transferDate, setTransferDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [transferDistance, setTransferDistance] = useState('1500');
   const [rows, setRows] = useState([{ productKey: '', qty: '' }]);
@@ -125,6 +126,7 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [] 
             total_lals: transferLals,
             original_quantity_bottles: take,
             original_total_lals: transferLals,
+            warehouse_location: destination,
             date_transferred_in: transferDate,
             transfer_date: transferDate,
             co2e_kg: parseFloat(batchCo2e.toFixed(3)),
@@ -150,9 +152,10 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [] 
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['finishedGoods'] });
       qc.invalidateQueries({ queryKey: ['warehouseStock'] });
-      toast.success(`${totalBottles} bottles transferred to Auckland 3PL — Packing Slip ${data?.packingSlipNumber || ''}`);
+      toast.success(`${totalBottles} bottles transferred to ${destination} — Packing Slip ${data?.packingSlipNumber || ''}`);
       setRows([{ productKey: '', qty: '' }]);
       setTransferDate(() => new Date().toISOString().split('T')[0]);
+      setDestination('Auckland 3PL');
       setTransferDistance('1500');
       onClose();
     },
@@ -162,8 +165,15 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [] 
   const handleClose = () => {
     setRows([{ productKey: '', qty: '' }]);
     setTransferDate(() => new Date().toISOString().split('T')[0]);
+    setDestination('Auckland 3PL');
     setTransferDistance('1500');
     onClose();
+  };
+
+  const handleDestinationChange = (val) => {
+    setDestination(val);
+    // Set sensible default distance per destination
+    setTransferDistance(val === 'UK Bonded' ? '18000' : '1500');
   };
 
   return (
@@ -171,9 +181,20 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [] 
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ArrowRightLeft className="w-4 h-4" /> Transfer to Auckland 3PL
+            <ArrowRightLeft className="w-4 h-4" /> Transfer to 3PL Warehouse
           </DialogTitle>
         </DialogHeader>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Destination Warehouse</Label>
+          <select value={destination} onChange={e => handleDestinationChange(e.target.value)} className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-background">
+            <option value="Auckland 3PL">Auckland 3PL (NZ domestic)</option>
+            <option value="UK Bonded">UK Bonded Warehouse (under bond — no excise)</option>
+          </select>
+          {destination === 'UK Bonded' && (
+            <p className="text-xs text-blue-600 mt-1">Stock transferred under bond — no NZ excise is payable. Excise reporting excludes UK warehouse stock.</p>
+          )}
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">

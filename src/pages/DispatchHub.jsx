@@ -87,11 +87,14 @@ export default function DispatchHub() {
   const pagedFiltered = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const depleteStock = async (dispatch) => {
-    const is3PL = (dispatch.dispatched_from || '').includes('Auckland');
+    const from = dispatch.dispatched_from || 'Bluff';
+    const is3PL = from === 'Auckland 3PL' || from === 'UK Bonded';
     const qty = dispatch.quantity_bottles || 0;
     const lals = dispatch.total_lals || 0;
     if (is3PL) {
-      const existing = await db.WarehouseStock.filter({ product_name: dispatch.product_name, batch_number: dispatch.batch_number });
+      const loc = from === 'UK Bonded' ? 'UK Bonded' : 'Auckland 3PL';
+      const existing = (await db.WarehouseStock.filter({ product_name: dispatch.product_name, batch_number: dispatch.batch_number }))
+        .find(w => (w.warehouse_location || 'Auckland 3PL') === loc);
       if (existing.length > 0) {
         const ws = existing[0];
         const newQty = Math.max(0, (ws.quantity_bottles || 0) - qty);
@@ -171,21 +174,23 @@ export default function DispatchHub() {
     if (!address) return;
     setEditCalcingDistance(true);
     try {
-      const origin = editForm.dispatched_from === 'Auckland 3PL' ? WAREHOUSE_ADDRESS : DISTILLERY_ORIGIN;
+      const origin = editForm.dispatched_from === 'Auckland 3PL' ? WAREHOUSE_ADDRESS : (editForm.dispatched_from === 'UK Bonded' ? 'United Kingdom' : DISTILLERY_ORIGIN);
       const res = await base44.functions.invoke('getDistanceMatrix', { origin, destination: address });
       if (res.data?.distance_km) setEditForm(f => ({ ...f, transport_distance_km: String(res.data.distance_km) }));
     } catch { toast.error('Could not calculate distance'); } finally { setEditCalcingDistance(false); }
   };
 
   const restoreStock = async (dispatch) => {
-    const is3PL = (dispatch.dispatched_from || '').includes('Auckland');
+    const from = dispatch.dispatched_from || 'Bluff';
+    const is3PL = from === 'Auckland 3PL' || from === 'UK Bonded';
     if (is3PL) {
-      const existing = await db.WarehouseStock.filter({ product_name: dispatch.product_name, batch_number: dispatch.batch_number });
-      if (existing.length > 0) {
-        const ws = existing[0];
-        await db.WarehouseStock.update(ws.id, { quantity_bottles: (ws.quantity_bottles || 0) + (dispatch.quantity_bottles || 0), total_lals: parseFloat(((ws.total_lals || 0) + (dispatch.total_lals || 0)).toFixed(4)) });
+      const loc = from === 'UK Bonded' ? 'UK Bonded' : 'Auckland 3PL';
+      const existing = (await db.WarehouseStock.filter({ product_name: dispatch.product_name, batch_number: dispatch.batch_number }))
+        .find(w => (w.warehouse_location || 'Auckland 3PL') === loc);
+      if (existing) {
+        await db.WarehouseStock.update(existing.id, { quantity_bottles: (existing.quantity_bottles || 0) + (dispatch.quantity_bottles || 0), total_lals: parseFloat(((existing.total_lals || 0) + (dispatch.total_lals || 0)).toFixed(4)) });
       } else {
-        await db.WarehouseStock.create({ product_name: dispatch.product_name, batch_number: dispatch.batch_number, bottle_size_ml: dispatch.bottle_size_ml, quantity_bottles: dispatch.quantity_bottles, total_lals: dispatch.total_lals });
+        await db.WarehouseStock.create({ product_name: dispatch.product_name, batch_number: dispatch.batch_number, bottle_size_ml: dispatch.bottle_size_ml, quantity_bottles: dispatch.quantity_bottles, total_lals: dispatch.total_lals, warehouse_location: loc });
       }
     } else {
       const allFG = await db.FinishedGood.list('product_name', 5000);
@@ -265,8 +270,16 @@ export default function DispatchHub() {
           className="rounded-xl border p-4 flex flex-col gap-1 text-left bg-purple-50 border-purple-200 hover:bg-purple-100 transition-colors cursor-pointer"
         >
           <div className="flex items-center gap-2"><PackageCheck className="w-4 h-4 text-purple-600" /><span className="text-xs font-medium text-muted-foreground">3PL Stock</span></div>
-          <p className="text-2xl font-bold font-display text-purple-600">{warehouseBottles.toLocaleString()}</p>
+          <p className="text-2xl font-bold font-display text-purple-600">{warehouseStock.filter(w => (w.warehouse_location || 'Auckland 3PL') === 'Auckland 3PL').reduce((s, w) => s + (w.quantity_bottles || 0), 0).toLocaleString()}</p>
           <p className="text-xs text-muted-foreground">bottles at Auckland — click to view</p>
+        </button>
+        <button
+          onClick={() => setStockLocation('UK Bonded')}
+          className="rounded-xl border p-4 flex flex-col gap-1 text-left bg-indigo-50 border-indigo-200 hover:bg-indigo-100 transition-colors cursor-pointer"
+        >
+          <div className="flex items-center gap-2"><PackageCheck className="w-4 h-4 text-indigo-600" /><span className="text-xs font-medium text-muted-foreground">UK Bonded Stock</span></div>
+          <p className="text-2xl font-bold font-display text-indigo-600">{warehouseStock.filter(w => w.warehouse_location === 'UK Bonded').reduce((s, w) => s + (w.quantity_bottles || 0), 0).toLocaleString()}</p>
+          <p className="text-xs text-muted-foreground">under bond — no excise</p>
         </button>
       </div>
 
@@ -290,7 +303,7 @@ export default function DispatchHub() {
             </div>
             <Select value={filterSource} onValueChange={v => { setFilterSource(v); setPage(1); }}>
               <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All sources" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">All Sources</SelectItem><SelectItem value="Bluff">Bluff Distillery</SelectItem><SelectItem value="Auckland 3PL">Auckland 3PL</SelectItem></SelectContent>
+              <SelectContent><SelectItem value="all">All Sources</SelectItem><SelectItem value="Bluff">Bluff Distillery</SelectItem><SelectItem value="Auckland 3PL">Auckland 3PL</SelectItem><SelectItem value="UK Bonded">UK Bonded</SelectItem></SelectContent>
             </Select>
             <Select value={filterChannel} onValueChange={v => { setFilterChannel(v); setPage(1); }}>
               <SelectTrigger className="w-full sm:w-36"><SelectValue placeholder="All types" /></SelectTrigger>
@@ -484,7 +497,7 @@ export default function DispatchHub() {
           <AlertDialogHeader>
             <AlertDialogTitle>Return Stock?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will restore <strong>{returningDispatch?.quantity_bottles} bottles</strong> of <strong>{returningDispatch?.product_name}</strong> back to {(returningDispatch?.dispatched_from || '').includes('Auckland') ? '3PL warehouse' : 'distillery'} stock. The dispatch record will be kept and marked as returned.
+              This will restore <strong>{returningDispatch?.quantity_bottles} bottles</strong> of <strong>{returningDispatch?.product_name}</strong> back to {(returningDispatch?.dispatched_from === 'Auckland 3PL' || returningDispatch?.dispatched_from === 'UK Bonded') ? 'warehouse' : 'distillery'} stock. The dispatch record will be kept and marked as returned.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

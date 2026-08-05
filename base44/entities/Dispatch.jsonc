@@ -72,7 +72,8 @@
       "type": "string",
       "enum": [
         "Bluff",
-        "Auckland 3PL"
+        "Auckland 3PL",
+        "UK Bonded"
       ],
       "description": "Where the dispatch originated from"
     },

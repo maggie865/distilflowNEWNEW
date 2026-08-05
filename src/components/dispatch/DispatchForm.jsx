@@ -62,7 +62,8 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
   const distilleryAddress = appSettings.find(s => s.key === 'distillery_address')?.value || DEFAULT_DISTILLERY_ORIGIN;
   const warehouseAddress = appSettings.find(s => s.key === 'warehouse_address')?.value || DEFAULT_WAREHOUSE_ADDRESS;
 
-  const originAddress = dispatchedFrom === 'Bluff' ? distilleryAddress : warehouseAddress;
+  const ukWarehouseAddress = appSettings.find(s => s.key === 'uk_warehouse_address')?.value || '';
+  const originAddress = dispatchedFrom === 'Bluff' ? distilleryAddress : (dispatchedFrom === 'UK Bonded' ? (ukWarehouseAddress || 'United Kingdom') : warehouseAddress);
 
   const sellableGoods = useMemo(
     () => finishedGoods.filter(fg => (fg.quantity_bottles || 0) > 0),
@@ -104,11 +105,15 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
     return list;
   }, [bluffProductOptions]);
 
-  // 3PL: individual WarehouseStock records
-  const threePLProductOptions = useMemo(
-    () => warehouseStock.filter(ws => ws.status !== 'in_transit').map(ws => ({ ...ws, available: ws.quantity_bottles || 0 })).filter(ws => ws.available > 0),
-    [warehouseStock]
-  );
+  // 3PL: individual WarehouseStock records, filtered by the selected source location
+  const threePLProductOptions = useMemo(() => {
+    const loc = dispatchedFrom === 'UK Bonded' ? 'UK Bonded' : 'Auckland 3PL';
+    return warehouseStock
+      .filter(ws => ws.status !== 'in_transit')
+      .filter(ws => (ws.warehouse_location || 'Auckland 3PL') === loc)
+      .map(ws => ({ ...ws, available: ws.quantity_bottles || 0 }))
+      .filter(ws => ws.available > 0);
+  }, [warehouseStock, dispatchedFrom]);
 
   const committedByProduct = useMemo(() => {
     const map = {};
@@ -291,6 +296,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
           else await db.FinishedGood.update(a.batch.id, { quantity_bottles: newQty, total_lals: parseFloat(newLals.toFixed(4)) });
         }
       } else {
+        // Auckland 3PL or UK Bonded — dispatched_from reflects the chosen source
         for (const li of lineItems) {
           const ws = warehouseStock.find(w => w.id === li.wsId);
           if (!ws) continue;
@@ -304,7 +310,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
             quantity_bottles: qty, total_lals: parseFloat(lals.toFixed(4)), parcel_weight_kg: weight,
             transport_distance_km: distanceKm || undefined, transport_method: transportMethod,
             co2e_kg: co2e > 0 ? parseFloat(co2e.toFixed(3)) : undefined, status: form.status || 'dispatched',
-            sample_dispatch: form.sample_dispatch === true, duty_free: form.duty_free === true, is_export: form.is_export === true, notes: form.notes || undefined, dispatched_from: 'Auckland 3PL',
+            sample_dispatch: form.sample_dispatch === true, duty_free: form.duty_free === true, is_export: form.is_export === true, notes: form.notes || undefined, dispatched_from: dispatchedFrom,
           });
           const newQty = Math.max(0, ws.quantity_bottles - qty);
           const newLals = Math.max(0, (ws.total_lals || 0) - lals);
@@ -318,7 +324,7 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
       queryClient.invalidateQueries({ queryKey: ['finishedGoods'] });
       queryClient.invalidateQueries({ queryKey: ['warehouseStock'] });
       handleClose();
-      toast.success(`${lineItems.length} product(s) dispatched from ${dispatchedFrom === 'Bluff' ? 'Bluff Distillery' : 'Auckland 3PL'}`);
+      toast.success(`${lineItems.length} product(s) dispatched from ${dispatchedFrom === 'Bluff' ? 'Bluff Distillery' : dispatchedFrom}`);
     },
     onError: (err) => toast.error(err.message || 'Failed to record dispatch'),
   });
@@ -337,8 +343,12 @@ export default function DispatchForm({ open, onClose, finishedGoods = [], wareho
               <SelectContent>
                 <SelectItem value="Bluff"><span className="flex items-center gap-2"><Building2 className="w-4 h-4" /> Bluff Distillery</span></SelectItem>
                 <SelectItem value="Auckland 3PL"><span className="flex items-center gap-2"><Building2 className="w-4 h-4" /> Auckland 3PL Warehouse</span></SelectItem>
+                <SelectItem value="UK Bonded"><span className="flex items-center gap-2"><Building2 className="w-4 h-4" /> UK Bonded Warehouse</span></SelectItem>
               </SelectContent>
             </Select>
+            {dispatchedFrom === 'UK Bonded' && (
+              <p className="text-xs text-blue-600 mt-1">Stock dispatched from the UK is under bond — no NZ excise applies. Dispatches are automatically excluded from excise reporting.</p>
+            )}
           </div>
 
           <div>

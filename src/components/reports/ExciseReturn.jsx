@@ -113,13 +113,19 @@ export default function ExciseReturn({
 
   // === EXCISE CALCULATION ===
 
-  // 1. Taxable distillery dispatches — must be explicitly from Bluff (not 3PL, not unknown)
+  // 1. Taxable distillery dispatches — must be explicitly from Bluff (not 3PL, not UK, not unknown)
   // Duty free and export dispatches from Bluff are excise exempt
+  // UK Bonded dispatches are entirely excluded from excise (stock is under bond, no NZ excise)
   const isBluffDispatch = (d) => {
     const from = (d.dispatched_from || '').toLowerCase().trim();
-    // Exclude anything with 'auckland' or '3pl' — everything else is Bluff
+    // Exclude anything from a 3PL warehouse (Auckland or UK Bonded) — everything else is Bluff
     // This correctly handles null/blank dispatched_from (older records = Bluff)
-    return !from.includes('auckland') && !from.includes('3pl');
+    return !from.includes('auckland') && !from.includes('3pl') && !from.includes('uk') && !from.includes('bonded');
+  };
+
+  const isUKBonded = (d) => {
+    const from = (d.dispatched_from || '').toLowerCase().trim();
+    return from.includes('uk') || from.includes('bonded');
   };
 
   const bluffDispatchLals = monthDispatches
@@ -139,10 +145,11 @@ export default function ExciseReturn({
     .reduce((s, d) => s + (d.total_lals || 0), 0);
   const bluffExemptLals = dutyFreeFromBluff + exportFromBluff;
 
-  // 2. LALs transferred to 3PL this month — taxable at point of transfer
+  // 2. LALs transferred to Auckland 3PL this month — taxable at point of transfer.
+  // UK Bonded transfers are under bond and excluded from excise entirely.
   const transfersToWarehouse = warehouseStockAll.filter(ws => {
     const d = ws.transfer_date || ws.date_transferred_in;
-    return d && inMonth(d);
+    return d && inMonth(d) && (ws.warehouse_location || 'Auckland 3PL') === 'Auckland 3PL';
   });
   const transferLals = transfersToWarehouse.reduce((s, ws) => s + (ws.total_lals || 0), 0);
 

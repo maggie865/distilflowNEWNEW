@@ -34,6 +34,15 @@
       "type": "number",
       "description": "Original total LALs transferred to the warehouse (preserved for transfer history when stock is depleted)"
     },
+    "warehouse_location": {
+      "type": "string",
+      "enum": [
+        "Auckland 3PL",
+        "UK Bonded"
+      ],
+      "default": "Auckland 3PL",
+      "description": "Which 3PL warehouse this stock is held at"
+    },
     "date_transferred_in": {
       "type": "string",
       "format": "date",
