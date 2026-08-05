@@ -5,7 +5,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
 
-const crewPaths = ['/bottling-floor', '/food-recall', '/maintenance', '/pest-control', '/temperature-logs'];
+const crewPaths = ['/bottling-floor', '/food-recall', '/maintenance', '/pest-control', '/temperature-logs', '/checklists', '/waste-tracker'];
 
 const navGroups = [
   {
