@@ -36,6 +36,7 @@ import Checklists from '@/pages/Checklists';
 import WasteTracker from '@/pages/WasteTracker';
 import TemperatureLogs from '@/pages/TemperatureLogs';
 import Suppliers from '@/pages/Suppliers';
+import WhiskeyBarrels from '@/pages/WhiskeyBarrels';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -81,6 +82,7 @@ const AuthenticatedApp = () => {
             <Route path="/sns-distillation" element={<SNSDistillation />} />
             <Route path="/stock-takes" element={<StockTakes />} />
             <Route path="/suppliers" element={<Suppliers />} />
+            <Route path="/whiskey-barrels" element={<WhiskeyBarrels />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
