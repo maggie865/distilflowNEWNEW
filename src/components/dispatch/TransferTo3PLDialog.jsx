@@ -136,6 +136,33 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [] 
             status: 'in_transit',
           });
 
+          // For UK Bonded transfers, also log a Dispatch record so the Batch
+          // Tracker shows these bottles as "sold to UK 3PL" — under bond we
+          // don't know the final end customer. Excise-exempt (export / duty-free).
+          if (destination === 'UK Bonded') {
+            await base44.entities.Dispatch.create({
+              dispatch_date: transferDate,
+              customer_name: 'UK 3PL',
+              customer_address: '',
+              product_name: fg.product_name,
+              batch_number: fg.batch_number,
+              bottle_size_ml: fg.bottle_size_ml,
+              quantity_bottles: take,
+              total_lals: transferLals,
+              parcel_weight_kg: parseFloat((take * BOTTLE_WEIGHT_KG).toFixed(2)),
+              transport_distance_km: parseFloat(transferDistance),
+              transport_method: 'sea',
+              co2e_kg: parseFloat(batchCo2e.toFixed(3)),
+              status: 'dispatched',
+              dispatched_from: 'Bluff',
+              sales_channel: 'wholesale',
+              is_sample: false,
+              duty_free: true,
+              is_export: true,
+              notes: 'Transferred to UK Bonded warehouse — end customer unknown',
+            });
+          }
+
           remaining -= take;
         }
       }
@@ -152,6 +179,7 @@ export default function TransferTo3PLDialog({ open, onClose, finishedGoods = [] 
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['finishedGoods'] });
       qc.invalidateQueries({ queryKey: ['warehouseStock'] });
+      qc.invalidateQueries({ queryKey: ['dispatches'] });
       toast.success(`${totalBottles} bottles transferred to ${destination} — Packing Slip ${data?.packingSlipNumber || ''}`);
       setRows([{ productKey: '', qty: '' }]);
       setTransferDate(() => new Date().toISOString().split('T')[0]);
