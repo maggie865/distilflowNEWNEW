@@ -1,0 +1,38 @@
+{
+  "name": "ProductAlias",
+  "type": "object",
+  "properties": {
+    "alias_name": {
+      "type": "string",
+      "description": "Incoming / supplier product name as it appears on packing slips"
+    },
+    "stock_item_name": {
+      "type": "string",
+      "description": "The stock item name (RawMaterial name) this alias links to"
+    },
+    "material_type": {
+      "type": "string",
+      "enum": [
+        "Ethanol",
+        "Botanicals",
+        "Packaging",
+        "Grain",
+        "Sugar",
+        "Water",
+        "Flavoring",
+        "Other"
+      ],
+      "description": "Material type for this alias (optional)"
+    }
+  },
+  "required": [
+    "alias_name",
+    "stock_item_name"
+  ],
+  "rls": {
+    "create": {},
+    "read": {},
+    "update": {},
+    "delete": {}
+  }
+}

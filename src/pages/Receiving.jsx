@@ -16,6 +16,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import PageHeader from '@/components/shared/PageHeader';
 import Pagination from '@/components/ui/Pagination';
+import ReceiveShipmentDialog from '@/components/receiving/ReceiveShipmentDialog';
 
 const MATERIAL_TYPES = ['Ethanol', 'Botanicals', 'Packaging', 'Grain', 'Sugar', 'Water', 'Flavoring', 'Other'];
 const TRANSPORT_METHODS = ['road', 'courier', 'air', 'sea', 'pickup'];
@@ -68,6 +69,9 @@ export default function Receiving() {
   const [calcingDistance, setCalcingDistance] = useState(false);
   const [form, setForm] = useState(BLANK_FORM);
   const [viewingSlip, setViewingSlip] = useState(null);
+  const [openShipment, setOpenShipment] = useState(false);
+  const [slipUrl, setSlipUrl] = useState(null);
+  const [scanPrefill, setScanPrefill] = useState(null);
   const queryClient = useQueryClient();
 
   const { refetch } = useQuery({
@@ -90,9 +94,9 @@ export default function Receiving() {
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
   const openNew = () => {
-    setEditingId(null);
-    setForm(BLANK_FORM);
-    setOpen(true);
+    setSlipUrl(null);
+    setScanPrefill(null);
+    setOpenShipment(true);
   };
 
   const openEdit = (r) => {
@@ -148,18 +152,14 @@ export default function Receiving() {
     if (!file) return;
 
     setUploadingSlip(true);
-    if (!open) setOpen(true);
-
     try {
-      // 1. Upload to Supabase Storage first
       const publicUrl = await uploadPackingSlip(file);
-      setForm(prev => ({ ...prev, packing_slip_url: publicUrl }));
+      setSlipUrl(publicUrl);
       toast.success('Packing slip uploaded');
 
-      // 2. Try to extract data using Base44 OCR
+      // Try to extract data using Base44 OCR
       setExtracting(true);
       try {
-        const { base44 } = await import('@/api/base44Client');
         const result = await base44.integrations.Core.ExtractDataFromUploadedFile({
           file_url: publicUrl,
           json_schema: {
@@ -179,10 +179,10 @@ export default function Receiving() {
           }
         });
 
+        let prefill = null;
         if (result.status === 'success' && result.output) {
           const d = Array.isArray(result.output) ? result.output[0] : result.output;
           const VALID_UNITS = ['litres', 'kg', 'units'];
-
           let matchedSupplier = null;
           if (d.supplier && suppliersQuery.data) {
             matchedSupplier = suppliersQuery.data.find(s =>
@@ -190,30 +190,27 @@ export default function Receiving() {
               d.supplier.toLowerCase().includes(s.business_name.toLowerCase())
             );
           }
-
-          setForm(prev => ({
-            ...prev,
-            material_name: d.material_name || prev.material_name,
-            material_type: MATERIAL_TYPES.find(t => t.toLowerCase().includes(d.material_type?.toLowerCase())) || prev.material_type,
-            quantity: d.quantity != null ? String(d.quantity) : prev.quantity,
-            unit: VALID_UNITS.includes(d.unit) ? d.unit : prev.unit,
-            abv_percent: d.abv_percent != null ? String(d.abv_percent) : prev.abv_percent,
-            supplier_id: matchedSupplier?.id || prev.supplier_id,
-            supplier_name: matchedSupplier?.business_name || d.supplier || prev.supplier_name,
-            cost_per_unit: d.cost_per_unit != null ? String(d.cost_per_unit) : prev.cost_per_unit,
-            batch_number: d.batch_number || prev.batch_number,
-            date_received: d.date_received || prev.date_received,
-            notes: d.notes || prev.notes,
-          }));
-
-          if (matchedSupplier?.address) {
-            setTimeout(() => calculateDistance(matchedSupplier.address), 500);
-          }
-
+          prefill = {
+            material_name: d.material_name || '',
+            material_type: MATERIAL_TYPES.find(t => t.toLowerCase().includes(d.material_type?.toLowerCase())) || '',
+            quantity: d.quantity != null ? String(d.quantity) : '',
+            unit: VALID_UNITS.includes(d.unit) ? d.unit : 'litres',
+            abv_percent: d.abv_percent != null ? String(d.abv_percent) : '',
+            cost_per_unit: d.cost_per_unit != null ? String(d.cost_per_unit) : '',
+            batch_number: d.batch_number || '',
+            date_received: d.date_received || new Date().toISOString().split('T')[0],
+            notes: d.notes || '',
+            supplier_id: matchedSupplier?.id || '',
+            supplier_name: matchedSupplier?.business_name || d.supplier || '',
+            supplier_address: matchedSupplier?.address || '',
+          };
           toast.success('Packing slip scanned — please review before saving');
         }
+        setScanPrefill(prefill);
+        setOpenShipment(true);
       } catch {
-        // OCR failed silently — slip is still uploaded and saved
+        setScanPrefill(null);
+        setOpenShipment(true);
         toast.info('Slip uploaded — could not auto-extract fields, please fill in manually');
       } finally {
         setExtracting(false);
@@ -265,87 +262,6 @@ export default function Receiving() {
     };
   };
 
-  const createMutation = useMutation({
-    mutationFn: async (data) => {
-      const payload = buildPayload(data);
-      const created = await base44.entities.Receiving.create(payload);
-
-      // Create or update linked RawMaterial for inventory tracking
-      const TYPE_MAP = { 'Ethanol': 'ethanol', 'Botanicals': 'botanical', 'Packaging': 'packaging', 'Grain': 'grain', 'Sugar': 'sugar', 'Water': 'water', 'Flavoring': 'flavoring', 'Other': 'other' };
-      const allRM = await base44.entities.RawMaterial.list('name', 5000);
-      const isEthanol = (payload.material_type || '').toLowerCase() === 'ethanol';
-      // For ethanol: match by name similarity so Lactonol deliveries go into Lactonol record
-      // and wheat/ENA deliveries go into their own record — don't blindly merge all ethanol types
-      const incomingName = (payload.material_name || '').toLowerCase().trim();
-      const existingRM = isEthanol
-        ? allRM.find(r => (r.type || '').toLowerCase() === 'ethanol' &&
-            (r.name || '').toLowerCase().trim() === incomingName) ||
-          allRM.find(r => (r.type || '').toLowerCase() === 'ethanol' && (() => {
-            const rn = (r.name || '').toLowerCase();
-            // Match if both are Lactonol variants
-            const lactonolIn = incomingName.includes('lactonol') || incomingName.includes('lactanol');
-            const lactonolRec = rn.includes('lactonol') || rn.includes('lactanol');
-            if (lactonolIn && lactonolRec) return true;
-            // Match if both are wheat/ENA variants
-            const wheatIn = incomingName.includes('wheat') || incomingName.includes('ena') || incomingName.includes('neutral');
-            const wheatRec = rn.includes('wheat') || rn.includes('ena') || rn.includes('neutral');
-            if (wheatIn && wheatRec) return true;
-            return false;
-          })())
-        : allRM.find(r => (r.name || '').toLowerCase().trim() === incomingName);
-      // New lot entry to append
-      const newLot = {
-        lot_number: payload.batch_number
-          ? `${payload.batch_number}${isEthanol && payload.material_name ? ' — ' + payload.material_name : ''}`
-          : (isEthanol && payload.material_name ? payload.material_name : null),
-        date_received: payload.date_received,
-        quantity_received: payload.quantity || 0,
-        quantity_remaining: payload.quantity || 0,
-        supplier: payload.supplier_name || null,
-        cost_per_unit: payload.cost_per_unit || null,
-        receiving_id: created.id,
-      };
-
-      if (existingRM) {
-        // Merge into existing record: add to total, append lot
-        const existingLots = Array.isArray(existingRM.lots) ? existingRM.lots : [];
-        await base44.entities.RawMaterial.update(existingRM.id, {
-          quantity: parseFloat(((existingRM.quantity || 0) + (payload.quantity || 0)).toFixed(4)),
-          lals: parseFloat(((existingRM.lals || 0) + (payload.lals || 0)).toFixed(4)),
-          cost_per_unit: payload.cost_per_unit || existingRM.cost_per_unit,
-          date_received: payload.date_received,
-          lots: [...existingLots, newLot],
-        });
-      } else {
-        // Create new record with first lot
-        await base44.entities.RawMaterial.create({
-          name: payload.material_name,
-          type: TYPE_MAP[payload.material_type] || 'other',
-          quantity: payload.quantity || 0,
-          unit: payload.unit,
-          lals: payload.lals || 0,
-          abv_percent: payload.abv_percent,
-          batch_number: payload.batch_number || null,
-          supplier: payload.supplier_name,
-          cost_per_unit: payload.cost_per_unit,
-          date_received: payload.date_received,
-          receiving_id: created.id,
-          lots: [newLot],
-        });
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['receivings'] });
-      queryClient.invalidateQueries({ queryKey: ['rawMaterials'] });
-      setOpen(false);
-      setForm(BLANK_FORM);
-      toast.success('Material received and inventory updated');
-    },
-    onError: (err) => {
-      toast.error('Failed to save: ' + (err?.message || 'Unknown error'));
-    },
-  });
-
   const updateMutation = useMutation({
     mutationFn: async (data) => {
       const payload = buildPayload(data);
@@ -384,8 +300,6 @@ export default function Receiving() {
     }
     if (editingId) {
       updateMutation.mutate(form);
-    } else {
-      createMutation.mutate(form);
     }
   };
 
@@ -410,7 +324,7 @@ export default function Receiving() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending = updateMutation.isPending;
   const rawData = receivingsQuery.data || [];
   const isLoading = receivingsQuery.isLoading;
   const data = rawData.filter(r => {
@@ -439,6 +353,14 @@ export default function Receiving() {
         </label>
         <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" />Receive Material</Button>
       </PageHeader>
+
+      <ReceiveShipmentDialog
+        open={openShipment}
+        onClose={() => setOpenShipment(false)}
+        suppliers={suppliersQuery.data || []}
+        slipUrl={slipUrl}
+        scanPrefill={scanPrefill}
+      />
 
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditingId(null); setForm(BLANK_FORM); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -643,7 +565,12 @@ export default function Receiving() {
               ) : pagedData.map(r => (
                   <TableRow key={r.id}>
                     <TableCell className="text-sm">{r.date_received ? format(new Date(r.date_received), 'MMM d, yyyy') : '—'}</TableCell>
-                    <TableCell className="font-medium text-sm">{r.material_name}</TableCell>
+                    <TableCell className="font-medium text-sm">
+                    {r.material_name}
+                    {r.supplier_product_name && r.supplier_product_name.toLowerCase() !== (r.material_name || '').toLowerCase() && (
+                      <span className="block text-xs text-muted-foreground font-normal">slip: {r.supplier_product_name}</span>
+                    )}
+                  </TableCell>
                     <TableCell className="text-sm">{r.material_type}</TableCell>
                   <TableCell className="text-sm">{r.quantity} {r.unit}</TableCell>
                   <TableCell className="text-sm">{r.supplier_name || '—'}</TableCell>
@@ -703,6 +630,9 @@ export default function Receiving() {
               }
             >
               <MobileDetailRow label="Supplier" value={r.supplier_name || '—'} />
+              {r.supplier_product_name && r.supplier_product_name.toLowerCase() !== (r.material_name || '').toLowerCase() && (
+                <MobileDetailRow label="Slip name" value={r.supplier_product_name} />
+              )}
               <MobileDetailRow label="Batch" value={r.batch_number || '—'} />
               <MobileDetailRow label="Distance" value={r.transport_distance_km ? `${r.transport_distance_km} km` : '—'} />
               <MobileDetailRow label="CO2e" value={r.co2e_kg ? `${r.co2e_kg.toFixed(3)} kg` : '—'} highlight />

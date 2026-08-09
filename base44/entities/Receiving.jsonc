@@ -4,7 +4,11 @@
   "properties": {
     "material_name": {
       "type": "string",
-      "description": "Name of received material"
+      "description": "Name of received material (resolved stock item name \u2014 aligned with inventory)"
+    },
+    "supplier_product_name": {
+      "type": "string",
+      "description": "Original product name as it appeared on the supplier packing slip (kept for traceability when it differs from the stock item name)"
     },
     "material_type": {
       "type": "string",
